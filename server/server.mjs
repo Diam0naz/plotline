@@ -39,7 +39,12 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
   const ledger = new Ledger(join(dataDir, 'ledger.jsonl'));
   // Approved verifiers (id -> public key). Only an operator can add one.
   const verifiersFile = join(dataDir, 'verifiers.json');
+  const verifiersAccredFile = join(dataDir, 'verifiers-accred.json');
   const verifiers = existsSync(verifiersFile) ? JSON.parse(readFileSync(verifiersFile, 'utf8')) : {};
+  const verifiersAccred = existsSync(verifiersAccredFile) ? (() => {
+    try { return new Map(Object.entries(JSON.parse(readFileSync(verifiersAccredFile, 'utf8')))); }
+    catch { return new Map(); }
+  })() : new Map();
   const registry = new Registry({ file: join(dataDir, 'registry.jsonl'), privateFile: join(dataDir, 'private.json'), verifiers, now });
   const hits = new Map(); // "bucket:ip" -> [timestamps] of recent writes
 
@@ -148,7 +153,11 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const c = registry.certificate(m[1]);
       return c ? send(res, 200, c) : send(res, 404, { error: 'no retirement certificate for this order' });
     }
-    if (get && path === '/api/registry/projects') return send(res, 200, await cached('projects', 3, () => ({ projects: registry.projectsList() })));
+    if (get && path === '/api/registry/projects') return send(res, 200, await cached('projects', 3, () => ({
+        projects: registry.projectsList(), verifiers: Object.entries(verifiers).map(([id, pub]) => ({
+          id, key: fingerprint(pub), accreditation: verifiersAccred?.get(id) ? { standard: verifiersAccred.get(id).standard, scope: verifiersAccred.get(id).scope, expiresAt: verifiersAccred.get(id).expiresAt, methodologyId: verifiersAccred.get(id).methodologyId } : null,
+        })),
+      })));
     if (get && path === '/api/registry/retirements') return send(res, 200, await cached('retirements', 3, () => ({ retirements: registry.retirements() })));
     m = path.match(/^\/api\/registry\/serial\/(PL-NG-\d{8})$/);
     if (get && m) {
@@ -212,7 +221,10 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     }
     if (get && path === '/api/registry/verifiers') {
       const out = [];
-      for (const [id, pub] of Object.entries(verifiers)) out.push({ id, key: await fingerprint(pub) });
+      for (const [id, pub] of Object.entries(verifiers)) {
+        const k = verifiersAccred?.get(id);
+        out.push({ id, key: await fingerprint(pub), accreditation: k ? { standard: k.standard, scope: k.scope, expiresAt: k.expiresAt } : null });
+      }
       return send(res, 200, { verifiers: out });
     }
     if (post && path === '/api/registry/verifiers') {
@@ -226,6 +238,22 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
       await cache?.invalidate();
       return send(res, 201, { id: data.id, key: await fingerprint(verifiers[data.id]) });
+    }
+    if (post && path === '/api/registry/verifiers/accredit') {
+      const data = await jsonBody(req, res, 4096);
+      if (data === undefined) return;
+      if (!/^[a-z0-9-]{2,32}$/.test(data?.id ?? '')) return send(res, 400, { error: 'send a verifier id' });
+      if (!verifiers[data.id]) return send(res, 404, { error: 'verifier id not found' });
+      if (data?.methodologyId && !methodologyById(data.methodologyId)) return send(res, 400, { error: 'unknown methodology' });
+      const method = methodologyById(data.methodologyId ?? null);
+      const scope = ['full', 'validation-only', 'review-only'].includes(data.scope ?? 'full') ? data.scope : 'full';
+      const standard = cleanStr(data.standard, 2, 80);
+      const expiresAt = data.expiresAt ? (isFinite(Date.parse(data.expiresAt)) ? new Date(data.expiresAt).toISOString() : null) : null;
+      if (standard.length < 2) return send(res, 400, { error: 'send a standard or scheme name' });
+      verifiersAccred.set(data.id, { standard, scope, methodologyId: method?.id ?? null, expiresAt });
+      writeFileSync(verifiersAccredFile, JSON.stringify([...verifiersAccred]), { mode: 0o600 });
+      await cache?.invalidate();
+      return send(res, 200, { id: data.id, accreditation: { standard, scope, methodologyId: method?.id ?? null, expiresAt } });
     }
     if (post && path === '/api/registry/order') {
       const data = await jsonBody(req, res, 2048);
