@@ -27,7 +27,7 @@ const FLAG_TEXT = {
 
 // ---------- storage ----------
 const KEY = 'plotline.v1';
-let S = { farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [] };
+let S = { farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [], onboarded: false };
 
 function load() {
   try {
@@ -714,6 +714,21 @@ function showTab(name) {
 $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 $$('[data-sub]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.sub)));
 
+// ---------- first run ----------
+function closeOnboarding(start) {
+  S.onboarded = true;
+  save();
+  const d = $('#onboard');
+  if (d.open) d.close();
+  if (start) { showTab('farm'); $('#walk-btn').click(); }
+}
+$('#onboard-go').addEventListener('click', () => closeOnboarding(true));
+$('#onboard-skip').addEventListener('click', () => closeOnboarding(false));
+$('#onboard').addEventListener('cancel', (e) => { e.preventDefault(); closeOnboarding(false); });
+function maybeOnboarding() {
+  if (!S.onboarded && !S.farms.length) $('#onboard').showModal();
+}
+
 function netChip() {
   const c = $('#net-chip');
   // Only speak up when there is something to say.
@@ -742,6 +757,7 @@ async function init() {
   const f = activeFarm();
   if (f && farmMap) farmMap.fitBounds(latlngs(f.polygon), { padding: [30, 30] });
   drawFarmMap(); walkStats(); walkButtons(); renderAll(); netChip();
+  maybeOnboarding();
   publishBatches(); flushOutbox();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

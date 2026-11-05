@@ -3,12 +3,14 @@
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { resolve, sep, extname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Ledger } from './ledger.mjs';
 import { Registry } from './registry.mjs';
 import { verifyEvents } from './chainlog.mjs';
+import { cleanFireEvidence, recentFires, FIRE_DEFAULTS } from './fire.mjs';
+import { createCache } from './cache.mjs';
 import { fingerprint } from '../core.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -32,7 +34,7 @@ const SUBMIT_MAX_BODY = 65536; // three signed records and a farm boundary
 const SUBMIT_RATE = { windowMs: 60_000, max: 10 };
 const FP = /^[0-9a-f]{16}$/;
 
-export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date(), adminToken = process.env.ADMIN_TOKEN || randomBytes(12).toString('hex') } = {}) {
+export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date(), adminToken = process.env.ADMIN_TOKEN || randomBytes(12).toString('hex'), fireCheck = recentFires, cache = null } = {}) {
   mkdirSync(dataDir, { recursive: true });
   const ledger = new Ledger(join(dataDir, 'ledger.jsonl'));
   // Approved verifiers (id -> public key). Only an operator can add one.
@@ -124,6 +126,8 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     }
   };
   const answer = (res, r, okCode = 200) => send(res, r.ok === false ? 400 : okCode, r);
+  // Read-through cache. Without Redis this is a direct call.
+  const cached = (key, ttl, fn) => (cache ? cache.wrap(key, ttl, fn) : fn());
 
   async function registryApi(req, res, path) {
     const ip = req.socket.remoteAddress || 'unknown';
@@ -131,11 +135,13 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     const post = req.method === 'POST';
 
     // ----- public: anyone can inspect the market, the totals and the log -----
-    if (get && path === '/api/registry/market') return send(res, 200, registry.market());
-    if (get && path === '/api/registry/reconcile') return send(res, 200, registry.reconcile());
+    if (get && path === '/api/registry/market') return send(res, 200, await cached('market', 3, () => registry.market()));
+    if (get && path === '/api/registry/reconcile') return send(res, 200, await cached('reconcile', 3, () => registry.reconcile()));
     if (get && path === '/api/registry/log') {
       const from = Math.max(1, parseInt(new URL(req.url, 'http://x').searchParams.get('from') || '1', 10) || 1);
-      return send(res, 200, { head: registry.log.head(), check: registry.verifyLog(), entries: registry.log.list(from, 500) });
+      return send(res, 200, await cached('log:' + from, 3, () => ({
+        head: registry.log.head(), check: registry.verifyLog(), entries: registry.log.list(from, 500),
+      })));
     }
     let m = path.match(/^\/api\/registry\/certificate\/(ORD-\d{4,})$/);
     if (get && m) {
@@ -153,17 +159,40 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (limited(ip, 'submit', SUBMIT_RATE)) return send(res, 429, { error: 'too many submissions, try again shortly' });
       const data = await jsonBody(req, res, SUBMIT_MAX_BODY);
       if (data === undefined) return;
-      return answer(res, await registry.submit(data ?? {}), 201);
+      const result = await registry.submit(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 201);
     }
     if (post && path === '/api/registry/decide') {
       if (limited(ip, 'decide', SUBMIT_RATE)) return send(res, 429, { error: 'too many requests, try again shortly' });
       const data = await jsonBody(req, res, 4096);
       if (data === undefined) return;
-      return answer(res, await registry.decide(data ?? {}));
+      const result = await registry.decide(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result);
     }
 
     // ----- operator only -----
     if (!isAdmin(req)) return send(res, 401, { error: 'operator token required' });
+    if (get && path === '/api/registry/fires') {
+      // Fire evidence for one plot, fetched live from the public VIIRS layer.
+      const q = new URL(req.url, 'http://x').searchParams;
+      const lat = Number(q.get('lat'));
+      const lon = Number(q.get('lon'));
+      const radiusKm = q.has('radiusKm') ? Number(q.get('radiusKm')) : FIRE_DEFAULTS.radiusKm;
+      const days = q.has('days') ? Number(q.get('days')) : FIRE_DEFAULTS.days;
+      if (!q.has('lat') || !q.has('lon') || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        return send(res, 400, { error: 'lat and lon are required numbers within valid ranges' });
+      }
+      if (!(radiusKm > 0 && radiusKm <= 50) || !(days >= 1 && days <= 90)) {
+        return send(res, 400, { error: 'radiusKm must be between 0 and 50, days between 1 and 90' });
+      }
+      // Send the normalised shape: a verifier signs exactly this back into the decision.
+      const key = `fires:${lat.toFixed(3)}:${lon.toFixed(3)}:${radiusKm}:${days}`;
+      const evidence = await cached(key, 60, async () =>
+        cleanFireEvidence(await fireCheck({ lat, lon, radiusKm, days, now })) ?? { status: 'unavailable', error: 'bad_result' });
+      return send(res, 200, evidence);
+    }
     if (get && path === '/api/registry/submissions') {
       return send(res, 200, { submissions: [...registry.subs.values()].map((x) => registry.publicSub(x)).reverse() });
     }
@@ -181,22 +210,29 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (verifiers[data.id]) return send(res, 409, { error: 'verifier id already exists' });
       verifiers[data.id] = { kty: 'EC', crv: 'P-256', x: data.pub.x, y: data.pub.y };
       writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
+      await cache?.invalidate();
       return send(res, 201, { id: data.id, key: await fingerprint(verifiers[data.id]) });
     }
     if (post && path === '/api/registry/order') {
       const data = await jsonBody(req, res, 2048);
       if (data === undefined) return;
-      return answer(res, registry.placeOrder(data ?? {}), 201);
+      const result = registry.placeOrder(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 201);
     }
     if (post && path === '/api/registry/retire') {
       const data = await jsonBody(req, res, 2048);
       if (data === undefined) return;
-      return answer(res, registry.retire(data ?? {}), 201);
+      const result = registry.retire(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 201);
     }
     if (post && path === '/api/registry/release') {
       const data = await jsonBody(req, res, 1024);
       if (data === undefined) return;
-      return answer(res, registry.releaseHeld(data?.fp));
+      const result = registry.releaseHeld(data?.fp);
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result);
     }
     return send(res, 404, { error: 'unknown endpoint' });
   }
@@ -243,10 +279,17 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT) || 8123;
-  const { server, ledger, adminToken } = createApp({ dataDir: process.env.DATA_DIR || join(ROOT, 'data') });
+  const dataDir = process.env.DATA_DIR || join(ROOT, 'data');
+  const cache = createCache({
+    namespace: createHash('sha256').update(resolve(dataDir)).digest('hex').slice(0, 12),
+    log: (m) => console.log(m),
+  });
+  const { server, ledger, adminToken } = createApp({ dataDir, cache });
+  server.on('close', () => cache.close());
   server.listen(port, () => {
     const h = ledger.head();
     console.log(`Plotline on http://localhost:${port}  (ledger entries: ${h.seq}, head ${h.hash.slice(0, 12)}…)`);
+    console.log(`Site: http://localhost:${port}/  App: http://localhost:${port}/app.html  Console: http://localhost:${port}/console.html`);
     if (!process.env.ADMIN_TOKEN) console.log(`Operator token for this run (set ADMIN_TOKEN to keep one): ${adminToken}`);
   });
 }

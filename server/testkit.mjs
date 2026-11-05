@@ -39,8 +39,9 @@ export async function makeSubmission(farmer, {
   return { records, pub: farmer.pub, msisdn };
 }
 
-export async function signDecision(verifier, { subId, decision, note = '', verifierId = 'ver-1', ts = '2026-11-05T10:00:00.000Z' }) {
+export async function signDecision(verifier, { subId, decision, note = '', verifierId = 'ver-1', ts = '2026-11-05T10:00:00.000Z', fire }) {
   const body = { subId, decision, note, verifierId, ts };
+  if (fire) body.fire = fire;
   const { sig } = await signBody(body, verifier.priv);
-  return { subId, decision, note, verifierId, ts, sig, hash: await hashBody(body) };
+  return { subId, decision, note, verifierId, ts, sig, ...(fire ? { fire } : {}), hash: await hashBody(body) };
 }

@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { canonical, fingerprint, hashBody, verifySig } from '../core.js';
 import { ChainLog, verifyEvents } from './chainlog.mjs';
 import { runChecks } from './checks.mjs';
+import { cleanFireEvidence } from './fire.mjs';
 import { METHODOLOGY as M, PAYOUT_RULES as PR, SERIAL_PREFIX, SPLIT_RULES } from './methodology.mjs';
 import { allocate, maskMsisdn, mockMobileMoney, normalizeMsisdn, splitKobo } from './payments.mjs';
 
@@ -178,7 +179,7 @@ export class Registry {
   }
 
   // ---------- 2. an independent verifier decides, and signs ----------
-  async decide({ subId, verifierId, decision, note = '', ts, sig }) {
+  async decide({ subId, verifierId, decision, note = '', ts, sig, fire }) {
     const s = this.subs.get(subId);
     const vkey = this.verifiers[verifierId];
     if (!s) return fail('unknown_submission', 'No such submission');
@@ -190,6 +191,9 @@ export class Registry {
       return fail('note_required', 'This submission was flagged: write a note explaining why you approve it');
     }
     const body = { subId, decision, note: String(note).slice(0, 500), verifierId, ts };
+    // Fire evidence is optional, normalised, and covered by the decision signature.
+    const evidence = cleanFireEvidence(fire);
+    if (evidence) body.fire = evidence;
     const hash = await hashBody(body);
     if (!(await verifySig(hash, sig, vkey))) return fail('bad_signature', 'Decision signature does not match the verifier key');
 
@@ -324,7 +328,7 @@ export class Registry {
       sample: s.sample, alive: s.alive, flags: s.checks.flags, hard: s.checks.hard, overlaps: s.checks.overlaps,
       areaHa: Math.round(s.checks.areaHa * 100) / 100, receivedAt: s.receivedAt, polygon: s.polygon,
       payoutTo: s.masked, issuanceId: s.issuanceId ?? null,
-      decision: s.decision ? { by: s.decision.body.verifierId, decision: s.decision.body.decision, note: s.decision.body.note, ts: s.decision.body.ts, sig: s.decision.sig } : null,
+      decision: s.decision ? { by: s.decision.body.verifierId, decision: s.decision.body.decision, note: s.decision.body.note, ts: s.decision.body.ts, sig: s.decision.sig, fire: s.decision.body.fire ?? null } : null,
     };
   }
 

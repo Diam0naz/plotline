@@ -55,6 +55,7 @@ $('#vreg').addEventListener('click', async () => {
 
 // ---------- verify ----------
 let map, layer, subs = [], selected = null;
+const fires = new Map(); // subId -> { loading, evidence }
 function initMap() {
   if (typeof L === 'undefined') { $('#cmap').innerHTML = '<div class="nomap">Map library did not load.</div>'; return; }
   map = L.map('cmap').setView([9.9, 8.9], 13);
@@ -81,7 +82,46 @@ function renderQueue() {
     : '<div class="muted">No submissions yet, or the operator token is missing.</div>';
   $$('#queue [data-id]').forEach((b) => b.addEventListener('click', () => select(b.dataset.id)));
 }
-function select(id) { selected = id; renderQueue(); drawMap(); renderDetail(); }
+function select(id) { selected = id; renderQueue(); drawMap(); renderDetail(); loadFire(); }
+
+// ---------- fire check: live VIIRS detections near the plot ----------
+function centroid(polygon) {
+  const n = polygon.length || 1;
+  return { lat: polygon.reduce((a, p) => a + p.lat, 0) / n, lon: polygon.reduce((a, p) => a + p.lon, 0) / n };
+}
+function fireHtml(s) {
+  const entry = fires.get(s.subId);
+  if (!entry) return '<div class="muted small">No fire check yet.</div>';
+  if (entry.loading) return '<div class="muted small">Checking recent fires near this plot…</div>';
+  const e = entry.evidence;
+  if (!e || e.status !== 'ok') {
+    return `<div class="muted small">Fire check unavailable${e?.error ? ' (' + esc(e.error) + ')' : ''}. You can still decide; the check is recorded as unavailable.</div>`;
+  }
+  if (!e.count) {
+    return `<div class="ok-t">No VIIRS detections within ${e.radiusKm} km in the last ${e.days} days.</div>
+      <div class="muted small">Checked ${esc(when(e.checkedAt))}. No detection is not proof that nothing burned.</div>`;
+  }
+  const near = e.nearestKm !== null && e.nearestKm <= 1;
+  return `<div class="${near ? 'bad-t' : 'flag'}">${e.count} VIIRS detection${e.count === 1 ? '' : 's'} within ${e.radiusKm} km in the last ${e.days} days${e.nearestKm !== null ? `, nearest ${e.nearestKm} km` : ''}.</div>
+    <div class="muted small">Latest ${esc(e.latestAcq || 'unknown')} · highest brightness ${e.maxBrightness ?? '—'} K · ${e.confidence?.high ?? 0} high-confidence. Inspect the plot before approving.</div>`;
+}
+function paintFire() {
+  const s = subs.find((x) => x.subId === selected);
+  const box = $('#fire-box');
+  if (s && box) box.innerHTML = fireHtml(s);
+}
+async function loadFire(force = false) {
+  const s = subs.find((x) => x.subId === selected);
+  if (!s) return;
+  const entry = fires.get(s.subId);
+  if (!force && (entry?.evidence || entry?.loading)) return;
+  fires.set(s.subId, { loading: true });
+  paintFire();
+  const c = centroid(s.polygon);
+  const r = await api(`fires?lat=${c.lat.toFixed(6)}&lon=${c.lon.toFixed(6)}&radiusKm=5&days=30`);
+  fires.set(s.subId, { loading: false, evidence: r.ok ? r.json : { status: 'unavailable', error: `http_${r.status}` } });
+  paintFire();
+}
 
 function renderDetail() {
   const s = subs.find((x) => x.subId === selected);
@@ -104,6 +144,9 @@ function renderDetail() {
     </dl>
     <h2 style="margin-top:12px">Automatic checks</h2>${issues}
     ${s.overlaps.length ? `<div class="flag">Overlaps with: ${s.overlaps.map((o) => esc(o.plotKey.split(':')[0]) + ' (' + Math.round(o.fraction * 100) + '%)').join(', ')}</div>` : ''}
+    <h2 style="margin-top:12px">Fire check</h2>
+    <div id="fire-box">${fireHtml(s)}</div>
+    ${s.status === 'pending' ? '<button id="fire-recheck" class="quiet">Recheck recent fires</button>' : ''}
     ${s.status === 'pending' ? `
       <label style="margin-top:12px">Verifier note ${s.flags.length ? '(required to approve a flagged submission)' : '(optional)'}
         <textarea id="note" rows="3" maxlength="500" placeholder="What did you check? e.g. visited the plot, counted trees, compared with photo"></textarea>
@@ -111,12 +154,16 @@ function renderDetail() {
       <div class="row"><button id="approve" class="primary">Sign and approve</button><button id="reject" class="danger">Sign and reject</button></div>
       <p class="muted small">Your decision is signed with this browser's verifier key. A farmer cannot verify their own submission.</p>`
     : d ? `<h2 style="margin-top:12px">Signed decision</h2>
-      <dl class="kv"><dt>By</dt><dd>${esc(d.by)}</dd><dt>Decision</dt><dd>${esc(d.decision)}</dd><dt>Note</dt><dd>${esc(d.note || 'none')}</dd><dt>Time</dt><dd>${esc(when(d.ts))}</dd><dt>Signature</dt><dd class="mono">${esc(d.sig)}</dd></dl>` : ''}`;
+      <dl class="kv"><dt>By</dt><dd>${esc(d.by)}</dd><dt>Decision</dt><dd>${esc(d.decision)}</dd><dt>Note</dt><dd>${esc(d.note || 'none')}</dd><dt>Time</dt><dd>${esc(when(d.ts))}</dd><dt>Fire check</dt><dd>${d.fire ? esc(d.fire.status === 'ok' ? `${d.fire.count} detection(s), nearest ${d.fire.nearestKm ?? '—'} km, checked ${when(d.fire.checkedAt)}` : `unavailable (${d.fire.error || 'no result'})`) : 'not checked'}</dd><dt>Signature</dt><dd class="mono">${esc(d.sig)}</dd></dl>` : ''}`;
   $('#approve')?.addEventListener('click', () => decide(s, 'approve'));
   $('#reject')?.addEventListener('click', () => decide(s, 'reject'));
+  $('#fire-recheck')?.addEventListener('click', () => loadFire(true));
 }
 async function decide(s, decision) {
   const body = { subId: s.subId, decision, note: ($('#note').value || '').trim().slice(0, 500), verifierId: $('#vid').value.trim(), ts: new Date().toISOString() };
+  // What the verifier saw about fires is signed into the decision, so it cannot be added later.
+  const ev = fires.get(s.subId)?.evidence;
+  if (ev) body.fire = ev;
   const { sig } = await C.signBody(body, V.keys.priv);
   const r = await api('decide', { method: 'POST', body: { ...body, sig } });
   if (!r.ok) return fail(r);

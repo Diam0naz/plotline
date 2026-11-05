@@ -3,238 +3,130 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Plotline</title>
+<title>Plotline — proof of what grows</title>
 <meta name="theme-color" content="#000000">
-<meta name="description" content="Offline-first GNSS farm mapping, scouting and verifiable records for smallholder farmers.">
-<link rel="manifest" href="manifest.webmanifest">
+<meta name="description" content="Map a smallholder farm by walking it, report problems where you see them, and turn living trees into records anyone can verify. Works offline.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="site.css">
 </head>
-<body>
-<header class="top">
-  <div class="brand">Plot<span>line</span></div>
-  <div class="chips">
-    <span id="net-chip" class="chip ok" hidden>offline</span>
-    <span id="gps-chip" class="chip" hidden>GPS</span>
-  </div>
+<body class="site">
+<header class="top site-nav">
+  <a class="brand" href="./">Plot<span>line</span></a>
+  <nav aria-label="Site">
+    <a href="#how">How it works</a>
+    <a href="#built">What it does</a>
+    <a href="console.html">Console</a>
+    <a class="nav-cta" href="app.html">Open the app</a>
+  </nav>
 </header>
 
 <main>
-  <!-- FARM -->
-  <section id="tab-farm" class="tab active">
-    <div class="tab-head">
-      <h1>Your farm</h1>
-      <p>Walk the boundary once to get area, perimeter and inputs.</p>
-    </div>
-    <nav class="subnav" aria-label="Farm views">
-      <button data-sub="farm" class="on">Boundary</button>
-      <button data-sub="inputs">Seed &amp; fertiliser</button>
-    </nav>
-    <div id="map-farm" class="map"></div>
-    <div class="card">
-      <div id="walk-stats" class="muted small"></div>
-      <div id="walk-idle" class="stack">
-        <button id="walk-btn" class="primary">Walk boundary</button>
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">Offline-first farm records</p>
+      <h1>Proof of what<br><span>grows.</span></h1>
+      <p class="lede">Map your farm by walking it, report problems where you see them, and turn living trees into records anyone can verify — on a phone, with or without a network.</p>
+      <div class="cta-row">
+        <a class="cta primary" href="app.html">Open the app</a>
+        <a class="cta" href="#how">How records work</a>
       </div>
-      <div id="walk-tools" class="stack hidden">
-        <button id="drop-btn" class="primary">Mark corner</button>
-        <div class="row">
-          <button id="undo-btn" disabled>Undo point</button>
-          <button id="finish-btn" disabled>Finish</button>
-        </div>
-        <button id="walk-cancel" class="quiet">Cancel walk</button>
-      </div>
-      <form id="farm-form" class="stack hidden">
-        <label>Farm name
-          <input id="farm-name" required maxlength="40" placeholder="e.g. Back field">
-        </label>
-        <label>Crop
-          <select id="farm-crop"></select>
-        </label>
-        <button class="primary" type="submit">Save farm</button>
-      </form>
+      <p class="fine">Installs to your home screen · no account · no wallet · no fees</p>
     </div>
-    <div class="card">
-      <h2>Your farms</h2>
-      <div id="farm-list" class="list"></div>
+
+    <div class="proof" aria-hidden="true">
+      <div class="proof-head"><span class="mono">Batch 4a91c2</span><span class="pill">in ledger #12</span></div>
+      <div class="proof-big">0.42 <small>ha</small></div>
+      <p class="proof-sub">Boundary walked at ±4 m · 4 corners</p>
+      <div class="proof-grid">
+        <div><b>68</b><span>records sealed</span></div>
+        <div><b>3</b><span>reports this week</span></div>
+      </div>
+      <div class="proof-hash mono">root 8f21…c40d</div>
     </div>
   </section>
 
-  <!-- SCOUT -->
-  <section id="tab-scout" class="tab">
-    <div class="tab-head">
-      <h1>Scout</h1>
-      <p>Report a problem where you see it. Each report is signed and located.</p>
-    </div>
-    <nav class="subnav" aria-label="Scout views">
-      <button data-sub="scout" class="on">Report</button>
-      <button data-sub="heat">Outbreaks</button>
-    </nav>
-    <div class="card stack">
-      <div id="scout-farm" class="muted small"></div>
-      <label>What did you see?
-        <select id="scout-type"></select>
-      </label>
-      <label>How bad is it?
-        <select id="scout-sev">
-          <option value="1">Low</option>
-          <option value="2" selected>Medium</option>
-          <option value="3">High</option>
-        </select>
-      </label>
-      <label>Note (optional)
-        <textarea id="scout-note" rows="2" maxlength="200" placeholder="e.g. holes in leaves, near the north edge"></textarea>
-      </label>
-      <button id="scout-btn" class="primary">Save report</button>
-      <div id="scout-result"></div>
+  <section id="how" class="band">
+    <h2>Records you can prove, even offline</h2>
+    <p class="band-lede">Three steps, all of them on the phone. No wallet, no fee, no signal needed.</p>
+    <ol class="steps3">
+      <li>
+        <span class="n">1</span>
+        <h3>Measure</h3>
+        <p>Walk the boundary and mark each corner. Every fix is scored for accuracy, and a fix worse than 50 m is refused.</p>
+      </li>
+      <li>
+        <span class="n">2</span>
+        <h3>Sign and seal</h3>
+        <p>Each record is hashed and signed with a key that stays on the device. Sealing groups records under one fingerprint.</p>
+      </li>
+      <li>
+        <span class="n">3</span>
+        <h3>Prove it later</h3>
+        <p>Only the fingerprint is published to an append-only ledger. Anyone can re-check a record and its Merkle proof.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="built" class="band">
+    <h2>What is inside</h2>
+    <div class="cards4">
+      <article>
+        <h3>Boundary and inputs</h3>
+        <p>Area, perimeter, plant counts and seed or fertiliser quantities from the plot you walked.</p>
+      </article>
+      <article>
+        <h3>Scouting</h3>
+        <p>Pest, disease, water stress, weeds or nutrient deficiency, pinned to where you saw it and signed.</p>
+      </article>
+      <article>
+        <h3>Outbreak watch</h3>
+        <p>Heat map and alerts when three or more reports of the same problem land within 1 km over 14 days.</p>
+      </article>
+      <article>
+        <h3>Verified tree-years</h3>
+        <p>Planting and survival checks go to an independent verifier, who approves before units are issued.</p>
+      </article>
     </div>
   </section>
 
-  <!-- HEAT -->
-  <section id="tab-heat" class="tab">
-    <div class="tab-head">
-      <h1>Outbreaks</h1>
-      <p>Where reports are piling up, so you can act early.</p>
+  <section class="band climate">
+    <div>
+      <h2>Verified tree-years, paid in kobo</h2>
+      <p>Approved plots issue unique serial numbers. A sale splits automatically between farmer, community, verifier and platform, with holds for unsafe payout changes and a hash-chained audit log of every step.</p>
+      <a class="cta" href="app.html">Try the flow</a>
     </div>
-    <nav class="subnav" aria-label="Scout views">
-      <button data-sub="scout">Report</button>
-      <button data-sub="heat" class="on">Outbreaks</button>
-    </nav>
-    <div class="filter-row">
-      <label for="heat-type">Show</label>
-      <select id="heat-type"></select>
+    <div class="split-demo" aria-hidden="true">
+      <div class="split-row"><span>Farmer</span><b>60%</b></div>
+      <div class="split-row"><span>Community</span><b>25%</b></div>
+      <div class="split-row"><span>Verifier</span><b>5%</b></div>
+      <div class="split-row"><span>Platform</span><b>10%</b></div>
+      <p class="fine">Demo split, editable in the methodology file.</p>
     </div>
-    <div id="map-heat" class="map"></div>
-    <div class="card">
-      <h2>Outbreak watch</h2>
-      <div id="alerts" class="list"></div>
-      <p class="muted small">Alert: 3 or more reports of the same problem within 1 km in 14 days. Reports with a weak location fix are left out.</p>
-    </div>
-  </section>
-
-  <!-- INPUTS -->
-  <section id="tab-inputs" class="tab">
-    <div class="tab-head">
-      <h1>Seed &amp; fertiliser</h1>
-      <p>Quantities for your walked area. Edit any rate to match local advice.</p>
-    </div>
-    <nav class="subnav" aria-label="Farm views">
-      <button data-sub="farm">Boundary</button>
-      <button data-sub="inputs" class="on">Seed &amp; fertiliser</button>
-    </nav>
-    <div class="card stack">
-      <div id="in-farm" class="muted small"></div>
-      <label>Area (hectares)
-        <input id="in-area" type="number" step="0.001" min="0" inputmode="decimal">
-      </label>
-      <label>Crop
-        <select id="in-crop"></select>
-      </label>
-      <div class="grid2">
-        <label>Row spacing (cm)<input id="in-row" type="number" min="1" inputmode="decimal"></label>
-        <label>In-row spacing (cm)<input id="in-plant" type="number" min="1" inputmode="decimal"></label>
-        <label>Seed (kg/ha)<input id="in-seed" type="number" min="0" step="0.1" inputmode="decimal"></label>
-        <label>NPK (kg/ha)<input id="in-npk" type="number" min="0" inputmode="decimal"></label>
-        <label>Urea (kg/ha)<input id="in-urea" type="number" min="0" inputmode="decimal"></label>
-      </div>
-      <div id="in-out" class="result"></div>
-      <p class="muted small">Starting points, not recommendations. Set them from extension guidance or a soil test.</p>
-    </div>
-  </section>
-
-  <!-- TREES -->
-  <section id="tab-trees" class="tab">
-    <div class="tab-head">
-      <h1>Trees</h1>
-      <p>Plant, check survival, and get paid for verified tree-years.</p>
-    </div>
-    <div class="card stack">
-      <div id="tr-farm" class="muted small"></div>
-      <div class="steps">
-        <div id="tr-s1" class="step"></div>
-        <div id="tr-s2" class="step"></div>
-        <div id="tr-s3" class="step"></div>
-      </div>
-    </div>
-    <div id="tr-step-1" class="card stack">
-      <h2>1. Record planting</h2>
-      <div class="grid2">
-        <label>Trees planted<input id="tr-count" type="number" min="1" step="1" inputmode="numeric"></label>
-        <label>Species<select id="tr-species"></select></label>
-      </div>
-      <button id="tr-plant-btn" class="primary">Save planting</button>
-    </div>
-    <div id="tr-step-2" class="card stack">
-      <h2>2. Survival check</h2>
-      <p class="muted small">Count a sample of the trees you planted, then how many are alive.</p>
-      <div class="grid2">
-        <label>Trees counted<input id="tr-sample" type="number" min="1" step="1" inputmode="numeric"></label>
-        <label>Alive<input id="tr-alive" type="number" min="0" step="1" inputmode="numeric"></label>
-      </div>
-      <button id="tr-surv-btn" class="primary">Save survival check</button>
-    </div>
-    <div id="tr-step-3" class="card stack">
-      <h2>3. Send for verification</h2>
-      <label>Payout number (mobile money)
-        <input id="tr-msisdn" type="tel" inputmode="tel" placeholder="0803 123 4567" maxlength="20">
-      </label>
-      <button id="tr-send-btn" class="primary">Send for verification</button>
-      <div id="tr-outbox" class="muted small"></div>
-      <p class="muted small">A verifier must approve before units are issued. Payments here are a sandbox simulation.</p>
-    </div>
-    <div class="card">
-      <div class="row"><h2>Your submissions</h2><button id="tr-refresh" class="quiet">Refresh</button></div>
-      <div id="tr-earn" class="muted"></div>
-      <div id="tr-list" class="list"></div>
-    </div>
-    <div class="card"><h2>Payouts</h2><div id="tr-pay" class="list"></div></div>
-  </section>
-
-  <!-- RECORDS -->
-  <section id="tab-records" class="tab">
-    <div class="tab-head">
-      <h1>Records</h1>
-      <p>Signed proof of your work, checkable by anyone.</p>
-    </div>
-    <div class="card stack">
-      <div id="rec-summary" class="muted small"></div>
-      <button id="seal-btn" class="primary">Seal records</button>
-      <p class="muted small">Sealing groups pending records under one fingerprint. Only that fingerprint leaves your phone.</p>
-      <details class="more">
-        <summary>Data and demo tools</summary>
-        <div class="row">
-          <button id="export-btn">Export JSON</button>
-          <button id="demo-btn">Load demo data</button>
-        </div>
-        <div class="row">
-          <button id="reset-btn" class="danger">Reset all</button>
-        </div>
-      </details>
-    </div>
-    <div class="card"><h2>Batches</h2><div id="batch-list" class="list"></div></div>
-    <div class="card"><h2>Records</h2><div id="record-list" class="list"></div></div>
   </section>
 </main>
 
-<dialog id="verify-dialog">
-  <div id="verify-body"></div>
-  <div class="row">
-    <button id="tamper-btn">Simulate tampering</button>
-    <button id="close-verify" class="primary">Close</button>
+<footer class="site-footer">
+  <div class="foot-grid">
+    <div>
+      <div class="brand">Plot<span>line</span></div>
+      <p class="fine">Offline-first farm mapping, scouting and verifiable records for smallholder farmers.</p>
+    </div>
+    <div class="foot-col">
+      <h4>Product</h4>
+      <a href="app.html">Open the app</a>
+      <a href="console.html">Operator console</a>
+      <a href="#how">How records work</a>
+    </div>
+    <div class="foot-col">
+      <h4>Built for</h4>
+      <p class="fine">Phones with poor signal, shared devices and small plots. GNSS quality is checked before any record is saved.</p>
+    </div>
   </div>
-</dialog>
-
-<nav class="tabs" aria-label="Main">
-  <button data-tab="farm" class="on">Farm</button>
-  <button data-tab="scout">Scout</button>
-  <button data-tab="trees">Trees</button>
-  <button data-tab="records">Records</button>
-</nav>
-<div id="toast" role="status" aria-live="polite"></div>
-
-<script src="vendor/leaflet/leaflet.js"></script>
-<script src="vendor/leaflet/leaflet-heat.js"></script>
-<script type="module" src="app.js"></script>
+  <div class="foot-note">
+    <p>Demo build: units are not a registered carbon credit, payouts are simulated and the conversion factor is a placeholder. Map tiles © OpenStreetMap contributors.</p>
+    <p>Plotline · 2026</p>
+  </div>
+</footer>
 </body>
 </html>

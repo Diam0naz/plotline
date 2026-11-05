@@ -108,6 +108,16 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
 
 dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 14px; max-width: 560px; width: calc(100% - 32px); }
 dialog::backdrop { background: rgba(0,0,0,.7); }
+dialog.onboard { padding: 0; max-width: 460px; }
+.onboard-in { padding: 20px; }
+.onboard-in h1 { font-size: 20px; line-height: 1.25; margin: 10px 0 14px; }
+.onboard-steps { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.onboard-steps li { display: flex; gap: 12px; align-items: flex-start; }
+.onboard-steps .n {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; color: var(--green); border: 1px solid #1d5a45; margin-top: 1px;
+}
+.onboard-in .row { margin-top: 14px; }
 .ok-t { color: var(--green); }
 .bad-t { color: var(--red); }
 .pend-t { color: var(--amber); }

@@ -6,14 +6,22 @@ Works in a phone browser, installs as a PWA, and keeps working with no network.
 ## Run
 
 ```
-npm start          # app + ledger on http://localhost:8123  (PORT, DATA_DIR optional)
-npm test           # unit, ledger, registry and API tests (Node 20+, no dependencies)
+npm start          # site, app, console and ledger on http://localhost:8123
+npm test           # unit, ledger, registry, cache and API tests (Node 20+)
 ```
+
+- `/` — the website, which links into the app
+- `/app.html` — the farmer app (the PWA `start_url`)
+- `/console.html` — the operator and verifier console
+
+`PORT`, `DATA_DIR`, `ADMIN_TOKEN` and `REDIS_URL` are optional. Caching is read-through Redis with a
+few-second TTL on the public registry views; if Redis is missing or dies, every request falls through
+to the registry and the app keeps working (`REDIS_URL=off` disables it explicitly).
 
 The server prints an operator token on start (or set `ADMIN_TOKEN`). To load a demo: start with an empty data folder, then
 `ADMIN_TOKEN=<token> node scripts/seed.mjs http://localhost:8123` and open `/console.html`.
 
-GNSS needs a secure origin: `localhost` works for testing; real phones need HTTPS.
+GNSS and the service worker need a secure origin: `localhost` works for testing; real phones need HTTPS.
 
 ## What it does
 
@@ -44,7 +52,7 @@ GNSS needs a secure origin: `localhost` works for testing; real phones need HTTP
 |---|---|---|
 | Measure | Farmer walks the plot boundary, records planting, then a survival sample count. Every record is GNSS-stamped and signed on the phone. | Quality score per fix; all three records must carry the same key and farm. |
 | Check | The registry re-verifies every hash and signature, then runs automatic checks. | Overlap with any other registered plot, trees per hectare, sample size, impossible counts, fixes outside the plot, survival suspiciously perfect. Hard failures are rejected; soft ones go to manual review. |
-| Verify | An independent verifier reviews the evidence on the console and signs approve or reject. | Only keys on the operator's approved list count. A farmer cannot verify their own plot. A flagged submission cannot be approved without a written reason. The signature is stored. |
+| Verify | An independent verifier reviews the evidence on the console, checks recent VIIRS fire detections near the plot, and signs approve or reject. | Only keys on the operator's approved list count. A farmer cannot verify their own plot. A flagged submission cannot be approved without a written reason. The signature is stored. The fire check is normalised and signed into the decision, so it cannot be added or changed afterwards. |
 | Issue | Approval issues a range of unique serial numbers (`PL-NG-00000001`...). | One issuance per submission. Serials are contiguous and never reused; the reconcile page checks this. |
 | Sell | A buyer buys units first-in-first-out from issued lots. | Sold units cannot be sold again. Retiring an order records who claimed it and blocks a second claim. |
 | Pay | Each sale is split in whole kobo (largest remainder, always sums exactly) and payouts go to farmers in proportion to their units. | One payout number per farmer key. Changing the number holds payouts for 72 hours. A first payout is capped at ₦20,000 with the rest held. Invalid numbers hold the money. Idempotency keys prevent paying twice. |
@@ -66,12 +74,15 @@ Operator routes (submissions queue, orders, retirement, releases, adding verifie
 - **The ledger is tamper-evident, and becomes immutable only when its head is published somewhere the operator cannot edit** (a blockchain memo, a public post). That step is not built. Anchoring the head on Solana is the natural next one.
 - **The anchor endpoint is unauthenticated** (limited to 30 writes/min per IP). Production needs authentication and quotas.
 - **The signing key lives in the browser's local storage.** Clearing site data loses it; there is no key backup yet. Exports contain the public key only.
+- **The fire check is evidence, not proof.** VIIRS detects a 375 m pixel; cloud, small fires and night-time timing can hide or invent activity, and a detection near a plot does not say whose land burned. No detection is not proof that nothing burned. It informs the verifier; it does not gate approval.
 - Map tiles come from OpenStreetMap, fine for a demo; production use needs your own tile provider. Tiles you have viewed are cached for offline use.
-- Not built: NDVI or other satellite vegetation data, multi-device sync, user accounts, real mobile-money integration, the fire-hotspot check described in the next steps.
+- The Redis cache holds public registry views for a few seconds. It is never a source of truth: writes invalidate it, and the server runs uncached when Redis is absent.
+- Not built: NDVI or other satellite vegetation data, multi-device sync, user accounts, real mobile-money integration.
 
 ## Next steps
 
-- Add a VIIRS fire-hotspot check (ArcGIS Living Atlas feed) so the verifier sees recent fires near a plot before approving.
+- Add a buffer pool and reversal events, so fire or clearing after issuance cancels serials instead of leaving credits outstanding.
+- Record Article 6 authorisation and corresponding-adjustment flags against issuances, so a unit cannot be claimed both domestically and by a foreign buyer.
 - Publish the registry log head on Solana so history cannot be rewritten quietly.
 - Replace the sandbox payout with a licensed mobile-money partner.
 - Move the species and conversion factors to a registered methodology.

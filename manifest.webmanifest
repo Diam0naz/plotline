@@ -2,7 +2,7 @@
   "name": "Plotline",
   "short_name": "Plotline",
   "description": "Offline-first GNSS farm mapping, scouting and verifiable records for smallholder farmers.",
-  "start_url": "./index.html",
+  "start_url": "./app.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

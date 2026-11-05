@@ -123,7 +123,7 @@ test('API rate-limits bursts of writes', async () => {
 
 test('static files: app is served, server code and data are not', async () => {
   await withServer(async (base) => {
-    for (const p of ['/', '/index.html', '/app.js', '/core.js', '/sw.js', '/manifest.webmanifest', '/vendor/leaflet/leaflet.js']) {
+    for (const p of ['/', '/index.html', '/app.html', '/site.css', '/app.js', '/core.js', '/sw.js', '/manifest.webmanifest', '/vendor/leaflet/leaflet.js']) {
       assert.equal((await fetch(base + p)).status, 200, p);
     }
     const idx = await fetch(base + '/');
