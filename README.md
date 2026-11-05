@@ -19,10 +19,10 @@ GNSS needs a secure origin: `localhost` works for testing; real phones need HTTP
 
 | Tab | Feature |
 |---|---|
-| Farm | Walk the boundary, drop corner points, get area and perimeter. Fixes worse than 50 m are refused. |
+| Farm | Walk the boundary, mark corner points, get area and perimeter. Fixes worse than 50 m are refused. |
+| Farm › Seed & fertiliser | Seed and fertiliser quantities from the walked area. Rates are editable starting points, not recommendations. |
 | Scout | Geotagged, signed field reports (pest, disease, water stress, weeds, nutrient, healthy) with a GNSS quality score. |
-| Heat map | Heat map of reports and outbreak alerts (3+ reports of one problem within 1 km in 14 days). Reports with quality under 50 are left out. |
-| Inputs | Seed and fertiliser quantities from the walked area. Rates are editable starting points, not recommendations. |
+| Scout › Outbreaks | Heat map of reports and outbreak alerts (3+ reports of one problem within 1 km in 14 days). Reports with quality under 50 are left out. |
 | Trees | Record planting and a survival check, send them for verification, see status and payouts. |
 | Records | Seal records into a batch (Merkle root), publish it to the ledger, and verify any record. |
 

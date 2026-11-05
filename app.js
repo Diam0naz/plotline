@@ -19,7 +19,7 @@ const TYPES = {
 const FLAG_TEXT = {
   low_accuracy: 'Low accuracy (worse than 50 m)',
   moderate_accuracy: 'Moderate accuracy (worse than 20 m)',
-  clock_drift: 'Phone clock differs from the GNSS time',
+  clock_drift: 'Phone clock differs from the GPS time',
   impossible_jump: 'Moved implausibly fast since the last fix',
   suspicious_precision: 'Coordinates are unusually round',
   outside_boundary: 'Outside the saved farm boundary',
@@ -67,15 +67,16 @@ let watchId = null;
 
 function geoMsg(e) {
   if (e && e.code === 1) return 'Location permission was denied. Allow it in your browser settings.';
-  if (e && e.code === 3) return 'Timed out waiting for a GNSS fix. Try again outdoors.';
-  return 'Could not get a GNSS fix.';
+  if (e && e.code === 3) return 'Timed out waiting for a GPS fix. Try again outdoors.';
+  return 'Could not get a GPS fix.';
 }
 function updateGpsChip() {
   const chip = $('#gps-chip');
-  if (!lastFix) { chip.className = 'chip'; chip.textContent = 'GNSS idle'; return; }
+  if (!lastFix) { chip.className = 'chip'; chip.hidden = true; return; }
   const a = lastFix.acc;
   chip.className = 'chip ' + (a <= 20 ? 'good' : a <= 50 ? 'ok' : 'bad');
-  chip.textContent = `GNSS ±${Math.round(a)} m`;
+  chip.hidden = false;
+  chip.textContent = `GPS ±${Math.round(a)} m`;
 }
 function startGps() {
   if (!('geolocation' in navigator)) { toast('This browser has no location support'); return false; }
@@ -196,17 +197,19 @@ const walk = { on: false, pts: [], done: false };
 function walkStats() {
   const el = $('#walk-stats');
   const n = walk.pts.length;
-  const acc = lastFix ? ` · GNSS ±${Math.round(lastFix.acc)} m` : '';
-  if (!walk.on && !walk.done) { el.textContent = 'Walk the edge of your farm and drop a point at each corner.'; return; }
+  el.textContent = '';
+  if (!walk.on && !walk.done) return;
   const area = n >= 3 ? C.m2ToHa(C.polygonAreaM2(walk.pts)).toFixed(3) + ' ha' : '—';
   const per = n >= 2 ? Math.round(C.perimeterM(walk.pts)) + ' m' : '—';
-  el.textContent = `Points: ${n} · Area: ${area} · Perimeter: ${per}${acc}`;
+  el.textContent = `${n} point${n === 1 ? '' : 's'} · ${area} · perimeter ${per}`;
 }
 function walkButtons() {
-  $('#walk-btn').textContent = walk.on ? 'Cancel walk' : 'Start boundary walk';
-  $('#drop-btn').disabled = !walk.on;
-  $('#undo-btn').disabled = !walk.on || walk.pts.length === 0;
-  $('#finish-btn').disabled = !walk.on || walk.pts.length < 3;
+  const naming = !$('#farm-form').classList.contains('hidden');
+  const busy = walk.on || walk.done || naming;
+  $('#walk-idle').classList.toggle('hidden', busy);
+  $('#walk-tools').classList.toggle('hidden', !walk.on);
+  $('#undo-btn').disabled = walk.pts.length === 0;
+  $('#finish-btn').disabled = walk.pts.length < 3;
 }
 function drawWalk() {
   if (!farmMap) return;
@@ -231,19 +234,20 @@ function onLiveFix() {
 }
 
 $('#walk-btn').addEventListener('click', () => {
-  if (walk.on) {
-    walk.on = false; walk.pts = []; walk.done = false; centered = false;
-    stopGps(); $('#farm-form').classList.add('hidden');
-  } else {
-    if (!startGps()) return;
-    walk.on = true; walk.pts = []; walk.done = false; centered = false;
-    $('#farm-form').classList.add('hidden');
-    toast('Walk to the first corner, then tap Drop point');
-  }
+  if (!startGps()) return;
+  walk.on = true; walk.pts = []; walk.done = false; centered = false;
+  $('#farm-form').classList.add('hidden');
+  toast('Walk to the first corner, then tap Mark corner');
+  walkButtons(); walkStats(); drawWalk();
+});
+$('#walk-cancel').addEventListener('click', () => {
+  walk.on = false; walk.pts = []; walk.done = false; centered = false;
+  stopGps();
+  $('#farm-form').classList.add('hidden');
   walkButtons(); walkStats(); drawWalk();
 });
 $('#drop-btn').addEventListener('click', () => {
-  if (!lastFix) return toast('Waiting for a GNSS fix…');
+  if (!lastFix) return toast('Waiting for a GPS fix…');
   if (lastFix.acc > 50) return toast(`Fix is too weak (±${Math.round(lastFix.acc)} m). Wait for it to improve.`);
   if (lastFix.acc > 20) toast(`Point saved with ±${Math.round(lastFix.acc)} m accuracy`);
   walk.pts.push({ lat: lastFix.lat, lon: lastFix.lon, acc: lastFix.acc });
@@ -295,11 +299,14 @@ function renderFarmList() {
   const el = $('#farm-list');
   if (!S.farms.length) { el.innerHTML = '<div class="muted">No farms yet. Walk your boundary to add one.</div>'; return; }
   const act = activeFarm();
-  el.innerHTML = S.farms.map((f) => `
+  el.innerHTML = S.farms.map((f) => {
+    const on = act && act.id === f.id;
+    return `
     <button class="item" data-farm="${esc(f.id)}">
       <span>${esc(f.name)}<br><span class="sub">${esc(C.CROPS[f.crop]?.label || f.crop)} · ${C.m2ToHa(f.areaM2).toFixed(3)} ha</span></span>
-      <span class="badge ${act && act.id === f.id ? 'good' : ''}">${act && act.id === f.id ? 'active' : 'select'}</span>
-    </button>`).join('');
+      ${on ? '<span class="badge good">active</span>' : ''}
+    </button>`;
+  }).join('');
   $$('#farm-list [data-farm]').forEach((b) => b.addEventListener('click', () => {
     S.activeFarm = b.dataset.farm; save();
     const f = farmById(S.activeFarm);
@@ -318,7 +325,7 @@ $('#scout-btn').addEventListener('click', async () => {
   const f = activeFarm();
   if (!f) return;
   const btn = $('#scout-btn');
-  btn.disabled = true; btn.textContent = 'Getting GNSS fix…';
+  btn.disabled = true; btn.textContent = 'Getting a GPS fix…';
   try {
     const fix = await getFix();
     const rec = await addRecord('scout', f, fix, {
@@ -336,7 +343,7 @@ $('#scout-btn').addEventListener('click', async () => {
     $('#scout-note').value = '';
     drawFarmMap(); renderAll();
   } catch (err) { toast(err.message); }
-  btn.disabled = false; btn.textContent = 'Capture location and sign report';
+  btn.disabled = false; btn.textContent = 'Save report';
 });
 
 // ---------- heat map & alerts ----------
@@ -430,6 +437,10 @@ function renderTrees() {
   $('#tr-plant-btn').disabled = !f;
   $('#tr-surv-btn').disabled = !f || !ev.planting;
   $('#tr-send-btn').disabled = !ev.hashes || !!ev.sent;
+  // One step at a time: the next form appears only when the previous one is saved.
+  $('#tr-step-1').classList.toggle('hidden', !!ev.planting);
+  $('#tr-step-2').classList.toggle('hidden', !ev.planting || !!ev.survival);
+  $('#tr-step-3').classList.toggle('hidden', !ev.survival || !!ev.sent);
   $('#tr-msisdn').value = $('#tr-msisdn').value || S.msisdn || '';
   $('#tr-outbox').textContent = S.outbox.length ? `${S.outbox.length} submission waiting for a connection. It will send automatically.` : '';
 
@@ -461,7 +472,7 @@ async function refreshTrees() {
 async function captureTreeRecord(kind, data, btn, label) {
   const f = activeFarm();
   if (!f) return;
-  btn.disabled = true; btn.textContent = 'Getting GNSS fix…';
+  btn.disabled = true; btn.textContent = 'Getting a GPS fix…';
   try {
     const fix = await getFix();
     const rec = await addRecord(kind, f, fix, data);
@@ -475,13 +486,13 @@ const wholeNumber = (id) => { const v = Number($(id).value); return Number.isInt
 $('#tr-plant-btn').addEventListener('click', () => {
   const count = wholeNumber('#tr-count');
   if (!(count >= 1)) return toast('Enter how many trees you planted (a whole number)');
-  captureTreeRecord('planting', { count, species: $('#tr-species').value }, $('#tr-plant-btn'), 'Capture location and sign planting');
+  captureTreeRecord('planting', { count, species: $('#tr-species').value }, $('#tr-plant-btn'), 'Save planting');
 });
 $('#tr-surv-btn').addEventListener('click', () => {
   const sampleSize = wholeNumber('#tr-sample'), alive = wholeNumber('#tr-alive');
   if (!(sampleSize >= 1)) return toast('Enter how many trees you counted');
   if (!(alive >= 0) || alive > sampleSize) return toast('Alive trees cannot be more than the trees counted');
-  captureTreeRecord('survival', { sampleSize, alive }, $('#tr-surv-btn'), 'Capture location and sign survival check');
+  captureTreeRecord('survival', { sampleSize, alive }, $('#tr-surv-btn'), 'Save survival check');
 });
 
 $('#tr-send-btn').addEventListener('click', async () => {
@@ -521,7 +532,7 @@ $('#tr-refresh').addEventListener('click', refreshTrees);
 // ---------- records, batches, verification ----------
 function renderRecords() {
   const pending = S.records.filter((r) => !r.batchId).length;
-  $('#rec-summary').innerHTML = `${S.records.length} records · ${pending} pending · ${S.batches.length} batches<br>Signing key: <code>${esc(S.fp || '—')}</code>`;
+  $('#rec-summary').textContent = `${S.records.length} records · ${pending} waiting to be sealed · ${S.batches.length} batches`;
   $('#seal-btn').disabled = pending === 0;
   $('#batch-list').innerHTML = S.batches.length
     ? [...S.batches].reverse().map((b) => `<div class="item"><span>Batch ${esc(b.id)} · ${b.count} record${b.count === 1 ? '' : 's'}<br><span class="sub">root <code>${esc(short(b.root, 16))}</code> · ${esc(fmtTime(b.ts))}</span></span>${b.anchor ? `<span class="badge good">ledger #${b.anchor.seq}</span>` : '<span class="badge ok">not anchored</span>'}</div>`).join('')
@@ -682,25 +693,33 @@ $('#demo-btn').addEventListener('click', async () => {
 });
 
 // ---------- tabs & init ----------
+// Four bottom tabs. Heat map is part of Scout and the input calculator part of Farm.
+const PARENT = { inputs: 'farm', heat: 'scout' };
 function renderAll() {
   renderFarmList(); renderScoutHeader(); renderRecords(); prefillInputs(); renderTrees();
   if ($('#tab-heat').classList.contains('active')) renderHeat();
 }
 function showTab(name) {
   $$('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
-  $$('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+  const parent = PARENT[name] || name;
+  $$('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === parent));
+  $$('[data-sub]').forEach((b) => b.classList.toggle('on', b.dataset.sub === name));
   if (name === 'farm' && farmMap) setTimeout(() => farmMap.invalidateSize(), 50);
   if (name === 'heat') { setTimeout(() => { if (heatMap) heatMap.invalidateSize(); renderHeat(); }, 50); }
+  if (name === 'inputs') calcInputs();
   if (name === 'records') renderRecords();
   if (name === 'trees') refreshTrees();
   window.scrollTo(0, 0);
 }
 $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$$('[data-sub]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.sub)));
 
 function netChip() {
   const c = $('#net-chip');
-  c.className = 'chip ' + (navigator.onLine ? 'good' : 'ok');
-  c.textContent = navigator.onLine ? 'online' : 'offline';
+  // Only speak up when there is something to say.
+  c.hidden = navigator.onLine;
+  c.className = 'chip ok';
+  c.textContent = 'offline';
 }
 window.addEventListener('online', () => { netChip(); publishBatches(); flushOutbox(); });
 window.addEventListener('offline', netChip);
