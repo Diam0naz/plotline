@@ -48,6 +48,29 @@ $('#token').addEventListener('change', () => { try { sessionStorage.setItem('plo
 $('#token').value = token();
 $('#reload').addEventListener('click', loadAll);
 
+async function registerProject() {
+  const body = {
+    name: $('#prj-name').value.trim(),
+    proponent: $('#prj-proponent').value.trim(),
+    boundaryHash: $('#prj-boundary').value.trim() || null,
+    ecoregion: $('#prj-ecoregion').value.trim() || null,
+    methodologyId: $('#prj-methodology').value.trim() || 'CURRENT',
+    creditingStart: $('#prj-start').value,
+    creditingEnd: $('#prj-end').value,
+    additionality: $('#prj-additionality').value.trim(),
+    landUsePrior: $('#prj-tenure').value,
+    fpicRef: $('#prj-fpic').value.trim() || null,
+    validationRef: $('#prj-validation').value.trim(),
+  };
+  const r = await api('projects', { method: 'POST', body });
+  if (r.ok) {
+    toast('Project registered: ' + r.json.project.id);
+    loadAll();
+  } else {
+    fail(r);
+  }
+}
+
 $('#vreg').addEventListener('click', async () => {
   const r = await api('verifiers', { method: 'POST', body: { id: $('#vid').value.trim(), pub: V.keys.pub } });
   r.ok ? toast('Registered. This browser can now sign decisions.') : fail(r);

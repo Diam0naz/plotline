@@ -78,6 +78,21 @@
     <div class="card"><h2>Farmers</h2><div id="farmers" class="list"></div></div>
   </section>
 
+  <section id="p-register" class="panel">
+    <div class="card stack">
+      <h2>Register a new project</h2>
+      <div class="row"><label>Project name <input id="prj-name" maxlength="80"></label><label>Proponent <input id="prj-proponent" maxlength="80"></label></div>
+      <div class="row"><label>Boundary hash (64 hex, optional) <input id="prj-boundary" maxlength="64"></label><label>Ecoregion (optional) <input id="prj-ecoregion" maxlength="80"></label></div>
+      <div class="row"><label>Methodology ID <input id="prj-methodology" value="CURRENT"></label><label>Crediting start <input id="prj-start" type="date"></label></div>
+      <div class="row"><label>Crediting end <input id="prj-end" type="date"></label></div>
+      <div class="row"><label>Additionality (20-600 chars) <textarea id="prj-additionality" rows="3"></textarea></label></div>
+      <div class="row"><label>Land use prior <select id="prj-tenure"><option value="owned">owned</option><option value="customary">customary</option><option value="lease">lease</option><option value="community">community</option><option value="public">public</option></select></label></div>
+      <div class="row"><label>Validation ref <input id="prj-validation" maxlength="120"></label><label>FPIC ref (optional) <input id="prj-fpic" maxlength="120"></label></div>
+      <button id="prj-submit" class="primary">Register project</button>
+      <div id="prj-msg" class="muted small"></div>
+    </div>
+  </section>
+
   <section id="p-log" class="panel">
     <div class="card stack">
       <h2>Public log, checked in your browser</h2>
