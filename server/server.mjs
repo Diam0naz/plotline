@@ -148,6 +148,13 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const c = registry.certificate(m[1]);
       return c ? send(res, 200, c) : send(res, 404, { error: 'no retirement certificate for this order' });
     }
+    if (get && path === '/api/registry/projects') return send(res, 200, await cached('projects', 3, () => ({ projects: registry.projectsList() })));
+    if (get && path === '/api/registry/retirements') return send(res, 200, await cached('retirements', 3, () => ({ retirements: registry.retirements() })));
+    m = path.match(/^\/api\/registry\/serial\/(PL-NG-\d{8})$/);
+    if (get && m) {
+      const info = registry.serialInfo(m[1]);
+      return info ? send(res, 200, info) : send(res, 404, { error: 'serial not issued by this registry' });
+    }
     m = path.match(/^\/api\/registry\/farmer\/([^/]+)$/);
     if (get && m) {
       if (!FP.test(m[1])) return send(res, 400, { error: 'farmer key must be 16 hex characters' });
@@ -192,6 +199,13 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const evidence = await cached(key, 60, async () =>
         cleanFireEvidence(await fireCheck({ lat, lon, radiusKm, days, now })) ?? { status: 'unavailable', error: 'bad_result' });
       return send(res, 200, evidence);
+    }
+    if (post && path === '/api/registry/projects') {
+      const data = await jsonBody(req, res, 4096);
+      if (data === undefined) return;
+      const result = registry.registerProject(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 201);
     }
     if (get && path === '/api/registry/submissions') {
       return send(res, 200, { submissions: [...registry.subs.values()].map((x) => registry.publicSub(x)).reverse() });

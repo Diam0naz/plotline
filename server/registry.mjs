@@ -16,10 +16,11 @@ import { allocate, maskMsisdn, mockMobileMoney, normalizeMsisdn, splitKobo } fro
 
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 const HOUR = 3600_000;
-export const DEFAULT_PRICE_KOBO = 30_000; // N300 per verified tree-year: demo price
+export const DEFAULT_PRICE_KOBO = 1_200_000; // N12,000 per tCO2e credit: demo price
 
 const fail = (code, text) => ({ ok: false, error: code, message: text });
 const serial = (n) => `${SERIAL_PREFIX}-${String(n).padStart(8, '0')}`;
+const HEX64 = /^[0-9a-f]{64}$/;
 
 export class Registry {
   constructor({ file, privateFile = null, verifiers = {}, now = () => new Date(), priceKobo = DEFAULT_PRICE_KOBO }) {
@@ -47,6 +48,7 @@ export class Registry {
 
   reset() {
     this.subs = new Map();
+    this.projects = new Map();
     this.farmers = new Map();
     this.msisdnOwner = new Map();
     this.issuances = [];
@@ -61,6 +63,9 @@ export class Registry {
   apply(e) {
     const d = e.data;
     switch (e.type) {
+      case 'project_registered':
+        this.projects.set(d.id, { ...d, registeredAt: e.ts });
+        break;
       case 'submitted': {
         this.subs.set(d.subId, { ...d, status: 'pending', receivedAt: e.ts, seq: e.seq });
         let f = this.farmers.get(d.fp);
@@ -140,11 +145,62 @@ export class Registry {
     return e;
   }
 
+  // ---------- 0. project registration: what the credits belong to ----------
+  registerProject({
+    name, proponent, boundaryHash = null, ecoregion = null, methodologyId, creditingStart, creditingEnd,
+    additionality, landUsePrior, tenure, fpicRef = null, validationRef = null,
+  }) {
+    const method = methodologyById(methodologyId ?? CURRENT_METHODOLOGY_ID);
+    if (!method) return fail('unknown_methodology', 'Unknown methodology version');
+    const text = (v, lo, hi) => String(v ?? '').trim().slice(0, hi);
+    const pname = text(name, 2, 80);
+    const prop = text(proponent, 2, 80);
+    if (pname.length < 2) return fail('bad_name', 'Give the project a name (2-80 characters)');
+    if (prop.length < 2) return fail('bad_proponent', 'Name the project proponent (2-80 characters)');
+    if (boundaryHash !== null && !HEX64.test(String(boundaryHash))) return fail('bad_boundary', 'boundaryHash must be 64 lowercase hex characters');
+    const add = text(additionality, 20, 600);
+    if (add.length < 20) return fail('additionality_required', 'Explain why the activity is additional (20-600 characters)');
+    const prior = text(landUsePrior, 2, 200);
+    if (prior.length < 2) return fail('land_use_required', 'Describe the land use before the activity');
+    if (!['owned', 'customary', 'lease', 'community', 'public'].includes(tenure)) {
+      return fail('bad_tenure', 'tenure must be owned, customary, lease, community or public');
+    }
+    const start = new Date(creditingStart);
+    const end = new Date(creditingEnd);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      return fail('bad_crediting_period', 'creditingEnd must be a date after creditingStart');
+    }
+    if (text(validationRef, 2, 120).length < 2) return fail('validation_required', 'Record the validation reference');
+
+    const id = `PRJ-${String(this.projects.size + 1).padStart(4, '0')}`;
+    this.emit('project_registered', {
+      id, name: pname, proponent: prop, boundaryHash: boundaryHash ?? null,
+      ecoregion: text(ecoregion, 2, 80) || null,
+      methodology: method.id, baselineId: method.baseline.id,
+      creditingStart: start.toISOString(), creditingEnd: end.toISOString(),
+      additionality: add, landUsePrior: prior, tenure,
+      fpicRef: text(fpicRef, 2, 120) || null, validationRef: text(validationRef, 2, 120),
+    });
+    return { ok: true, project: this.projects.get(id) };
+  }
+
+  projectsList() {
+    return [...this.projects.values()].map((p) => ({
+      id: p.id, name: p.name, proponent: p.proponent, methodology: p.methodology, baselineId: p.baselineId,
+      creditingStart: p.creditingStart, creditingEnd: p.creditingEnd, tenure: p.tenure,
+      validationRef: p.validationRef, additionality: p.additionality, landUsePrior: p.landUsePrior,
+      fpicRef: p.fpicRef, boundaryHash: p.boundaryHash, registeredAt: p.registeredAt,
+    }));
+  }
+
   // ---------- 1. a farmer's evidence arrives ----------
-  async submit({ records, pub, msisdn, methodologyId }) {
+  async submit({ records, pub, msisdn, methodologyId, projectId = null }) {
     // A submission is checked against a named methodology version, and keeps it for issuance.
     const method = methodologyById(methodologyId ?? CURRENT_METHODOLOGY_ID);
     if (!method) return fail('unknown_methodology', 'Unknown methodology version');
+    const project = projectId ? this.projects.get(projectId) : null;
+    if (projectId && !project) return fail('unknown_project', 'No such project');
+    if (project && project.methodology !== method.id) return fail('project_methodology_mismatch', 'The project was registered under a different methodology version');
     if (!Array.isArray(records) || records.length !== 3 || !pub || typeof pub !== 'object') {
       return fail('bad_shape', 'Send the farm, planting and survival records with your public key');
     }
@@ -175,6 +231,11 @@ export class Registry {
     const planting = bodies[1].data ?? {};
     const survival = bodies[2].data ?? {};
     const checks = runChecks({ polygon, planting, survival, bodies, others, method });
+    // Credits are tonnes, not trees: convert the verified activity and round down (conservative).
+    const credits = Math.floor((checks.estAlive * method.kgCO2ePerTreeYear) / 1000);
+    if (!checks.hard.length && credits < 1) {
+      checks.hard.push({ code: 'below_one_tonne', text: 'This plot does not reach one tonne of CO2e under this methodology' });
+    }
 
     const num = normalizeMsisdn(msisdn);
     const nkey = num && this.msisdnKey(num);
@@ -187,8 +248,9 @@ export class Registry {
     const base = {
       subId, fp, pub, plotKey, farmId: bodies[0].farmId, farmName: bodies[0].data?.name ?? null, polygon,
       recordHashes: records.map((r) => r.hash), msisdnKey: nkey || null, masked: num ? maskMsisdn(num) : null, checks,
-      units: checks.estAlive, trees: planting.count, sample: survival.sampleSize, alive: survival.alive,
+      units: credits, activityUnits: checks.estAlive, trees: planting.count, sample: survival.sampleSize, alive: survival.alive,
       methodology: method.id, methodologyVersion: method.version, baselineId: method.baseline.id,
+      projectId: project?.id ?? null,
     };
     if (checks.hard.length) {
       this.emit('rejected', { ...base, reason: checks.hard });
@@ -240,7 +302,8 @@ export class Registry {
       bufferUnits, bufferFrom: bufferUnits ? saleableTo + 1 : null, bufferTo: bufferUnits ? to : null,
       serialFrom: serial(from), serialTo: serial(to),
       methodology: method.id, methodologyVersion: method.version, baselineId: method.baseline.id,
-      kgCO2e: s.units * method.kgCO2ePerTreeYear,
+      projectId: s.projectId ?? null, vintage: new Date(s.receivedAt).getUTCFullYear(),
+      activityUnits: s.activityUnits ?? s.trees, kgCO2e: s.units * 1000,
     });
     return this.issuances[this.issuances.length - 1];
   }
@@ -384,14 +447,24 @@ export class Registry {
     return {
       title: 'Retirement certificate (SIMULATED: not a registered carbon credit)',
       orderId, retiredFor: o.retired.by, reason: o.retired.reason, retiredAt: o.retired.at,
-      units: o.units, unit: method.unit, methodology: method.id, methodologyVersion: method.version,
-      baselineId: method.baseline.id, tCO2eDemo: (o.units * method.kgCO2ePerTreeYear) / 1000,
+      units: o.units, unit: method.unit, creditUnit: 'tCO2e', methodology: method.id, methodologyVersion: method.version,
+      baselineId: method.baseline.id, tCO2e: o.units,
+      projectIds: [...new Set(issued.map((i) => i.projectId).filter(Boolean))],
+      vintages: [...new Set(issued.map((i) => i.vintage).filter(Boolean))],
+      registry: { name: 'Plotline demo registry', serialPrefix: SERIAL_PREFIX, logHead: this.log.head() },
+      claim: {
+        type: 'voluntary offset retirement (demo)',
+        statement: `The registry has retired ${o.units} serialised tCO2e credits on behalf of ${o.retired.by}. These serial numbers are cancelled and will not be sold again.`,
+        limits: 'Demo registry only: the credits are simulated and are not recognised under any compliance or voluntary standard. No corresponding adjustment is claimed unless the certificate states one.',
+      },
       serialFrom: o.serialFrom, serialTo: o.serialTo,
       lots: o.lots.map((l) => {
         const iss = this.issuances.find((i) => i.id === l.issuanceId);
         return {
           issuance: l.issuanceId, serialFrom: l.serialFrom, serialTo: l.serialTo, units: l.units,
           methodology: iss?.methodology ?? null, baselineId: iss?.baselineId ?? null,
+          projectId: iss?.projectId ?? null, vintage: iss?.vintage ?? null,
+          activityUnits: iss?.activityUnits ?? null,
           authorization: iss?.authorization ?? null,
         };
       }),
@@ -404,6 +477,44 @@ export class Registry {
     };
   }
 
+  // ---------- 5. public verification: look up one serial or the retirement ledger ----------
+  serialInfo(input) {
+    const m = /^PL-NG-(\d{8})$/.exec(String(input ?? '').trim().toUpperCase());
+    if (!m) return null;
+    const n = Number(m[1]);
+    const iss = this.issuances.find((i) => n >= i.from && n <= i.to);
+    if (!iss) return null;
+    const cancellation = (iss.cancellations ?? []).find((c) => n >= c.from && n <= c.to);
+    const inBuffer = iss.bufferFrom != null && n >= iss.bufferFrom && n <= iss.bufferTo;
+    let status = 'available';
+    if (cancellation) status = 'cancelled';
+    else if (inBuffer) status = 'buffer';
+    else if (n < iss.next) status = 'sold';
+    const order = status === 'sold'
+      ? [...this.orders.values()].find((o) => o.lots.some((l) => l.issuanceId === iss.id && n >= l.from && n <= l.to))
+      : null;
+    return {
+      serial: serial(n), status, creditUnit: 'tCO2e', kgCO2e: 1000,
+      issuanceId: iss.id, projectId: iss.projectId ?? null, vintage: iss.vintage ?? null,
+      methodology: iss.methodology ?? null, baselineId: iss.baselineId ?? null, farmName: iss.farmName,
+      buffer: inBuffer, cancellation: cancellation ? { reason: cancellation.reason, at: cancellation.at } : null,
+      sale: order ? { orderId: order.orderId, retired: order.retired ?? null } : null,
+      authorization: iss.authorization ?? null,
+    };
+  }
+
+  retirements() {
+    return [...this.orders.values()].filter((o) => o.retired).map((o) => {
+      const issued = o.lots.map((l) => this.issuances.find((i) => i.id === l.issuanceId)).filter(Boolean);
+      return {
+        orderId: o.orderId, buyer: o.buyer, units: o.units, tCO2e: o.units, retiredFor: o.retired.by,
+        reason: o.retired.reason, retiredAt: o.retired.at, serialFrom: o.serialFrom, serialTo: o.serialTo,
+        projectIds: [...new Set(issued.map((i) => i.projectId).filter(Boolean))],
+        vintages: [...new Set(issued.map((i) => i.vintage).filter(Boolean))],
+      };
+    });
+  }
+
   // ---------- views ----------
   publicOrder(o) {
     return { orderId: o.orderId, buyer: o.buyer, units: o.units, totalKobo: o.totalKobo, split: o.split, serialFrom: o.serialFrom, serialTo: o.serialTo, soldAt: o.soldAt, retired: o.retired };
@@ -411,7 +522,8 @@ export class Registry {
 
   publicSub(s) {
     return {
-      subId: s.subId, status: s.status, farmName: s.farmName, farmerKey: s.fp, units: s.units, trees: s.trees,
+      subId: s.subId, status: s.status, farmName: s.farmName, farmerKey: s.fp, units: s.units, activityUnits: s.activityUnits ?? null, trees: s.trees,
+      projectId: s.projectId ?? null,
       sample: s.sample, alive: s.alive, flags: s.checks.flags, hard: s.checks.hard, overlaps: s.checks.overlaps,
       areaHa: Math.round(s.checks.areaHa * 100) / 100, receivedAt: s.receivedAt, polygon: s.polygon,
       payoutTo: s.masked, issuanceId: s.issuanceId ?? null,
@@ -436,7 +548,7 @@ export class Registry {
   market() {
     const lots = this.issuances.map((i) => ({
       id: i.id, farmName: i.farmName, units: i.units, remaining: Math.max(0, (i.saleableTo ?? i.to) - i.next + 1),
-      bufferUnits: i.bufferUnits ?? 0, reversedUnits: i.reversed ?? 0,
+      bufferUnits: i.bufferUnits ?? 0, reversedUnits: i.reversed ?? 0, projectId: i.projectId ?? null, vintage: i.vintage ?? null,
       serialFrom: i.serialFrom, serialTo: i.serialTo,
       methodology: i.methodology ?? M.id, methodologyVersion: i.methodologyVersion ?? null,
       authorization: i.authorization ?? null,
@@ -444,7 +556,7 @@ export class Registry {
     return {
       priceKobo: this.priceKobo, available: this.available(),
       methodology: M.id, methodologyVersion: M.version, baselineId: M.baseline.id,
-      status: M.status, kgCO2ePerUnit: M.kgCO2ePerTreeYear, bufferPct: M.bufferPct,
+      status: M.status, creditUnit: 'tCO2e', unit: M.unit, kgCO2ePerCredit: 1000, kgCO2ePerTreeYear: M.kgCO2ePerTreeYear, bufferPct: M.bufferPct,
       methodologies: publicMethodologies(),
       lots, orders: [...this.orders.values()].map((o) => this.publicOrder(o)),
     };

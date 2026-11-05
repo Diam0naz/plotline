@@ -7,9 +7,14 @@
 
 export const CURRENCY = 'NGN';
 
+// A credit is one tonne of CO2e. Verified tree-years are the activity measurement; the methodology
+// converts them to credits. One serial number always means one tonne.
 const SHARED = {
   status: 'DEMO ASSUMPTIONS: not a registered methodology',
-  unit: 'verified tree-year',
+  unit: 'tCO2e credit',
+  activityUnit: 'verified tree-year',
+  creditUnit: 'tCO2e',
+  kgCO2ePerCredit: 1000,
   density: { minPerHa: 20, maxPerHa: 1600 },
   minSample: 10,
   minSampleShare: 0.1,

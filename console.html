@@ -58,13 +58,19 @@
       <div id="mk-sum" class="muted"></div>
       <div class="grid2">
         <label>Buyer<input id="buyer" value="Demo Buyer Ltd" maxlength="80"></label>
-        <label>Units (verified tree-years)<input id="units" type="number" min="1" step="1" value="50"></label>
+        <label>Credits (1 credit = 1 tCO₂e)<input id="units" type="number" min="1" step="1" value="10"></label>
       </div>
-      <button id="buy" class="primary">Buy units (simulated payment)</button>
+      <button id="buy" class="primary">Buy credits (simulated payment)</button>
       <div id="mk-msg"></div>
     </div>
+    <div class="card stack">
+      <h2>Public serial check</h2>
+      <p class="muted small">The same lookup a buyer or auditor can run without an account. One serial always means one tonne.</p>
+      <div class="row"><input id="serial" placeholder="PL-NG-00000001" maxlength="13"><button id="check-serial">Check serial</button></div>
+      <div id="serial-out"></div>
+    </div>
     <div class="card"><h2>Issued lots</h2><div id="lots" class="list"></div></div>
-    <div class="card"><h2>Orders</h2><div id="orders" class="list"></div></div>
+    <div class="card"><h2>Orders and retirements</h2><div id="orders" class="list"></div></div>
   </section>
 
   <section id="p-money" class="panel">

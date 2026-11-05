@@ -34,7 +34,7 @@ async function addVerifier(call) {
 
 async function submitAndApprove(call, verifier, opts = {}) {
   const farmer = await makeFarmer();
-  const sub = await makeSubmission(farmer, { polygon: square(9.9, 8.9, 100), ...opts });
+  const sub = await makeSubmission(farmer, { polygon: square(9.9, 8.9, 300), trees: 6000, sample: 60, alive: 51, ...opts });
   const s = await call('/api/submit', { method: 'POST', body: { ...sub, ...(opts.methodologyId ? { methodologyId: opts.methodologyId } : {}) } });
   assert.equal(s.status, 201, JSON.stringify(s.json));
   assert.equal(s.json.status, 'pending', JSON.stringify(s.json.checks));
@@ -61,7 +61,8 @@ test('methodology: each submission records its version and baseline', async () =
     assert.equal(current.issuance.methodology, 'DEMO-AGROFORESTRY-1');
     assert.equal(current.issuance.methodologyVersion, 2);
     assert.equal(current.issuance.baselineId, 'baseline:ng-agroforestry-demo-2026');
-    assert.equal(current.issuance.kgCO2e, current.issuance.units * 18, 'v2 uses its own factor');
+    assert.equal(current.issuance.kgCO2e, current.issuance.units * 1000, 'one credit is one tonne');
+    assert.equal(current.issuance.activityUnits, 5100, 'tree-years are kept as the activity measure');
 
     const market = await a.call('/api/registry/market');
     assert.equal(market.json.methodologyVersion, 2);
@@ -89,9 +90,9 @@ test('buffer and reversal: unsold serials are cancelled and the books still bala
     const verifier = await addVerifier(a.call);
     const { issuance } = await submitAndApprove(a.call, verifier);
 
-    assert.equal(issuance.units, 340);
-    assert.equal(issuance.bufferUnits, 34);
-    assert.equal((await a.call('/api/registry/market')).json.available, 306);
+    assert.equal(issuance.units, 91);
+    assert.equal(issuance.bufferUnits, 9);
+    assert.equal((await a.call('/api/registry/market')).json.available, 82);
 
     const reversed = await a.call('/api/registry/reverse', {
       method: 'POST', token: 'op', body: { issuanceId: issuance.id, units: 20, reason: 'Fire crossed the eastern boundary' },
@@ -101,10 +102,10 @@ test('buffer and reversal: unsold serials are cancelled and the books still bala
     assert.match(reversed.json.cancellation.serialFrom, /^PL-NG-\d{8}$/);
 
     const after = await a.call('/api/registry/market');
-    assert.equal(after.json.available, 286);
+    assert.equal(after.json.available, 62);
     const rec = (await a.call('/api/registry/reconcile')).json;
     assert.equal(rec.unitsReversed, 20);
-    assert.equal(rec.unitsBuffered, 34);
+    assert.equal(rec.unitsBuffered, 9);
     assert.equal(rec.unitsBalanced, true);
 
     assert.equal((await a.call('/api/registry/reverse', { method: 'POST', token: 'op', body: { issuanceId: issuance.id, units: 999, reason: 'Too many units' } })).json.error, 'insufficient_unsold');
@@ -117,8 +118,8 @@ test('buffer and reversal: unsold serials are cancelled and the books still bala
     aClosed = true;
     b = await boot(dir);
     const m2 = await b.call('/api/registry/market');
-    assert.equal(m2.json.available, 286);
-    assert.equal(m2.json.lots[0].bufferUnits, 34);
+    assert.equal(m2.json.available, 62);
+    assert.equal(m2.json.lots[0].bufferUnits, 9);
     assert.equal((await b.call('/api/registry/reconcile')).json.unitsReversed, 20);
   } finally {
     if (!aClosed) await a.close().catch(() => {});

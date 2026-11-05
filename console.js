@@ -78,7 +78,7 @@ function drawMap() {
 }
 function renderQueue() {
   $('#queue').innerHTML = subs.length
-    ? subs.map((s) => `<button class="item ${selected === s.subId ? 'sel' : ''}" data-id="${esc(s.subId)}"><span>${esc(s.farmName || 'Plot')} · ${s.units} tree-years<br><span class="sub">farmer ${esc(s.farmerKey)} · ${esc(when(s.receivedAt))}${s.flags.length || s.hard.length ? ' · ' + (s.flags.length + s.hard.length) + ' flag(s)' : ''}</span></span><span class="badge ${s.status === 'approved' ? 'good' : s.status === 'pending' ? 'ok' : 'bad'}">${s.status}</span></button>`).join('')
+    ? subs.map((s) => `<button class="item ${selected === s.subId ? 'sel' : ''}" data-id="${esc(s.subId)}"><span>${esc(s.farmName || 'Plot')} · ${s.units} tCO₂e<br><span class="sub">farmer ${esc(s.farmerKey)} · ${esc(when(s.receivedAt))}${s.flags.length || s.hard.length ? ' · ' + (s.flags.length + s.hard.length) + ' flag(s)' : ''}</span></span><span class="badge ${s.status === 'approved' ? 'good' : s.status === 'pending' ? 'ok' : 'bad'}">${s.status}</span></button>`).join('')
     : '<div class="muted">No submissions yet, or the operator token is missing.</div>';
   $$('#queue [data-id]').forEach((b) => b.addEventListener('click', () => select(b.dataset.id)));
 }
@@ -138,7 +138,9 @@ function renderDetail() {
       <dt>Area</dt><dd>${s.areaHa} ha</dd>
       <dt>Planted</dt><dd>${s.trees} trees</dd>
       <dt>Survival sample</dt><dd>${s.alive} alive of ${s.sample} counted</dd>
-      <dt>Estimated verified</dt><dd><b>${s.units}</b> tree-years</dd>
+      <dt>Project</dt><dd class="mono">${esc(s.projectId || 'unregistered')}</dd>
+      <dt>Verified activity</dt><dd>${s.activityUnits ?? '—'} tree-years</dd>
+      <dt>Estimated credits</dt><dd><b>${s.units}</b> tCO₂e (rounded down)</dd>
       <dt>Methodology</dt><dd>${esc(s.methodology || '—')}${s.methodologyVersion ? ' (v' + s.methodologyVersion + ')' : ''}</dd>
       <dt>Baseline</dt><dd class="mono">${esc(s.baselineId || '—')}</dd>
       <dt>Payout to</dt><dd>${esc(s.payoutTo || 'none')}</dd>
@@ -169,7 +171,7 @@ async function decide(s, decision) {
   const { sig } = await C.signBody(body, V.keys.priv);
   const r = await api('decide', { method: 'POST', body: { ...body, sig } });
   if (!r.ok) return fail(r);
-  toast(decision === 'approve' ? `Approved. ${r.json.issuance ? r.json.issuance.units + ' units issued (' + r.json.issuance.serialFrom + ' to ' + r.json.issuance.serialTo + ')' : ''}` : 'Rejected');
+  toast(decision === 'approve' ? `Approved. ${r.json.issuance ? r.json.issuance.units + ' tCO₂e credits issued (' + r.json.issuance.serialFrom + ' to ' + r.json.issuance.serialTo + ')' : ''}` : 'Rejected');
   loadAll();
 }
 
@@ -178,13 +180,15 @@ async function renderMarket() {
   const r = await api('market');
   if (!r.ok) return;
   const m = r.json;
-  $('#mk-sum').innerHTML = `Price <b>${naira(m.priceKobo)}</b> per verified tree-year (demo price) · <b>${m.available}</b> units available · ${esc(m.methodology)}<br><span class="small">${esc(m.status)}; ${m.kgCO2ePerUnit} kg CO₂e per unit is a placeholder.</span>`;
+  $('#mk-sum').innerHTML = `Price <b>${naira(m.priceKobo)}</b> per tCO₂e credit (demo price) · <b>${m.available}</b> credits available · ${esc(m.methodology)}<br><span class="small">${esc(m.status)}; 1 credit = 1 tCO₂e. ${m.kgCO2ePerTreeYear} kg CO₂e per verified tree-year is a demo factor.</span>`;
   $('#lots').innerHTML = m.lots.length
     ? m.lots.map((l) => {
         const auth = l.authorization;
         const note = [
           l.bufferUnits ? l.bufferUnits + ' held in buffer' : null,
           l.reversedUnits ? l.reversedUnits + ' reversed' : null,
+          l.projectId ? 'project ' + l.projectId : 'unregistered project',
+          l.vintage ? 'vintage ' + l.vintage : null,
           auth ? (auth.scope === 'international' ? 'Article 6: international' : 'Article 6: domestic') + ' · ' + auth.reference : null,
         ].filter(Boolean).join(' · ');
         return `<div class="item"><span>${esc(l.id)} · ${esc(l.farmName || 'Plot')}<br><span class="sub mono">${esc(l.serialFrom)} → ${esc(l.serialTo)}</span>${note ? `<br><span class="sub">${esc(note)}</span>` : ''}</span>
@@ -201,10 +205,10 @@ async function renderMarket() {
     rr.ok ? (toast('Authorisation recorded'), renderMarket()) : fail(rr);
   }));
   $('#orders').innerHTML = m.orders.length
-    ? [...m.orders].reverse().map((o) => `<div class="item"><span>${esc(o.orderId)} · ${esc(o.buyer)} · ${o.units} units · ${naira(o.totalKobo)}<br><span class="sub mono">${esc(o.serialFrom)} → ${esc(o.serialTo)}</span><br><span class="sub">Farmers ${naira(o.split.farmers)} · community ${naira(o.split.community)} · verifier ${naira(o.split.verifier)} · platform ${naira(o.split.platform)}</span></span>${o.retired ? `<button data-cert="${esc(o.orderId)}">Certificate</button>` : `<button data-retire="${esc(o.orderId)}">Retire</button>`}</div>`).join('')
+    ? [...m.orders].reverse().map((o) => `<div class="item"><span>${esc(o.orderId)} · ${esc(o.buyer)} · ${o.units} tCO₂e · ${naira(o.totalKobo)}<br><span class="sub mono">${esc(o.serialFrom)} → ${esc(o.serialTo)}</span><br><span class="sub">Farmers ${naira(o.split.farmers)} · community ${naira(o.split.community)} · verifier ${naira(o.split.verifier)} · platform ${naira(o.split.platform)}</span></span>${o.retired ? `<button data-cert="${esc(o.orderId)}">Certificate</button>` : `<button data-retire="${esc(o.orderId)}">Retire</button>`}</div>`).join('')
     : '<div class="muted">No orders yet.</div>';
   $$('[data-retire]').forEach((b) => b.addEventListener('click', async () => {
-    const who = prompt('Retire these units on behalf of:', $('#buyer').value);
+    const who = prompt('Retire these credits on behalf of:', $('#buyer').value);
     if (!who) return;
     const rr = await api('retire', { method: 'POST', body: { orderId: b.dataset.retire, beneficiary: who, reason: 'Voluntary claim (demo)' } });
     rr.ok ? (toast('Retired. Units can no longer be sold or claimed again.'), showCert(rr.json.certificate), renderMarket()) : fail(rr);
@@ -216,15 +220,25 @@ async function renderMarket() {
 }
 function showCert(c) {
   $('#cert-body').innerHTML = `<h2>${esc(c.title)}</h2>
-    <dl class="kv"><dt>Order</dt><dd>${esc(c.orderId)}</dd><dt>Retired for</dt><dd>${esc(c.retiredFor)}</dd><dt>Units</dt><dd>${c.units} ${esc(c.unit)}</dd><dt>Demo tCO₂e</dt><dd>${c.tCO2eDemo} (placeholder factor)</dd><dt>Serials</dt><dd class="mono">${esc(c.serialFrom)} → ${esc(c.serialTo)}</dd><dt>Retired</dt><dd>${esc(when(c.retiredAt))}</dd><dt>Methodology</dt><dd>${esc(c.methodology)}${c.methodologyVersion ? ' (v' + c.methodologyVersion + ')' : ''}</dd><dt>Baseline</dt><dd class="mono">${esc(c.baselineId || '—')}</dd><dt>Article 6</dt><dd>${c.article6?.international ? 'International transfer, corresponding adjustment applied' : 'No international transfer'}${c.article6?.authorities?.length ? ' · ' + esc(c.article6.authorities.join(', ')) : ''}</dd><dt>Log position</dt><dd class="mono">#${c.logHead.seq} ${esc(c.logHead.hash)}</dd></dl>`;
+    <dl class="kv"><dt>Order</dt><dd>${esc(c.orderId)}</dd><dt>Retired for</dt><dd>${esc(c.retiredFor)}</dd><dt>Credits</dt><dd>${c.units} tCO₂e</dd><dt>Project</dt><dd class="mono">${esc(c.projectIds?.join(', ') || 'unregistered')}</dd><dt>Vintage</dt><dd>${esc(c.vintages?.join(', ') || '—')}</dd><dt>Claim</dt><dd>${esc(c.claim?.statement || '—')}<br><span class="small">${esc(c.claim?.limits || '')}</span></dd><dt>Serials</dt><dd class="mono">${esc(c.serialFrom)} → ${esc(c.serialTo)}</dd><dt>Retired</dt><dd>${esc(when(c.retiredAt))}</dd><dt>Methodology</dt><dd>${esc(c.methodology)}${c.methodologyVersion ? ' (v' + c.methodologyVersion + ')' : ''}</dd><dt>Baseline</dt><dd class="mono">${esc(c.baselineId || '—')}</dd><dt>Article 6</dt><dd>${c.article6?.international ? 'International transfer, corresponding adjustment applied' : 'No international transfer'}${c.article6?.authorities?.length ? ' · ' + esc(c.article6.authorities.join(', ')) : ''}</dd><dt>Log position</dt><dd class="mono">#${c.logHead.seq} ${esc(c.logHead.hash)}</dd></dl>`;
   $('#cert').showModal();
 }
 $('#cert-close').addEventListener('click', () => $('#cert').close());
 $('#buy').addEventListener('click', async () => {
   const r = await api('order', { method: 'POST', body: { buyer: $('#buyer').value.trim(), units: Number($('#units').value), key: crypto.randomUUID() } });
   if (!r.ok) { fail(r); return; }
-  $('#mk-msg').innerHTML = `<div class="result">Order ${esc(r.json.order.orderId)}: ${r.json.order.units} units for ${naira(r.json.order.totalKobo)}. Payments were split and sent to the sandbox.</div>`;
+  $('#mk-msg').innerHTML = `<div class="result">Order ${esc(r.json.order.orderId)}: ${r.json.order.units} tCO₂e for ${naira(r.json.order.totalKobo)}. Payments were split and sent to the sandbox.</div>`;
   loadAll();
+});
+$('#check-serial').addEventListener('click', async () => {
+  const serial = $('#serial').value.trim().toUpperCase();
+  const box = $('#serial-out');
+  if (!serial) { box.innerHTML = ''; return; }
+  const r = await fetch('api/registry/serial/' + encodeURIComponent(serial));
+  if (!r.ok) { box.innerHTML = '<div class="bad-t">Not issued by this registry. Check the serial.</div>'; return; }
+  const d = await r.json();
+  const tone = { available: 'good', sold: 'ok', buffer: 'ok', cancelled: 'bad' }[d.status] || '';
+  box.innerHTML = `<div class="item"><span><b class="mono">${esc(d.serial)}</b> · 1 tCO₂e<br><span class="sub">Project ${esc(d.projectId || 'unregistered')} · vintage ${esc(d.vintage || '—')} · ${esc(d.methodology || '—')}</span>${d.sale ? `<span class="sub">Sold on ${esc(d.sale.orderId)}${d.sale.retired ? ' · retired for ' + esc(d.sale.retired.by) : ''}</span>` : ''}${d.cancellation ? `<span class="sub">Cancelled: ${esc(d.cancellation.reason)}</span>` : ''}${d.buffer ? '<span class="sub">Held in the buffer, not for sale.</span>' : ''}</span><span class="badge ${tone}">${esc(d.status)}</span></div>`;
 });
 
 // ---------- money ----------
@@ -235,7 +249,7 @@ async function renderMoney() {
     row('Money received from buyers', naira(r.inKobo)) + row('Paid to farmers (sandbox)', naira(r.paidToFarmersKobo)) +
     row('Held for farmers', naira(r.heldKobo)) + row('Community pool', naira(r.communityKobo)) + row('Verifier fees', naira(r.verifierKobo)) +
     row('Platform', naira(r.platformKobo)) + row('Books balance', r.balanced ? '<span class="ok-t">PASS: in = out + held</span>' : '<span class="bad-t">FAIL</span>') +
-    row('Units issued', r.unitsIssued) + row('Sold / available / buffer / reversed', `${r.unitsSold} / ${r.unitsAvailable} / ${r.unitsBuffered} / ${r.unitsReversed}`) +
+    row('Credits issued (tCO₂e)', r.unitsIssued) + row('Sold / available / buffer / reversed', `${r.unitsSold} / ${r.unitsAvailable} / ${r.unitsBuffered} / ${r.unitsReversed}`) +
     row('Units balance', r.unitsBalanced ? '<span class="ok-t">PASS: issued = sold + available + buffer + reversed</span>' : '<span class="bad-t">FAIL</span>') +
     row('Serial numbers contiguous, none reused', r.serialsContiguous ? '<span class="ok-t">PASS</span>' : '<span class="bad-t">FAIL</span>');
   const keys = [...new Set(subs.map((s) => s.farmerKey))];

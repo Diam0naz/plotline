@@ -6,6 +6,8 @@
 <title>Plotline — farm mapping and verifiable records</title>
 <meta name="theme-color" content="#476633">
 <meta name="description" content="Offline-first GNSS farm mapping, scouting and verifiable records for smallholder farmers.">
+<!-- The programme this app submits under. A deployment sets this to its registered project. -->
+<meta name="plotline-project" content="PRJ-0001">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -150,7 +152,7 @@
   <section id="tab-trees" class="tab">
     <div class="tab-head">
       <h1>Trees</h1>
-      <p>Plant, check survival, and get paid for verified tree-years.</p>
+      <p>Plant, check survival, and get paid for verified carbon credits.</p>
     </div>
     <div class="card stack">
       <div id="tr-farm" class="muted small"></div>
@@ -184,7 +186,7 @@
       </label>
       <button id="tr-send-btn" class="primary">Send for verification</button>
       <div id="tr-outbox" class="muted small"></div>
-      <p class="muted small">A verifier must approve before units are issued. Payments here are a sandbox simulation.</p>
+      <p class="muted small">A verifier must approve before credits are issued. Payments here are a sandbox simulation.</p>
     </div>
     <div class="card">
       <div class="row"><h2>Your submissions</h2><button id="tr-refresh" class="quiet">Refresh</button></div>

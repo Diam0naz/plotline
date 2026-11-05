@@ -2,6 +2,8 @@ import * as C from './core.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
+// Set per deployment in app.html; submissions are linked to this registered project.
+const PROJECT_ID = $('meta[name="plotline-project"]')?.content.trim() || null;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtTime = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 const short = (h, n = 10) => (h ? h.slice(0, n) + '…' : '—');
@@ -452,7 +454,7 @@ function renderTrees() {
         const [cls, label] = badge[s.status];
         const issues = [...s.hard, ...s.flags].map((x) => `<div class="flag">${esc(x.text)}</div>`).join('');
         const dec = s.decision ? `<div class="sub">Verifier note: ${esc(s.decision.note || 'none')}</div>` : '';
-        return `<div class="item"><span>${esc(s.farmName || 'Plot')} · ${s.units} verified tree-years<br><span class="sub">${s.alive}/${s.sample} alive of ${s.trees} planted · ${esc(fmtTime(s.receivedAt))}</span>${issues}${dec}</span><span class="badge ${cls}">${label}</span></div>`;
+        return `<div class="item"><span>${esc(s.farmName || 'Plot')} · ${s.units} tCO₂e credits<br><span class="sub">${s.activityUnits ? s.activityUnits + ' verified tree-years · ' : ''}${s.alive}/${s.sample} alive of ${s.trees} planted · ${esc(fmtTime(s.receivedAt))}</span>${issues}${dec}</span><span class="badge ${cls}">${label}</span></div>`;
       }).join('')
     : '<div class="muted">Nothing submitted yet.</div>';
   $('#tr-pay').innerHTML = v && v.payouts.length
@@ -501,7 +503,7 @@ $('#tr-send-btn').addEventListener('click', async () => {
   S.msisdn = $('#tr-msisdn').value.trim();
   try {
     await sealPending();
-    S.outbox.push({ key: ev.hashes.join('|'), records: [ev.farmRec, ev.planting, ev.survival].map(({ body, hash, sig }) => ({ body, hash, sig })), pub: S.keys.pub, msisdn: S.msisdn });
+    S.outbox.push({ key: ev.hashes.join('|'), projectId: PROJECT_ID, records: [ev.farmRec, ev.planting, ev.survival].map(({ body, hash, sig }) => ({ body, hash, sig })), pub: S.keys.pub, msisdn: S.msisdn });
     S.sent.push(ev.hashes.join('|'));
     save(); renderTrees();
     await flushOutbox();
@@ -515,13 +517,17 @@ async function flushOutbox() {
   flushing = true;
   try {
     for (const item of [...S.outbox]) {
-      const res = await fetch('api/submit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ records: item.records, pub: item.pub, msisdn: item.msisdn }) });
+      const res = await fetch('api/submit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ records: item.records, pub: item.pub, msisdn: item.msisdn, projectId: item.projectId ?? PROJECT_ID }) });
       if (res.status === 429 || res.status >= 500) break; // try again later
       const out = await res.json().catch(() => ({}));
       S.outbox = S.outbox.filter((x) => x.key !== item.key);
       if (!res.ok) S.sent = S.sent.filter((k) => k !== item.key); // refused outright: let the farmer fix and resend
       save();
-      toast(res.ok ? (out.status === 'rejected' ? 'Submission rejected by the automatic checks' : 'Sent. An independent verifier will review it.') : (out.message || 'The registry refused this submission'));
+      toast(res.ok
+        ? (out.status === 'rejected' ? 'Submission rejected by the automatic checks' : 'Sent. An independent verifier will review it.')
+        : out.error === 'unknown_project'
+          ? `This app is not linked to a registered project (${PROJECT_ID || 'no project set'}). Ask the operator to register it.`
+          : (out.message || 'The registry refused this submission'));
     }
   } catch { /* offline: the outbox is kept */ }
   flushing = false;

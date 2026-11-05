@@ -55,17 +55,18 @@ test('overlap fraction: identical plots, half-shifted plots, distant plots', () 
 test('full flow: submit, verify, issue, sell, pay, retire, reconcile', async () => {
   const { reg, verifier } = await setup();
   const farmer = await makeFarmer();
-  await approved(reg, verifier, farmer, { polygon: square(9.9, 8.9, 100) });
-  // 400 planted x 34/40 alive = 340 verified tree-years; the current methodology withholds 10% as buffer
-  assert.equal(reg.reconcile().unitsIssued, 340);
-  assert.equal(reg.reconcile().unitsBuffered, 34);
-  assert.equal(reg.available(), 306);
-  const r = reg.placeOrder({ buyer: 'Acme Ltd', units: 100, key: 'k1' });
+  await approved(reg, verifier, farmer, { polygon: square(9.9, 8.9, 300), trees: 6000, sample: 60, alive: 51 });
+  // 5,100 verified tree-years x 18 kg / 1000 = 91.8, rounded down to 91 tCO2e credits;
+  // the current methodology withholds 10% as buffer.
+  assert.equal(reg.reconcile().unitsIssued, 91);
+  assert.equal(reg.reconcile().unitsBuffered, 9);
+  assert.equal(reg.available(), 82);
+  const r = reg.placeOrder({ buyer: 'Acme Ltd', units: 50, key: 'k1' });
   assert.equal(r.ok, true);
-  assert.equal(r.order.totalKobo, 100 * 30000);
+  assert.equal(r.order.totalKobo, 50 * 1_200_000);
   const rec = reg.reconcile();
   assert.equal(rec.balanced, true);
-  assert.equal(rec.unitsAvailable, 206);
+  assert.equal(rec.unitsAvailable, 32);
   assert.equal(rec.unitsBalanced, true);
   assert.equal(rec.serialsContiguous, true);
   const v = reg.farmerView(farmer.fp);
@@ -163,7 +164,7 @@ test('payout rules: first-payout cap, invalid number hold, cooling after a numbe
 
   const nobody = await makeFarmer();
   await approved(reg, verifier, nobody, { polygon: square(9.95, 8.95, 100), msisdn: 'not-a-number' });
-  reg.placeOrder({ buyer: 'Another', units: 10 });
+  reg.placeOrder({ buyer: 'Another', units: 5 });
   const nv = reg.farmerView(nobody.fp);
   assert.equal(nv.paidKobo, 0);
   assert.ok(nv.heldKobo > 0);
@@ -210,7 +211,7 @@ test('state survives a restart and the log catches tampering', async () => {
   const reg = new Registry({ file, verifiers: { 'ver-1': verifier.pub } });
   const f = await makeFarmer();
   await approved(reg, verifier, f, { polygon: square(9.9, 8.9, 100) });
-  reg.placeOrder({ buyer: 'Acme', units: 50 });
+  reg.placeOrder({ buyer: 'Acme', units: 5 });
   const before = reg.reconcile();
   const again = new Registry({ file, verifiers: { 'ver-1': verifier.pub } });
   assert.deepEqual(again.reconcile(), before);
