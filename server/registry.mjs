@@ -281,7 +281,12 @@ export class Registry {
     if (!(await verifySig(hash, sig, vkey))) return fail('bad_signature', 'Decision signature does not match the verifier key');
 
     this.emit('decided', { body, hash, sig });
-    if (decision === 'approve') return { ok: true, status: 'approved', issuance: this.issue(s) };
+    if (decision === 'approve') {
+      const acc = this.verifiersAccred?.get(verifierId);
+      const issuance = this.issue(s);
+      if (issuance) issuance.verifierAccreditation = acc ? { standard: acc.standard, scope: acc.scope, expiresAt: acc.expiresAt } : null;
+      return { ok: true, status: 'approved', issuance };
+    }
     return { ok: true, status: 'rejected' };
   }
 
@@ -487,6 +492,7 @@ export class Registry {
           projectId: iss?.projectId ?? null, vintage: iss?.vintage ?? null,
           activityUnits: iss?.activityUnits ?? null,
           authorization: iss?.authorization ?? null,
+          verifierAccreditation: iss?.verifierAccreditation ?? null,
         };
       }),
       article6: {
