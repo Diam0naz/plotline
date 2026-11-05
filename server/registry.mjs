@@ -393,19 +393,40 @@ export class Registry {
     if (!iss) return fail('unknown_issuance', 'No such issuance');
     const text = String(reason ?? '').trim();
     if (text.length < 5 || text.length > 300) return fail('bad_reason', 'Give a reason (5-300 characters)');
-    const free = Math.max(0, (iss.saleableTo ?? iss.to) - iss.next + 1);
-    if (free < 1) return fail('nothing_to_cancel', 'Every saleable unit from this issuance has already been sold');
-    const count = units === undefined ? free : units;
-    if (!Number.isInteger(count) || count < 1) return fail('bad_units', 'Units must be a whole number of at least 1');
-    if (count > free) return fail('insufficient_unsold', `Only ${free} saleable units remain on ${issuanceId}`);
-    const from = (iss.saleableTo ?? iss.to) - count + 1;
-    const to = iss.saleableTo ?? iss.to;
+    // Total serial range in this issuance.
+    const from = iss.from ?? 1;
+    const to = iss.to ?? from;
+    const total = to - from + 1;
+    // Known quantities.
+    const bufUnits = iss.bufferUnits ?? 0;
+    const currentReversed = iss.reversed ?? 0;
+    // Unsold outside the buffer = total - buffer already reversed so far.
+    const unsoldOutside = total - bufUnits - currentReversed;
+    // How many to reverse (default = all unsold).
+    const requested = units === undefined ? unsoldOutside : units;
+    const count = Math.max(1, Math.min(requested, unsoldOutside));
+    // If the caller asked for more than available, return an error.
+    if (count < requested) return fail('insufficient_unsold', `Only ${unsoldOutside} unsold units available (of ${total} total, ${bufUnits} in buffer)`);
+    // Priority: first take from unsold outside buffer, then from buffer.
+    const generalTake = Math.min(count, unsoldOutside);
+    const bufTake = count - generalTake;
+    // Compute serial ranges.
+    // General unsold start at issuance.from and go for generalTake units.
+    const gFrom = from;
+    const gTo = from + generalTake - 1;
+    // Buffer units start after the general unsold range.
+    const bFrom = from + generalTake;
+    const bTo = bFrom + bufTake - 1;
+    // Overall reversed range spans from first taken to last taken.
+    const rFrom = generalTake > 0 ? gFrom : bFrom;
+    const rTo = generalTake > 0 && bufTake > 0 ? bTo : (generalTake > 0 ? gTo : bTo);
     this.emit('reversed', {
-      issuanceId, units: count, reason: text, from, to,
-      serialFrom: serial(from), serialTo: serial(to),
+      issuanceId, units: count, reason: text, from: rFrom, to: rTo,
+      serialFrom: serial(rFrom), serialTo: serial(rTo),
       evidence: evidence ? String(evidence).slice(0, 200) : null,
+      usedBuffer: bufTake > 0,
     });
-    return { ok: true, cancellation: { issuanceId, units: count, serialFrom: serial(from), serialTo: serial(to), reason: text } };
+    return { ok: true, cancellation: { issuanceId, units: count, serialFrom: serial(rFrom), serialTo: serial(rTo), reason: text, usedBuffer: bufTake > 0 } };
   }
 
   // ---------- 4c. Article 6: who may claim these units, and are they adjusted? ----------
