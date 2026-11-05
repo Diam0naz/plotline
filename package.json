@@ -1,0 +1,12 @@
+{
+  "name": "plotline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline-first GNSS farm mapping, scouting and verifiable records for smallholder farmers.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/server.mjs",
+    "test": "node --test"
+  }
+}

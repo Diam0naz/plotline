@@ -1,0 +1,9 @@
+# Runtime state: ledger, registry, verifier list and signing keys
+data/
+
+node_modules/
+
+# Logs and OS noise
+*.log
+npm-debug.log*
+.DS_Store

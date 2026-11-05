@@ -1,0 +1,77 @@
+# Plotline
+
+Offline-first GNSS farm mapping, scouting and verifiable records for smallholder farmers.
+Works in a phone browser, installs as a PWA, and keeps working with no network.
+
+## Run
+
+```
+npm start          # app + ledger on http://localhost:8123  (PORT, DATA_DIR optional)
+npm test           # unit, ledger, registry and API tests (Node 20+, no dependencies)
+```
+
+The server prints an operator token on start (or set `ADMIN_TOKEN`). To load a demo: start with an empty data folder, then
+`ADMIN_TOKEN=<token> node scripts/seed.mjs http://localhost:8123` and open `/console.html`.
+
+GNSS needs a secure origin: `localhost` works for testing; real phones need HTTPS.
+
+## What it does
+
+| Tab | Feature |
+|---|---|
+| Farm | Walk the boundary, drop corner points, get area and perimeter. Fixes worse than 50 m are refused. |
+| Scout | Geotagged, signed field reports (pest, disease, water stress, weeds, nutrient, healthy) with a GNSS quality score. |
+| Heat map | Heat map of reports and outbreak alerts (3+ reports of one problem within 1 km in 14 days). Reports with quality under 50 are left out. |
+| Inputs | Seed and fertiliser quantities from the walked area. Rates are editable starting points, not recommendations. |
+| Trees | Record planting and a survival check, send them for verification, see status and payouts. |
+| Records | Seal records into a batch (Merkle root), publish it to the ledger, and verify any record. |
+
+## How records are verified (and free to the farmer)
+
+1. Each record is canonicalised, hashed (SHA-256) and signed on the phone with an ECDSA P-256 key.
+2. "Seal" groups pending records under one Merkle root. Many records, one fingerprint.
+3. The app sends **only the root and a count** to the ledger (`POST /api/anchor`). Records never leave the phone. No fee, no wallet.
+4. The ledger is append-only and hash-chained: each entry commits to the previous one, so editing or removing any past entry breaks every entry after it. The server refuses to start on a ledger that fails verification.
+5. Verify a record: its hash matches, its signature is valid, a Merkle proof places it in the batch, and the batch root is in the ledger (re-checked live when online).
+6. Offline: sealing works; batches wait and publish automatically when the connection returns.
+
+## Climate layer: verified tree-years to payouts (Access Youth Tech Forge, Theme 2)
+
+**Climate activity:** farmer-managed agroforestry (trees planted and kept alive on smallholdings).
+**Unit:** one verified tree-year, meaning one tree shown to be alive for one monitoring period.
+
+| Step | How it works | What stops fraud or double counting |
+|---|---|---|
+| Measure | Farmer walks the plot boundary, records planting, then a survival sample count. Every record is GNSS-stamped and signed on the phone. | Quality score per fix; all three records must carry the same key and farm. |
+| Check | The registry re-verifies every hash and signature, then runs automatic checks. | Overlap with any other registered plot, trees per hectare, sample size, impossible counts, fixes outside the plot, survival suspiciously perfect. Hard failures are rejected; soft ones go to manual review. |
+| Verify | An independent verifier reviews the evidence on the console and signs approve or reject. | Only keys on the operator's approved list count. A farmer cannot verify their own plot. A flagged submission cannot be approved without a written reason. The signature is stored. |
+| Issue | Approval issues a range of unique serial numbers (`PL-NG-00000001`...). | One issuance per submission. Serials are contiguous and never reused; the reconcile page checks this. |
+| Sell | A buyer buys units first-in-first-out from issued lots. | Sold units cannot be sold again. Retiring an order records who claimed it and blocks a second claim. |
+| Pay | Each sale is split in whole kobo (largest remainder, always sums exactly) and payouts go to farmers in proportion to their units. | One payout number per farmer key. Changing the number holds payouts for 72 hours. A first payout is capped at ₦20,000 with the rest held. Invalid numbers hold the money. Idempotency keys prevent paying twice. |
+| Audit | Every state change is an event on a hash-chained log. Anyone can download it and re-verify it in a browser. | Editing any past event breaks the chain from that point; the server refuses to start on a damaged log. Phone numbers are not on the log, only a salted hash and a masked form. |
+
+**Who creates value, verifies, pays, and how revenue grows:** farmers create it by planting and keeping trees alive; independent verifiers confirm it and are paid a share of each sale; buyers pay; the platform keeps a share and routes the rest to farmers and a community pool. Revenue grows with verified units sold, so the platform earns more only when more trees are verifiably alive.
+
+**All of the following are demo assumptions, set in `server/methodology.mjs` and none are a registered methodology or legal rule:** 20 kg CO2e per tree-year, ₦300 per unit, and the 60 / 25 / 5 / 10 split between farmers, community, verifier and platform. Nigeria's benefit-sharing percentages for voluntary projects were not found in published sources, so the split is configurable.
+
+**Simulated:** issuance is a registry entry, not a carbon credit recognised by any standard. Payouts go to a sandbox, not a real mobile-money provider. Real credits need an accredited, NCCC-approved verification body, a recognised methodology and registry, and (for international transfers) the Nigerian authorisation process. Do not present the units as tradable credits.
+
+Operator routes (submissions queue, orders, retirement, releases, adding verifiers) need the operator token. Verifier decisions need no token because they must carry a valid signature from an approved key. Orders are operator-only in this build because a real buyer flow would need confirmed payment.
+
+## Limits to be honest about
+
+- **Self-reported survival counts are sampled, not measured.** The registry catches inconsistent or implausible counts and double registration, but an honest-looking false count still needs the verifier's judgment or a site visit. Satellite checks (NDVI or canopy change) and random re-inspection would be the next controls.
+- **Overlap detection compares registered plots by grid sampling.** It will not catch land registered under a slightly different boundary beyond the thresholds, or boundaries drawn wrongly on purpose.
+- **GNSS from a browser is a plausibility check, not proof.** Browsers expose position and accuracy only, not raw satellite data or a mock-location flag. The quality score checks accuracy, impossible jumps, clock drift, round coordinates and the farm boundary. A determined spoofer can defeat it. A native Android build with raw GNSS measurements would be stronger.
+- **The ledger is tamper-evident, and becomes immutable only when its head is published somewhere the operator cannot edit** (a blockchain memo, a public post). That step is not built. Anchoring the head on Solana is the natural next one.
+- **The anchor endpoint is unauthenticated** (limited to 30 writes/min per IP). Production needs authentication and quotas.
+- **The signing key lives in the browser's local storage.** Clearing site data loses it; there is no key backup yet. Exports contain the public key only.
+- Map tiles come from OpenStreetMap, fine for a demo; production use needs your own tile provider. Tiles you have viewed are cached for offline use.
+- Not built: NDVI or other satellite vegetation data, multi-device sync, user accounts, real mobile-money integration, the fire-hotspot check described in the next steps.
+
+## Next steps
+
+- Add a VIIRS fire-hotspot check (ArcGIS Living Atlas feed) so the verifier sees recent fires near a plot before approving.
+- Publish the registry log head on Solana so history cannot be rewritten quietly.
+- Replace the sandbox payout with a licensed mobile-money partner.
+- Move the species and conversion factors to a registered methodology.

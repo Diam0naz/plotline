@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plotline</title>
+<meta name="theme-color" content="#000000">
+<meta name="description" content="Offline-first GNSS farm mapping, scouting and verifiable records for smallholder farmers.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Plot<span>line</span></div>
+  <div class="chips">
+    <span id="net-chip" class="chip good">online</span>
+    <span id="gps-chip" class="chip">GNSS idle</span>
+  </div>
+</header>
+
+<main>
+  <!-- FARM -->
+  <section id="tab-farm" class="tab active">
+    <div id="map-farm" class="map"></div>
+    <div class="card">
+      <div id="walk-stats" class="muted"></div>
+      <div class="row">
+        <button id="walk-btn" class="primary">Start boundary walk</button>
+        <button id="drop-btn" disabled>Drop point</button>
+      </div>
+      <div class="row">
+        <button id="undo-btn" disabled>Undo point</button>
+        <button id="finish-btn" disabled>Finish</button>
+      </div>
+      <form id="farm-form" class="stack hidden">
+        <label>Farm name
+          <input id="farm-name" required maxlength="40" placeholder="e.g. Back field">
+        </label>
+        <label>Crop
+          <select id="farm-crop"></select>
+        </label>
+        <button class="primary" type="submit">Save farm</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Your farms</h2>
+      <div id="farm-list" class="list"></div>
+    </div>
+  </section>
+
+  <!-- SCOUT -->
+  <section id="tab-scout" class="tab">
+    <div class="card stack">
+      <div id="scout-farm" class="muted"></div>
+      <label>What did you see?
+        <select id="scout-type"></select>
+      </label>
+      <label>Severity
+        <select id="scout-sev">
+          <option value="1">1 – Low</option>
+          <option value="2" selected>2 – Medium</option>
+          <option value="3">3 – High</option>
+        </select>
+      </label>
+      <label>Note (optional)
+        <textarea id="scout-note" rows="2" maxlength="200" placeholder="e.g. holes in leaves, near the north edge"></textarea>
+      </label>
+      <button id="scout-btn" class="primary">Capture location and sign report</button>
+      <div id="scout-result"></div>
+    </div>
+  </section>
+
+  <!-- HEAT -->
+  <section id="tab-heat" class="tab">
+    <div class="card">
+      <label>Show
+        <select id="heat-type"></select>
+      </label>
+    </div>
+    <div id="map-heat" class="map"></div>
+    <div class="card">
+      <h2>Outbreak watch</h2>
+      <div id="alerts" class="list"></div>
+      <p class="muted small">Alert rule: 3 or more reports of the same problem within 1 km over the last 14 days. Hotter colours mean more and more severe reports. Healthy reports are not plotted.</p>
+    </div>
+  </section>
+
+  <!-- INPUTS -->
+  <section id="tab-inputs" class="tab">
+    <div class="card stack">
+      <div id="in-farm" class="muted"></div>
+      <label>Area (hectares)
+        <input id="in-area" type="number" step="0.001" min="0" inputmode="decimal">
+      </label>
+      <label>Crop
+        <select id="in-crop"></select>
+      </label>
+      <div class="grid2">
+        <label>Row spacing (cm)<input id="in-row" type="number" min="1" inputmode="decimal"></label>
+        <label>In-row spacing (cm)<input id="in-plant" type="number" min="1" inputmode="decimal"></label>
+        <label>Seed (kg/ha)<input id="in-seed" type="number" min="0" step="0.1" inputmode="decimal"></label>
+        <label>NPK (kg/ha)<input id="in-npk" type="number" min="0" inputmode="decimal"></label>
+        <label>Urea (kg/ha)<input id="in-urea" type="number" min="0" inputmode="decimal"></label>
+      </div>
+      <div id="in-out" class="result"></div>
+      <p class="muted small">Rates are editable starting points, not recommendations. Set them from your local extension guidance or a soil test.</p>
+    </div>
+  </section>
+
+  <!-- TREES -->
+  <section id="tab-trees" class="tab">
+    <div class="card stack">
+      <h2>Trees and carbon units</h2>
+      <div id="tr-farm" class="muted"></div>
+      <div class="steps">
+        <div id="tr-s1" class="step"></div>
+        <div id="tr-s2" class="step"></div>
+        <div id="tr-s3" class="step"></div>
+      </div>
+    </div>
+    <div class="card stack">
+      <h2>1. Record planting</h2>
+      <div class="grid2">
+        <label>Trees planted<input id="tr-count" type="number" min="1" step="1" inputmode="numeric"></label>
+        <label>Species<select id="tr-species"></select></label>
+      </div>
+      <button id="tr-plant-btn" class="primary">Capture location and sign planting</button>
+    </div>
+    <div class="card stack">
+      <h2>2. Survival check</h2>
+      <p class="muted small">Walk the plot and count a sample of the trees you planted. Count every tree in your sample, then how many are alive.</p>
+      <div class="grid2">
+        <label>Trees counted<input id="tr-sample" type="number" min="1" step="1" inputmode="numeric"></label>
+        <label>Alive<input id="tr-alive" type="number" min="0" step="1" inputmode="numeric"></label>
+      </div>
+      <button id="tr-surv-btn" class="primary">Capture location and sign survival check</button>
+    </div>
+    <div class="card stack">
+      <h2>3. Send for verification</h2>
+      <label>Mobile money number for payouts
+        <input id="tr-msisdn" type="tel" inputmode="tel" placeholder="0803 123 4567" maxlength="20">
+      </label>
+      <button id="tr-send-btn" class="primary">Send for verification</button>
+      <div id="tr-outbox" class="muted small"></div>
+      <p class="muted small">Only after an independent verifier approves can units be issued. Payments in this build are a sandbox simulation, and the unit conversion is a demo assumption.</p>
+    </div>
+    <div class="card">
+      <div class="row"><h2>Your submissions</h2><button id="tr-refresh">Refresh</button></div>
+      <div id="tr-earn" class="muted"></div>
+      <div id="tr-list" class="list"></div>
+    </div>
+    <div class="card"><h2>Payouts</h2><div id="tr-pay" class="list"></div></div>
+  </section>
+
+  <!-- RECORDS -->
+  <section id="tab-records" class="tab">
+    <div class="card">
+      <div id="rec-summary" class="muted"></div>
+      <div class="row">
+        <button id="seal-btn" class="primary">Seal pending batch</button>
+        <button id="export-btn">Export JSON</button>
+      </div>
+      <div class="row">
+        <button id="demo-btn">Load demo data</button>
+        <button id="reset-btn" class="danger">Reset all</button>
+      </div>
+    </div>
+    <div class="card"><h2>Batches</h2><div id="batch-list" class="list"></div></div>
+    <div class="card"><h2>Records</h2><div id="record-list" class="list"></div></div>
+  </section>
+</main>
+
+<dialog id="verify-dialog">
+  <div id="verify-body"></div>
+  <div class="row">
+    <button id="tamper-btn">Simulate tampering</button>
+    <button id="close-verify" class="primary">Close</button>
+  </div>
+</dialog>
+
+<nav class="tabs">
+  <button data-tab="farm" class="on">Farm</button>
+  <button data-tab="scout">Scout</button>
+  <button data-tab="heat">Heat map</button>
+  <button data-tab="inputs">Inputs</button>
+  <button data-tab="trees">Trees</button>
+  <button data-tab="records">Records</button>
+</nav>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/leaflet/leaflet-heat.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

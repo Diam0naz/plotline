@@ -1,0 +1,17 @@
+body.console { padding-bottom: 32px; }
+body.console main { max-width: 1080px; }
+.brand small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 8px; }
+.ctabs { display: flex; gap: 8px; margin: 4px 0 12px; flex-wrap: wrap; }
+.ctabs button.on { border-color: var(--green); color: var(--green); }
+.panel { display: none; }
+.panel.active { display: block; }
+.split { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 900px) { .split { grid-template-columns: 1.1fr 1fr; align-items: start; } }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; word-break: break-word; }
+.recon-row { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.recon-row:first-child { border-top: 0; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; }
+textarea { width: 100%; }
+.item.sel { border-color: var(--green); }

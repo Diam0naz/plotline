@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plotline registry console</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="console.css">
+</head>
+<body class="console">
+<header class="top">
+  <div class="brand">Plot<span>line</span> <small>registry console</small></div>
+  <div class="chips"><span class="chip bad">SIMULATED: not a registered carbon registry</span></div>
+</header>
+
+<main>
+  <div class="card">
+    <div class="grid2">
+      <label>Operator token
+        <input id="token" type="password" autocomplete="off" placeholder="printed when the server starts">
+      </label>
+      <label>This verifier
+        <input id="vid" value="ver-1" maxlength="32">
+      </label>
+    </div>
+    <div class="row">
+      <button id="vreg">Register this browser as a verifier</button>
+      <button id="reload" class="primary">Reload everything</button>
+    </div>
+    <div id="vinfo" class="muted small"></div>
+  </div>
+
+  <nav class="ctabs">
+    <button data-p="verify" class="on">Verify</button>
+    <button data-p="market">Market</button>
+    <button data-p="money">Money</button>
+    <button data-p="log">Public log</button>
+  </nav>
+
+  <section id="p-verify" class="panel active">
+    <div class="split">
+      <div>
+        <div id="cmap" class="map"></div>
+        <div class="card"><h2>Submissions</h2><div id="queue" class="list"></div></div>
+      </div>
+      <div class="card" id="detail"><div class="muted">Choose a submission to review.</div></div>
+    </div>
+  </section>
+
+  <section id="p-market" class="panel">
+    <div class="card stack">
+      <h2>Buyer market</h2>
+      <div id="mk-sum" class="muted"></div>
+      <div class="grid2">
+        <label>Buyer<input id="buyer" value="Demo Buyer Ltd" maxlength="80"></label>
+        <label>Units (verified tree-years)<input id="units" type="number" min="1" step="1" value="50"></label>
+      </div>
+      <button id="buy" class="primary">Buy units (simulated payment)</button>
+      <div id="mk-msg"></div>
+    </div>
+    <div class="card"><h2>Issued lots</h2><div id="lots" class="list"></div></div>
+    <div class="card"><h2>Orders</h2><div id="orders" class="list"></div></div>
+  </section>
+
+  <section id="p-money" class="panel">
+    <div class="card"><h2>Reconciliation</h2><div id="recon"></div></div>
+    <div class="card"><h2>Farmers</h2><div id="farmers" class="list"></div></div>
+  </section>
+
+  <section id="p-log" class="panel">
+    <div class="card stack">
+      <h2>Public log, checked in your browser</h2>
+      <p class="muted small">This page downloads the whole log and recomputes every hash here, without trusting the server's own check. Change one past entry anywhere and the chain breaks at that entry.</p>
+      <div id="logcheck"></div>
+    </div>
+    <div class="card"><h2>Entries</h2><div id="loglist" class="list"></div></div>
+  </section>
+</main>
+
+<dialog id="cert"><div id="cert-body"></div><div class="row"><button id="cert-close" class="primary">Close</button></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="console.js"></script>
+</body>
+</html>
