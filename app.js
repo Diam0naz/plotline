@@ -176,7 +176,7 @@ function drawFarmMap() {
   const act = activeFarm();
   for (const f of S.farms) {
     L.polygon(latlngs(f.polygon), {
-      color: act && f.id === act.id ? '#34d399' : '#60a5fa',
+      color: act && f.id === act.id ? '#476633' : '#9aab88',
       weight: 2,
       fillOpacity: 0.15,
     }).bindTooltip(esc(f.name)).addTo(farmLayer);
@@ -184,7 +184,7 @@ function drawFarmMap() {
   for (const r of scoutReports()) {
     L.circleMarker([r.lat, r.lon], {
       radius: 5,
-      color: r.type === 'healthy' ? '#34d399' : '#8b5cf6',
+      color: r.type === 'healthy' ? '#476633' : '#b4761e',
       weight: 1,
       fillOpacity: 0.8,
     }).bindTooltip(esc(TYPES[r.type] || r.type)).addTo(farmLayer);
@@ -216,12 +216,12 @@ function drawWalk() {
   walkLayer.clearLayers();
   if (walk.pts.length) {
     const ll = latlngs(walk.pts);
-    (walk.pts.length >= 3 ? L.polygon(ll, { color: '#f5a524', dashArray: '6 6', weight: 2, fillOpacity: 0.1 }) : L.polyline(ll, { color: '#f5a524', weight: 2 })).addTo(walkLayer);
-    ll.forEach((p) => L.circleMarker(p, { radius: 4, color: '#f5a524', fillOpacity: 1 }).addTo(walkLayer));
+    (walk.pts.length >= 3 ? L.polygon(ll, { color: '#b4761e', dashArray: '6 6', weight: 2, fillOpacity: 0.1 }) : L.polyline(ll, { color: '#b4761e', weight: 2 })).addTo(walkLayer);
+    ll.forEach((p) => L.circleMarker(p, { radius: 4, color: '#b4761e', fillOpacity: 1 }).addTo(walkLayer));
   }
   if (walk.on && lastFix) {
-    L.circle([lastFix.lat, lastFix.lon], { radius: Math.max(lastFix.acc, 2), color: '#60a5fa', weight: 1, fillOpacity: 0.12 }).addTo(walkLayer);
-    L.circleMarker([lastFix.lat, lastFix.lon], { radius: 6, color: '#fff', fillColor: '#60a5fa', fillOpacity: 1, weight: 2 }).addTo(walkLayer);
+    L.circle([lastFix.lat, lastFix.lon], { radius: Math.max(lastFix.acc, 2), color: '#476633', weight: 1, fillOpacity: 0.12 }).addTo(walkLayer);
+    L.circleMarker([lastFix.lat, lastFix.lon], { radius: 6, color: '#fff', fillColor: '#476633', fillOpacity: 1, weight: 2 }).addTo(walkLayer);
   }
 }
 let centered = false;
@@ -356,16 +356,16 @@ function renderHeat() {
   if (heatMap) {
     heatLayerGroup.clearLayers();
     if (heat) { heatMap.removeLayer(heat); heat = null; }
-    for (const fm of S.farms) L.polygon(latlngs(fm.polygon), { color: '#60a5fa', weight: 1, fillOpacity: 0.05 }).addTo(heatLayerGroup);
+    for (const fm of S.farms) L.polygon(latlngs(fm.polygon), { color: '#9aab88', weight: 1, fillOpacity: 0.05 }).addTo(heatLayerGroup);
     const pts = reports.map((r) => [r.lat, r.lon, (r.severity / 3) * (r.q / 100)]);
     if (pts.length) {
       if (L.heatLayer) {
-        heat = L.heatLayer(pts, { radius: 32, blur: 26, maxZoom: 17, gradient: { 0.2: '#8b5cf6', 0.45: '#60a5fa', 0.7: '#34d399', 1: '#f5a524' } }).addTo(heatMap);
+        heat = L.heatLayer(pts, { radius: 32, blur: 26, maxZoom: 17, gradient: { 0.2: '#dce5d2', 0.45: '#9aab88', 0.7: '#476633', 1: '#8a3b12' } }).addTo(heatMap);
       } else {
-        reports.forEach((r) => L.circle([r.lat, r.lon], { radius: 40, color: '#8b5cf6', weight: 0, fillOpacity: 0.3 }).addTo(heatLayerGroup));
+        reports.forEach((r) => L.circle([r.lat, r.lon], { radius: 40, color: '#476633', weight: 0, fillOpacity: 0.3 }).addTo(heatLayerGroup));
       }
     }
-    clusters.forEach((c) => L.circle([c.lat, c.lon], { radius: 500, color: '#f5a524', weight: 2, dashArray: '6 6', fillOpacity: 0.05 }).bindTooltip(`${c.count} ${esc(TYPES[c.type] || c.type)}`).addTo(heatLayerGroup));
+    clusters.forEach((c) => L.circle([c.lat, c.lon], { radius: 500, color: '#b4761e', weight: 2, dashArray: '6 6', fillOpacity: 0.05 }).bindTooltip(`${c.count} ${esc(TYPES[c.type] || c.type)}`).addTo(heatLayerGroup));
     const all = [...reports.map((r) => [r.lat, r.lon]), ...S.farms.flatMap((fm) => latlngs(fm.polygon))];
     if (all.length) heatMap.fitBounds(all, { padding: [30, 30], maxZoom: 17 });
   }

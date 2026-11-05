@@ -1,6 +1,6 @@
 // Service worker: the app shell is cached on install so Plotline opens with no network.
 // Map tiles are cached as they are viewed, so areas you have already looked at stay visible offline.
-const VERSION = 'plotline-v4';
+const VERSION = 'plotline-v5';
 const SHELL = [
   './',
   './index.html',

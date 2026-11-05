@@ -56,13 +56,17 @@ test('full flow: submit, verify, issue, sell, pay, retire, reconcile', async () 
   const { reg, verifier } = await setup();
   const farmer = await makeFarmer();
   await approved(reg, verifier, farmer, { polygon: square(9.9, 8.9, 100) });
-  assert.equal(reg.available(), 34 * 10); // 400 planted x 34/40 alive = 340 verified tree-years
+  // 400 planted x 34/40 alive = 340 verified tree-years; the current methodology withholds 10% as buffer
+  assert.equal(reg.reconcile().unitsIssued, 340);
+  assert.equal(reg.reconcile().unitsBuffered, 34);
+  assert.equal(reg.available(), 306);
   const r = reg.placeOrder({ buyer: 'Acme Ltd', units: 100, key: 'k1' });
   assert.equal(r.ok, true);
   assert.equal(r.order.totalKobo, 100 * 30000);
   const rec = reg.reconcile();
   assert.equal(rec.balanced, true);
-  assert.equal(rec.unitsAvailable, 240);
+  assert.equal(rec.unitsAvailable, 206);
+  assert.equal(rec.unitsBalanced, true);
   assert.equal(rec.serialsContiguous, true);
   const v = reg.farmerView(farmer.fp);
   assert.equal(v.paidKobo + v.heldKobo, r.order.split.farmers);

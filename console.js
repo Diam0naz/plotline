@@ -62,7 +62,7 @@ function initMap() {
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
   layer = L.layerGroup().addTo(map);
 }
-const colour = { pending: '#f5a524', approved: '#34d399', rejected: '#f87171' };
+const colour = { pending: '#b4761e', approved: '#476633', rejected: '#a33a32' };
 function drawMap() {
   if (!map) return;
   layer.clearLayers();
@@ -139,6 +139,8 @@ function renderDetail() {
       <dt>Planted</dt><dd>${s.trees} trees</dd>
       <dt>Survival sample</dt><dd>${s.alive} alive of ${s.sample} counted</dd>
       <dt>Estimated verified</dt><dd><b>${s.units}</b> tree-years</dd>
+      <dt>Methodology</dt><dd>${esc(s.methodology || '—')}${s.methodologyVersion ? ' (v' + s.methodologyVersion + ')' : ''}</dd>
+      <dt>Baseline</dt><dd class="mono">${esc(s.baselineId || '—')}</dd>
       <dt>Payout to</dt><dd>${esc(s.payoutTo || 'none')}</dd>
       <dt>Submission</dt><dd class="mono">${esc(s.subId)}</dd>
     </dl>
@@ -178,8 +180,26 @@ async function renderMarket() {
   const m = r.json;
   $('#mk-sum').innerHTML = `Price <b>${naira(m.priceKobo)}</b> per verified tree-year (demo price) · <b>${m.available}</b> units available · ${esc(m.methodology)}<br><span class="small">${esc(m.status)}; ${m.kgCO2ePerUnit} kg CO₂e per unit is a placeholder.</span>`;
   $('#lots').innerHTML = m.lots.length
-    ? m.lots.map((l) => `<div class="item"><span>${esc(l.id)} · ${esc(l.farmName || 'Plot')}<br><span class="sub mono">${esc(l.serialFrom)} → ${esc(l.serialTo)}</span></span><span class="badge ${l.remaining ? 'good' : ''}">${l.remaining}/${l.units} left</span></div>`).join('')
+    ? m.lots.map((l) => {
+        const auth = l.authorization;
+        const note = [
+          l.bufferUnits ? l.bufferUnits + ' held in buffer' : null,
+          l.reversedUnits ? l.reversedUnits + ' reversed' : null,
+          auth ? (auth.scope === 'international' ? 'Article 6: international' : 'Article 6: domestic') + ' · ' + auth.reference : null,
+        ].filter(Boolean).join(' · ');
+        return `<div class="item"><span>${esc(l.id)} · ${esc(l.farmName || 'Plot')}<br><span class="sub mono">${esc(l.serialFrom)} → ${esc(l.serialTo)}</span>${note ? `<br><span class="sub">${esc(note)}</span>` : ''}</span>
+          <span style="display:flex;gap:6px;align-items:center">${auth ? `<span class="badge ${auth.scope === 'international' ? 'ok' : 'good'}">${esc(auth.scope)}</span>` : ''}<span class="badge ${l.remaining ? 'good' : ''}">${l.remaining}/${l.units} left</span>${l.remaining && !auth ? `<button data-auth="${esc(l.id)}">Article 6</button>` : ''}</span></div>`;
+      }).join('')
     : '<div class="muted">Nothing issued yet. A verifier must approve a submission first.</div>';
+  $$('[data-auth]').forEach((b) => b.addEventListener('click', async () => {
+    const authority = prompt('Authorising authority (e.g. NCCC):', 'NCCC');
+    if (!authority) return;
+    const reference = prompt('Authorisation reference:', 'NG-A6-');
+    if (!reference) return;
+    const scope = confirm('International transfer with a corresponding adjustment?\n\nCancel records a domestic claim instead.') ? 'international' : 'domestic';
+    const rr = await api('authorize', { method: 'POST', body: { issuanceId: b.dataset.auth, scope, authority, reference, correspondingAdjustment: scope === 'international' } });
+    rr.ok ? (toast('Authorisation recorded'), renderMarket()) : fail(rr);
+  }));
   $('#orders').innerHTML = m.orders.length
     ? [...m.orders].reverse().map((o) => `<div class="item"><span>${esc(o.orderId)} · ${esc(o.buyer)} · ${o.units} units · ${naira(o.totalKobo)}<br><span class="sub mono">${esc(o.serialFrom)} → ${esc(o.serialTo)}</span><br><span class="sub">Farmers ${naira(o.split.farmers)} · community ${naira(o.split.community)} · verifier ${naira(o.split.verifier)} · platform ${naira(o.split.platform)}</span></span>${o.retired ? `<button data-cert="${esc(o.orderId)}">Certificate</button>` : `<button data-retire="${esc(o.orderId)}">Retire</button>`}</div>`).join('')
     : '<div class="muted">No orders yet.</div>';
@@ -196,7 +216,7 @@ async function renderMarket() {
 }
 function showCert(c) {
   $('#cert-body').innerHTML = `<h2>${esc(c.title)}</h2>
-    <dl class="kv"><dt>Order</dt><dd>${esc(c.orderId)}</dd><dt>Retired for</dt><dd>${esc(c.retiredFor)}</dd><dt>Units</dt><dd>${c.units} ${esc(c.unit)}</dd><dt>Demo tCO₂e</dt><dd>${c.tCO2eDemo} (placeholder factor)</dd><dt>Serials</dt><dd class="mono">${esc(c.serialFrom)} → ${esc(c.serialTo)}</dd><dt>Retired</dt><dd>${esc(when(c.retiredAt))}</dd><dt>Methodology</dt><dd>${esc(c.methodology)}</dd><dt>Log position</dt><dd class="mono">#${c.logHead.seq} ${esc(c.logHead.hash)}</dd></dl>`;
+    <dl class="kv"><dt>Order</dt><dd>${esc(c.orderId)}</dd><dt>Retired for</dt><dd>${esc(c.retiredFor)}</dd><dt>Units</dt><dd>${c.units} ${esc(c.unit)}</dd><dt>Demo tCO₂e</dt><dd>${c.tCO2eDemo} (placeholder factor)</dd><dt>Serials</dt><dd class="mono">${esc(c.serialFrom)} → ${esc(c.serialTo)}</dd><dt>Retired</dt><dd>${esc(when(c.retiredAt))}</dd><dt>Methodology</dt><dd>${esc(c.methodology)}${c.methodologyVersion ? ' (v' + c.methodologyVersion + ')' : ''}</dd><dt>Baseline</dt><dd class="mono">${esc(c.baselineId || '—')}</dd><dt>Article 6</dt><dd>${c.article6?.international ? 'International transfer, corresponding adjustment applied' : 'No international transfer'}${c.article6?.authorities?.length ? ' · ' + esc(c.article6.authorities.join(', ')) : ''}</dd><dt>Log position</dt><dd class="mono">#${c.logHead.seq} ${esc(c.logHead.hash)}</dd></dl>`;
   $('#cert').showModal();
 }
 $('#cert-close').addEventListener('click', () => $('#cert').close());
@@ -215,7 +235,9 @@ async function renderMoney() {
     row('Money received from buyers', naira(r.inKobo)) + row('Paid to farmers (sandbox)', naira(r.paidToFarmersKobo)) +
     row('Held for farmers', naira(r.heldKobo)) + row('Community pool', naira(r.communityKobo)) + row('Verifier fees', naira(r.verifierKobo)) +
     row('Platform', naira(r.platformKobo)) + row('Books balance', r.balanced ? '<span class="ok-t">PASS: in = out + held</span>' : '<span class="bad-t">FAIL</span>') +
-    row('Units issued / sold / available', `${r.unitsIssued} / ${r.unitsSold} / ${r.unitsAvailable}`) + row('Serial numbers contiguous, none reused', r.serialsContiguous ? '<span class="ok-t">PASS</span>' : '<span class="bad-t">FAIL</span>');
+    row('Units issued', r.unitsIssued) + row('Sold / available / buffer / reversed', `${r.unitsSold} / ${r.unitsAvailable} / ${r.unitsBuffered} / ${r.unitsReversed}`) +
+    row('Units balance', r.unitsBalanced ? '<span class="ok-t">PASS: issued = sold + available + buffer + reversed</span>' : '<span class="bad-t">FAIL</span>') +
+    row('Serial numbers contiguous, none reused', r.serialsContiguous ? '<span class="ok-t">PASS</span>' : '<span class="bad-t">FAIL</span>');
   const keys = [...new Set(subs.map((s) => s.farmerKey))];
   const views = await Promise.all(keys.map((k) => fetch('api/registry/farmer/' + k).then((x) => x.json())));
   $('#farmers').innerHTML = views.length

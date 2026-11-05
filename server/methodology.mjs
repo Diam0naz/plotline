@@ -1,21 +1,74 @@
 // Every number in this file is a DEMO ASSUMPTION. None is a registered methodology, a legal
 // benefit-sharing rule, or a market price. Replace them before any real use.
+//
+// Methodologies are versioned records, not a single constant: a submission records the version it
+// was checked against, and issuance records the version and baseline it was credited under, so an
+// old issuance stays reproducible after the rules change.
 
 export const CURRENCY = 'NGN';
 
-export const METHODOLOGY = Object.freeze({
-  id: 'DEMO-AGROFORESTRY-0',
+const SHARED = {
   status: 'DEMO ASSUMPTIONS: not a registered methodology',
-  // The registry measures verified tree-years (surviving trees in a monitoring period).
-  // Converting that to tonnes of CO2e is methodology-specific; this factor is a placeholder.
   unit: 'verified tree-year',
-  kgCO2ePerTreeYear: 20,
-  density: { minPerHa: 20, maxPerHa: 1600 },   // plausibility band for trees per hectare
-  minSample: 10,                                // survival sample: at least this many trees...
-  minSampleShare: 0.1,                          // ...or this share of those planted, whichever is larger
-  minQuality: 70,                               // GNSS quality score below this goes to manual review
-  overlap: { review: 0.2, reject: 0.8 },        // share of a plot already registered by someone else
+  density: { minPerHa: 20, maxPerHa: 1600 },
+  minSample: 10,
+  minSampleShare: 0.1,
+  minQuality: 70,
+  overlap: { review: 0.2, reject: 0.8 },
+};
+
+export const METHODOLOGIES = Object.freeze({
+  'DEMO-AGROFORESTRY-0': Object.freeze({
+    ...SHARED,
+    id: 'DEMO-AGROFORESTRY-0',
+    version: 1,
+    kgCO2ePerTreeYear: 20,
+    bufferPct: 0,
+    baseline: Object.freeze({
+      id: 'baseline:none',
+      description: 'No baseline. A fixed factor is applied directly to verified tree-years.',
+      matchedPlots: 0,
+      dynamic: false,
+    }),
+  }),
+  'DEMO-AGROFORESTRY-1': Object.freeze({
+    ...SHARED,
+    id: 'DEMO-AGROFORESTRY-1',
+    version: 2,
+    // More conservative than v1: a buffer is withheld against reversal, and the factor is lower
+    // because it is applied against a matched unenrolled baseline rather than a fixed assumption.
+    kgCO2ePerTreeYear: 18,
+    bufferPct: 10,
+    baseline: Object.freeze({
+      id: 'baseline:ng-agroforestry-demo-2026',
+      description: 'Matched unenrolled plots in the same ecoregion, species mix and planting age. Demo data only.',
+      matchedPlots: 10,
+      dynamic: true,
+    }),
+  }),
 });
+
+export const CURRENT_METHODOLOGY_ID = 'DEMO-AGROFORESTRY-1';
+export const METHODOLOGY = METHODOLOGIES[CURRENT_METHODOLOGY_ID];
+
+export function methodologyById(id) {
+  return typeof id === 'string' && Object.hasOwn(METHODOLOGIES, id) ? METHODOLOGIES[id] : null;
+}
+
+// What buyers and verifiers can see: identities and factors, not internals.
+export function publicMethodologies() {
+  return Object.values(METHODOLOGIES).map((m) => ({
+    id: m.id,
+    version: m.version,
+    status: m.status,
+    unit: m.unit,
+    baselineId: m.baseline.id,
+    baselineDescription: m.baseline.description,
+    kgCO2ePerTreeYear: m.kgCO2ePerTreeYear,
+    bufferPct: m.bufferPct,
+    current: m.id === CURRENT_METHODOLOGY_ID,
+  }));
+}
 
 // Shares of each sale in basis points (10000 = 100%). DEMO split: Nigeria's benefit-sharing
 // rules for voluntary projects were not published in the sources checked.

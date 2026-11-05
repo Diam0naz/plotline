@@ -8,7 +8,10 @@ import { canonical, fingerprint, hashBody, verifySig } from '../core.js';
 import { ChainLog, verifyEvents } from './chainlog.mjs';
 import { runChecks } from './checks.mjs';
 import { cleanFireEvidence } from './fire.mjs';
-import { METHODOLOGY as M, PAYOUT_RULES as PR, SERIAL_PREFIX, SPLIT_RULES } from './methodology.mjs';
+import {
+  CURRENT_METHODOLOGY_ID, METHODOLOGY as M, PAYOUT_RULES as PR, SERIAL_PREFIX, SPLIT_RULES,
+  methodologyById, publicMethodologies,
+} from './methodology.mjs';
 import { allocate, maskMsisdn, mockMobileMoney, normalizeMsisdn, splitKobo } from './payments.mjs';
 
 const sha = (s) => createHash('sha256').update(s).digest('hex');
@@ -83,10 +86,24 @@ export class Registry {
         break;
       }
       case 'issued':
-        this.issuances.push({ ...d, next: d.from, issuedAt: e.ts });
+        this.issuances.push({ ...d, next: d.saleableFrom ?? d.from, issuedAt: e.ts });
         this.subs.get(d.subId).issuanceId = d.id;
         this.nextSerial = d.to + 1;
         break;
+      case 'reversed': {
+        const iss = this.issuances.find((i) => i.id === d.issuanceId);
+        if (iss) {
+          iss.saleableTo = Math.max(iss.next - 1, (iss.saleableTo ?? iss.to) - d.units);
+          iss.reversed = (iss.reversed ?? 0) + d.units;
+          iss.cancellations = [...(iss.cancellations ?? []), { from: d.from, to: d.to, reason: d.reason, at: e.ts }];
+        }
+        break;
+      }
+      case 'authorized': {
+        const iss = this.issuances.find((i) => i.id === d.issuanceId);
+        if (iss) iss.authorization = { scope: d.scope, authority: d.authority, reference: d.reference, correspondingAdjustment: d.correspondingAdjustment, at: e.ts };
+        break;
+      }
       case 'sold': {
         for (const l of d.lots) {
           const iss = this.issuances.find((x) => x.id === l.issuanceId);
@@ -124,7 +141,10 @@ export class Registry {
   }
 
   // ---------- 1. a farmer's evidence arrives ----------
-  async submit({ records, pub, msisdn }) {
+  async submit({ records, pub, msisdn, methodologyId }) {
+    // A submission is checked against a named methodology version, and keeps it for issuance.
+    const method = methodologyById(methodologyId ?? CURRENT_METHODOLOGY_ID);
+    if (!method) return fail('unknown_methodology', 'Unknown methodology version');
     if (!Array.isArray(records) || records.length !== 3 || !pub || typeof pub !== 'object') {
       return fail('bad_shape', 'Send the farm, planting and survival records with your public key');
     }
@@ -154,7 +174,7 @@ export class Registry {
       .map((s) => ({ plotKey: s.plotKey, polygon: s.polygon }));
     const planting = bodies[1].data ?? {};
     const survival = bodies[2].data ?? {};
-    const checks = runChecks({ polygon, planting, survival, bodies, others });
+    const checks = runChecks({ polygon, planting, survival, bodies, others, method });
 
     const num = normalizeMsisdn(msisdn);
     const nkey = num && this.msisdnKey(num);
@@ -168,6 +188,7 @@ export class Registry {
       subId, fp, pub, plotKey, farmId: bodies[0].farmId, farmName: bodies[0].data?.name ?? null, polygon,
       recordHashes: records.map((r) => r.hash), msisdnKey: nkey || null, masked: num ? maskMsisdn(num) : null, checks,
       units: checks.estAlive, trees: planting.count, sample: survival.sampleSize, alive: survival.alive,
+      methodology: method.id, methodologyVersion: method.version, baselineId: method.baseline.id,
     };
     if (checks.hard.length) {
       this.emit('rejected', { ...base, reason: checks.hard });
@@ -205,18 +226,27 @@ export class Registry {
   // ---------- 3. issuance: unique serial range, once per approved submission ----------
   issue(s) {
     if (s.issuanceId || s.units < 1) return null;
+    const method = methodologyById(s.methodology) ?? M;
     const from = this.nextSerial;
     const to = from + s.units - 1;
+    // A buffer share is withheld from sale at issuance. It stays unissued-for-sale as cover for
+    // reversal, rather than being sold and then clawed back.
+    const bufferUnits = Math.max(0, Math.min(s.units - 1, Math.floor((s.units * method.bufferPct) / 100)));
+    const saleableTo = to - bufferUnits;
     const id = `ISS-${String(this.issuances.length + 1).padStart(4, '0')}`;
     this.emit('issued', {
       id, subId: s.subId, fp: s.fp, plotKey: s.plotKey, farmName: s.farmName, units: s.units, from, to,
-      serialFrom: serial(from), serialTo: serial(to), methodology: M.id, kgCO2e: s.units * M.kgCO2ePerTreeYear,
+      saleableFrom: from, saleableTo,
+      bufferUnits, bufferFrom: bufferUnits ? saleableTo + 1 : null, bufferTo: bufferUnits ? to : null,
+      serialFrom: serial(from), serialTo: serial(to),
+      methodology: method.id, methodologyVersion: method.version, baselineId: method.baseline.id,
+      kgCO2e: s.units * method.kgCO2ePerTreeYear,
     });
     return this.issuances[this.issuances.length - 1];
   }
 
   available() {
-    return this.issuances.reduce((a, i) => a + (i.to - i.next + 1), 0);
+    return this.issuances.reduce((a, i) => a + Math.max(0, (i.saleableTo ?? i.to) - i.next + 1), 0);
   }
 
   // ---------- 4. a buyer buys; money is split and paid ----------
@@ -232,7 +262,7 @@ export class Registry {
     let need = units;
     for (const iss of this.issuances) {
       if (need === 0) break;
-      const free = iss.to - iss.next + 1;
+      const free = Math.max(0, (iss.saleableTo ?? iss.to) - iss.next + 1);
       if (free < 1) continue;
       const take = Math.min(free, need);
       lots.push({ issuanceId: iss.id, fp: iss.fp, from: iss.next, to: iss.next + take - 1, units: take });
@@ -294,6 +324,48 @@ export class Registry {
   }
 
   // ---------- 5. retirement: the buyer claims the units so they cannot be sold or claimed again ----------
+  // ---------- 4b. reversals: cancel unsold serials after fire, clearing or a failed check ----------
+  reverse({ issuanceId, units, reason, evidence = null }) {
+    const iss = this.issuances.find((i) => i.id === issuanceId);
+    if (!iss) return fail('unknown_issuance', 'No such issuance');
+    const text = String(reason ?? '').trim();
+    if (text.length < 5 || text.length > 300) return fail('bad_reason', 'Give a reason (5-300 characters)');
+    const free = Math.max(0, (iss.saleableTo ?? iss.to) - iss.next + 1);
+    if (free < 1) return fail('nothing_to_cancel', 'Every saleable unit from this issuance has already been sold');
+    const count = units === undefined ? free : units;
+    if (!Number.isInteger(count) || count < 1) return fail('bad_units', 'Units must be a whole number of at least 1');
+    if (count > free) return fail('insufficient_unsold', `Only ${free} saleable units remain on ${issuanceId}`);
+    const from = (iss.saleableTo ?? iss.to) - count + 1;
+    const to = iss.saleableTo ?? iss.to;
+    this.emit('reversed', {
+      issuanceId, units: count, reason: text, from, to,
+      serialFrom: serial(from), serialTo: serial(to),
+      evidence: evidence ? String(evidence).slice(0, 200) : null,
+    });
+    return { ok: true, cancellation: { issuanceId, units: count, serialFrom: serial(from), serialTo: serial(to), reason: text } };
+  }
+
+  // ---------- 4c. Article 6: who may claim these units, and are they adjusted? ----------
+  authorizeIssuance({ issuanceId, scope, authority, reference, correspondingAdjustment = false }) {
+    const iss = this.issuances.find((i) => i.id === issuanceId);
+    if (!iss) return fail('unknown_issuance', 'No such issuance');
+    if (!['domestic', 'international'].includes(scope)) return fail('bad_scope', 'Scope must be domestic or international');
+    if (iss.authorization?.scope === 'international') return fail('already_authorized', 'This issuance is already authorised for international transfer');
+    const auth = String(authority ?? '').trim();
+    const ref = String(reference ?? '').trim();
+    if (auth.length < 2 || auth.length > 80) return fail('bad_authority', 'Name the authority (2-80 characters)');
+    if (ref.length < 2 || ref.length > 80) return fail('bad_reference', 'Give the authorisation reference (2-80 characters)');
+    if (scope === 'international') {
+      if (correspondingAdjustment !== true) return fail('adjustment_required', 'International transfer needs a corresponding adjustment');
+      const claimed = [...this.orders.values()].some((o) => o.retired && o.lots.some((l) => l.issuanceId === issuanceId));
+      if (claimed) return fail('already_claimed', 'Units from this issuance were already retired domestically');
+    }
+    this.emit('authorized', {
+      issuanceId, scope, authority: auth, reference: ref, correspondingAdjustment: scope === 'international' && correspondingAdjustment === true,
+    });
+    return { ok: true, authorization: this.issuances.find((i) => i.id === issuanceId).authorization };
+  }
+
   retire({ orderId, beneficiary, reason = '' }) {
     const o = this.orders.get(orderId);
     if (!o) return fail('unknown_order', 'No such order');
@@ -307,12 +379,27 @@ export class Registry {
   certificate(orderId) {
     const o = this.orders.get(orderId);
     if (!o?.retired) return null;
+    const issued = o.lots.map((l) => this.issuances.find((i) => i.id === l.issuanceId)).filter(Boolean);
+    const method = methodologyById(issued[0]?.methodology) ?? M;
     return {
       title: 'Retirement certificate (SIMULATED: not a registered carbon credit)',
       orderId, retiredFor: o.retired.by, reason: o.retired.reason, retiredAt: o.retired.at,
-      units: o.units, unit: M.unit, methodology: M.id, tCO2eDemo: (o.units * M.kgCO2ePerTreeYear) / 1000,
+      units: o.units, unit: method.unit, methodology: method.id, methodologyVersion: method.version,
+      baselineId: method.baseline.id, tCO2eDemo: (o.units * method.kgCO2ePerTreeYear) / 1000,
       serialFrom: o.serialFrom, serialTo: o.serialTo,
-      lots: o.lots.map((l) => ({ issuance: l.issuanceId, serialFrom: l.serialFrom, serialTo: l.serialTo, units: l.units })),
+      lots: o.lots.map((l) => {
+        const iss = this.issuances.find((i) => i.id === l.issuanceId);
+        return {
+          issuance: l.issuanceId, serialFrom: l.serialFrom, serialTo: l.serialTo, units: l.units,
+          methodology: iss?.methodology ?? null, baselineId: iss?.baselineId ?? null,
+          authorization: iss?.authorization ?? null,
+        };
+      }),
+      article6: {
+        international: o.lots.some((l) => this.issuances.find((i) => i.id === l.issuanceId)?.authorization?.scope === 'international'),
+        correspondingAdjustment: o.lots.some((l) => this.issuances.find((i) => i.id === l.issuanceId)?.authorization?.correspondingAdjustment === true),
+        authorities: [...new Set(issued.map((i) => i.authorization?.authority).filter(Boolean))],
+      },
       logHead: this.log.head(),
     };
   }
@@ -328,6 +415,7 @@ export class Registry {
       sample: s.sample, alive: s.alive, flags: s.checks.flags, hard: s.checks.hard, overlaps: s.checks.overlaps,
       areaHa: Math.round(s.checks.areaHa * 100) / 100, receivedAt: s.receivedAt, polygon: s.polygon,
       payoutTo: s.masked, issuanceId: s.issuanceId ?? null,
+      methodology: s.methodology ?? null, methodologyVersion: s.methodologyVersion ?? null, baselineId: s.baselineId ?? null,
       decision: s.decision ? { by: s.decision.body.verifierId, decision: s.decision.body.decision, note: s.decision.body.note, ts: s.decision.body.ts, sig: s.decision.sig, fire: s.decision.body.fire ?? null } : null,
     };
   }
@@ -346,8 +434,20 @@ export class Registry {
   }
 
   market() {
-    const lots = this.issuances.map((i) => ({ id: i.id, farmName: i.farmName, units: i.units, remaining: i.to - i.next + 1, serialFrom: i.serialFrom, serialTo: i.serialTo }));
-    return { priceKobo: this.priceKobo, available: this.available(), methodology: M.id, status: M.status, kgCO2ePerUnit: M.kgCO2ePerTreeYear, lots, orders: [...this.orders.values()].map((o) => this.publicOrder(o)) };
+    const lots = this.issuances.map((i) => ({
+      id: i.id, farmName: i.farmName, units: i.units, remaining: Math.max(0, (i.saleableTo ?? i.to) - i.next + 1),
+      bufferUnits: i.bufferUnits ?? 0, reversedUnits: i.reversed ?? 0,
+      serialFrom: i.serialFrom, serialTo: i.serialTo,
+      methodology: i.methodology ?? M.id, methodologyVersion: i.methodologyVersion ?? null,
+      authorization: i.authorization ?? null,
+    }));
+    return {
+      priceKobo: this.priceKobo, available: this.available(),
+      methodology: M.id, methodologyVersion: M.version, baselineId: M.baseline.id,
+      status: M.status, kgCO2ePerUnit: M.kgCO2ePerTreeYear, bufferPct: M.bufferPct,
+      methodologies: publicMethodologies(),
+      lots, orders: [...this.orders.values()].map((o) => this.publicOrder(o)),
+    };
   }
 
   // money in must equal money out + money held + pool balances
@@ -359,10 +459,17 @@ export class Registry {
     const accounted = paid + held + community + verifier + platform;
     const issued = this.issuances.reduce((a, i) => a + i.units, 0);
     const sold = this.issuances.reduce((a, i) => a + (i.next - i.from), 0);
+    const buffered = this.issuances.reduce((a, i) => a + (i.bufferUnits ?? 0), 0);
+    const reversed = this.issuances.reduce((a, i) => a + (i.reversed ?? 0), 0);
+    const available = this.available();
     const serialsOk = this.issuances.every((x, i, arr) => (i === 0 ? x.from === 1 : x.from === arr[i - 1].to + 1));
     return {
       inKobo, paidToFarmersKobo: paid, heldKobo: held, communityKobo: community, verifierKobo: verifier, platformKobo: platform,
-      balanced: inKobo === accounted, unitsIssued: issued, unitsSold: sold, unitsAvailable: issued - sold, serialsContiguous: serialsOk,
+      balanced: inKobo === accounted,
+      unitsIssued: issued, unitsSold: sold, unitsAvailable: available,
+      unitsBuffered: buffered, unitsReversed: reversed,
+      unitsBalanced: issued === sold + available + buffered + reversed,
+      serialsContiguous: serialsOk,
     };
   }
 

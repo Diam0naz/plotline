@@ -234,6 +234,20 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (result.ok) await cache?.invalidate();
       return answer(res, result);
     }
+    if (post && path === '/api/registry/reverse') {
+      const data = await jsonBody(req, res, 2048);
+      if (data === undefined) return;
+      const result = registry.reverse(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 201);
+    }
+    if (post && path === '/api/registry/authorize') {
+      const data = await jsonBody(req, res, 2048);
+      if (data === undefined) return;
+      const result = registry.authorizeIssuance(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 201);
+    }
     return send(res, 404, { error: 'unknown endpoint' });
   }
 
