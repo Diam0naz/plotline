@@ -11,6 +11,7 @@ import { Registry } from './registry.mjs';
 import { verifyEvents } from './chainlog.mjs';
 import { cleanFireEvidence, recentFires, FIRE_DEFAULTS } from './fire.mjs';
 import { ndviEvidence, NDVI_DEFAULTS } from './ndvi.mjs';
+import { classifyScoutPhotos, normalizeImages, classifyConfigured, CLASSIFY_MAX_BODY } from './classify.mjs';
 import { publishHead } from './anchor-publish.mjs';
 import { Accounts, LOGIN_FAILED, Sessions, cookieOriginOk, clearSessionCookie, parseCookies, sameOrigin, sessionCookie, sessionToken, verifyPassword } from './auth.mjs';
 import { createCache } from './cache.mjs';
@@ -589,6 +590,24 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     }
 
     if (path.startsWith('/api/registry/') || path === '/api/submit') return await registryApi(req, res, path);
+
+    // ── AI: scout photo classification (OpenAI ↔ Gemini failover) ─────────
+    // Best-effort suggestion for the record the scout is writing; the report
+    // never depends on it. Rate-limited because every call costs model tokens.
+    if (path === '/api/classify' && req.method === 'POST') {
+      const ip = req.socket.remoteAddress || 'unknown';
+      if (limited(ip, 'classify', { windowMs: 60_000, max: 10 })) {
+        return send(res, 429, { error: 'too many classifications, try again shortly' });
+      }
+      const data = await jsonBody(req, res, CLASSIFY_MAX_BODY);
+      if (data === undefined) return;
+      const images = normalizeImages(data);
+      if (!images) return send(res, 400, { error: 'send 1–5 photos as images[{imageBase64,mimeType}]' });
+      if (!classifyConfigured()) return send(res, 503, { error: 'ai_unconfigured', hint: 'set OPENAI_API_KEY or GEMINI_API_KEY' });
+      const out = await classifyScoutPhotos({ images });
+      if (out.error === 'no_verdict') return send(res, 502, out);
+      return send(res, 200, out);
+    }
 
     // ── Operator: publish log head to Solana ──────────────────────────────
     if (path === '/api/anchor/publish' && req.method === 'POST') {

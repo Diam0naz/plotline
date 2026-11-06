@@ -1407,3 +1407,38 @@ body:not(.site):not(.console) textarea:focus {
 .lock-card .primary { background: var(--industrial-emerald); border: 0; color: #04120c; font-weight: 700; }
 .lock-card .lock-err { min-height: 18px; color: #fca5a5; font-size: 13px; }
 .lock-card .lock-sub { color: #94a3b8; font-size: 13px; margin: 0 0 var(--s4); }
+
+/* ---------- Scout photos & AI check ---------- */
+.photo-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.photo-row svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; margin-right: 4px; }
+.chip.soft { background: var(--green-50); border-color: var(--green-200); color: var(--green-700); }
+.chip.good { background: var(--green-100); border-color: var(--green-400); color: var(--green-800); }
+.photo-strip { display: flex; gap: 8px; flex-wrap: wrap; }
+.photo-strip:empty { display: none; }
+.shoot-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  overflow: hidden;
+  cursor: pointer;
+  background: none;
+}
+.shoot-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shoot-thumb .shoot-x {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(14, 15, 13, 0.72);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+.shoot-thumb:hover { border-color: var(--red-border); }
+.shoot-thumb:hover .shoot-x { background: var(--red); }

@@ -534,6 +534,17 @@
       <label>Note (optional)
         <textarea id="scout-note" rows="2" maxlength="200" placeholder="e.g. holes in leaves, near the north edge"></textarea>
       </label>
+      <div class="photo-row">
+        <input id="scout-photos" type="file" accept="image/jpeg,image/png" capture="environment" multiple hidden>
+        <button id="scout-photo-btn" type="button" class="sm">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          Add photos
+        </button>
+        <button id="scout-ai-btn" type="button" class="sm secondary" disabled>Check with AI</button>
+        <span id="scout-ai-chip" class="chip soft" hidden></span>
+      </div>
+      <div id="scout-thumbs" class="photo-strip"></div>
+      <div id="scout-ai-verdict" class="result" hidden></div>
       <button id="scout-btn" class="primary wide">Save report</button>
       <div id="scout-result"></div>
     </div>

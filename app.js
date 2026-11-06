@@ -343,22 +343,161 @@ $('#scout-btn').addEventListener('click', async () => {
   btn.disabled = true; btn.textContent = 'Getting a GPS fix…';
   try {
     const fix = await getFix();
+    // Provenance stays honest offline: only the photo hashes go in the record —
+    // the images themselves belong to the phone, not to localStorage.
     const rec = await addRecord('scout', f, fix, {
       type: $('#scout-type').value,
       severity: Number($('#scout-sev').value),
       note: $('#scout-note').value.trim().slice(0, 200),
+      photos: scoutShots.length,
+      photoHashes: scoutShots.map((s) => s.hash),
+      ai: scoutAi ? { label: scoutAi.label, confidence: scoutAi.confidence, severity: scoutAi.severity, provider: scoutAi.provider, pathogenName: scoutAi.pathogenName } : null,
     });
     const q = rec.body.quality;
+    const aiLine = rec.body.data.ai ? `<br><span class="muted small">AI check: ${esc(rec.body.data.ai.label)} (${Math.round((rec.body.data.ai.confidence || 0) * 100)}%, ${esc(rec.body.data.ai.provider)})</span>` : '';
     $('#scout-result').innerHTML = `
       <div class="result">
         <b>Saved and signed.</b> Location quality: <span class="badge ${q.score >= 80 ? 'good' : q.score >= 50 ? 'ok' : 'bad'}">${q.score}/100</span>
         ${q.flags.length ? '<br>' + q.flags.map((x) => esc(FLAG_TEXT[x] || x)).join('<br>') : ''}
+        ${scoutShots.length ? `<br><span class="muted small">${scoutShots.length} photo${scoutShots.length === 1 ? '' : 's'} hashed into the record</span>` : ''}
+        ${aiLine}
         <br><span class="muted small">Accuracy ±${rec.body.acc} m · geohash ${esc(rec.body.geohash)} · waiting to be sealed in a batch</span>
       </div>`;
     $('#scout-note').value = '';
+    clearScoutShots();
     drawFarmMap(); renderAll();
   } catch (err) { toast(err.message); }
   btn.disabled = false; btn.textContent = 'Save report';
+});
+
+// ---------- scout photos & AI classification ----------
+// Photos are downscaled to a long edge of 1024 px / JPEG 0.6 on this phone and
+// kept in memory only — preview + hashing for provenance, never localStorage.
+// The AI check posts them to /api/classify and REQUIRES A SIGNAL: the offline
+// path is unchanged (save the report, no AI label). Like every AI verdict, the
+// suggestion is shown, never imposed — the scout confirms the type before saving.
+const SCOUT_PHOTOS_MAX = 3;
+const PHOTO_MAX_EDGE = 1024;
+const PHOTO_JPEG_QUALITY = 0.6;
+const PHOTO_PAYLOAD_BUDGET = 3_000_000; // JSON envelope room under the server's 4.5 MB cap
+const SEV_NUM = Object.freeze({ high: 3, medium: 2, low: 1, none: 1 });
+
+let scoutShots = []; // { b64, mimeType, hash }
+let scoutAi = null;
+const scoutAiBtn = $('#scout-ai-btn');
+
+$('#scout-photo-btn')?.addEventListener('click', () => $('#scout-photos')?.click());
+$('#scout-photos')?.addEventListener('change', (e) => addScoutPhotos([...e.target.files]).finally(() => { e.target.value = ''; }));
+
+async function downscaleShot(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  const b64 = canvas.toDataURL('image/jpeg', PHOTO_JPEG_QUALITY).split(',')[1] || '';
+  return { b64, mimeType: 'image/jpeg', bytes: Math.round(b64.length * 0.75) };
+}
+
+async function addScoutPhotos(files) {
+  const extras = scoutShots.length + files.length - SCOUT_PHOTOS_MAX;
+  const usable = extras > 0 ? files.slice(0, files.length - extras) : [...files];
+  if (extras > 0) toast(`Keeping the first ${SCOUT_PHOTOS_MAX} photos`);
+  for (const file of usable) {
+    try {
+      const shot = await downscaleShot(file);
+      const bytes = scoutShots.reduce((a, s) => a + s.b64.length, 0) * 0.75 + shot.bytes;
+      if (bytes > PHOTO_PAYLOAD_BUDGET) { toast('Photo budget reached — earlier shots kept'); break; }
+      shot.hash = await C.sha256Hex(shot.b64);
+      scoutShots.push(shot);
+    } catch { toast('A photo could not be read on this phone'); }
+  }
+  renderScoutShots();
+}
+
+function clearScoutShots() {
+  scoutShots = [];
+  scoutAi = null;
+  renderScoutShots();
+}
+
+function renderScoutShots() {
+  const strip = $('#scout-thumbs');
+  if (!strip) return;
+  strip.innerHTML = scoutShots.map((s, i) => `
+    <button class="shoot-thumb" type="button" data-shot="${i}" title="Remove photo">
+      <img alt="" src="data:${s.mimeType};base64,${s.b64}">
+      <span class="shoot-x">×</span>
+    </button>`).join('');
+  strip.querySelectorAll('[data-shot]').forEach((el) => el.addEventListener('click', () => {
+    scoutShots.splice(Number(el.dataset.shot), 1);
+    renderScoutShots();
+  }));
+  if (scoutAiBtn) scoutAiBtn.disabled = !scoutShots.length;
+}
+
+function aiChip(text, cls = 'soft') {
+  const chip = $('#scout-ai-chip');
+  if (!chip) return;
+  chip.className = `chip ${cls}`;
+  chip.textContent = text;
+  if (text) { chip.hidden = false; } else chip.hidden = true;
+}
+
+const AI_TYPE_HINTS = [
+  [/(aphid|worm|beetle|locust|insect|bug|borer|thrip|mite)/i, 'pest'],
+  [/(mildew|rust|blight|rot|spot|canker|wilt|fungus|virus|lesion)/i, 'disease'],
+  [/(nutrient|chlorosis|deficien|yellowing)/i, 'nutrient'],
+  [/(weed)/i, 'weeds'],
+  [/(drought|stress|scorch|burn|water)/i, 'water_stress'],
+  [/(healthy|no crop|unclear)/i, 'healthy'],
+];
+function aiTypeFor(label) {
+  for (const [re, type] of AI_TYPE_HINTS) if (re.test(label)) return type;
+  return null;
+}
+
+scoutAiBtn?.addEventListener('click', async () => {
+  if (!scoutShots.length) return;
+  const btn = scoutAiBtn;
+  btn.disabled = true; btn.textContent = 'Checking…';
+  aiChip('Checking with AI…');
+  try {
+    const res = await fetch('api/classify', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ images: scoutShots.map((s) => ({ imageBase64: s.b64, mimeType: s.mimeType })) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 503 || data.error === 'ai_unconfigured') {
+      aiChip('AI not configured on this server');
+      $('#scout-ai-verdict').innerHTML = '<div class="alert-box amber sm">AI check is not available on this deployment. Save the report as usual.</div>';
+      return;
+    }
+    if (!res.ok) throw new Error(data.error || 'the AI check failed');
+    scoutAi = data;
+    const conf = Math.round((data.confidence || 0) * 100);
+    const hint = aiTypeFor(data.label);
+    if (hint) { $('#scout-type').value = hint; }
+    $('#scout-sev').value = String(SEV_NUM[data.severity] || 2);
+    $('#scout-ai-verdict').innerHTML = `
+      <b>${esc(data.label)}</b> <span class="badge ${conf >= 85 ? 'good' : conf >= 50 ? 'ok' : 'bad'}">${conf}%</span>
+      <span class="text-faint text-xs">via ${esc(data.provider || 'AI')} — suggestion, confirm before saving</span>
+      ${data.notes ? `<br><span class="muted small">${esc(data.notes)}</span>` : ''}
+      ${data.pathogenName ? `<br><span class="muted small">Causal agent: ${esc(data.pathogenName)}</span>` : ''}`;
+    if (!$('#scout-note').value.trim() && data.notes) $('#scout-note').value = `${data.label} — ${data.notes}`.slice(0, 200);
+    aiChip(`AI: ${data.label} · ${conf}%`, conf >= 85 ? 'good' : conf >= 50 ? 'ok' : 'bad');
+  } catch (err) {
+    aiChip('AI unavailable');
+    $('#scout-ai-verdict').innerHTML = `<div class="alert-box red sm">${esc(err.message || 'AI check failed — save the report as usual.')}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Check with AI';
+  }
 });
 
 // ---------- heat map & alerts ----------

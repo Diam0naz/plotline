@@ -16,7 +16,7 @@ const ok = (msg) => console.log(`✓ ${msg}`);
 for (const f of [
   'server/server.mjs', 'server/registry.mjs', 'server/auth.mjs', 'server/ledger.mjs',
   'server/chainlog.mjs', 'server/cache.mjs', 'server/checks.mjs', 'server/fire.mjs',
-  'server/ndvi.mjs', 'server/anchor-publish.mjs', 'server/methodology.mjs', 'server/payments.mjs',
+  'server/ndvi.mjs', 'server/classify.mjs', 'server/anchor-publish.mjs', 'server/methodology.mjs', 'server/payments.mjs',
   'server/pgstore.mjs', 'server/neonauth.mjs', 'server/realtime.mjs',
   'server/testkit.mjs', 'core.js', 'app.js', 'console.js', 'sw.js',
 ]) {

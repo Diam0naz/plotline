@@ -94,13 +94,29 @@ Decisions in the review queue are signed with the verifier's browser-local ECDSA
 
 `pitch-deck.html` is a self-contained 13-slide deck (no dependencies, same offline-first rules as the app). Open it directly in a browser, present full-screen (F11) with →/space, or serve it with the app at [`/pitch-deck.html`](http://localhost:8123/pitch-deck.html). Ctrl+P prints one slide per landscape A4 page. Everything on it is either verified against the codebase or marked with a `——` placeholder to fill in before presenting.
 
+## AI photo check (best-effort, offline-first)
+
+`POST /api/classify` runs up to 5 field photos of one plant through a vision model and returns one structured verdict:
+
+```json
+{ "label": "Gray Leaf Spot", "confidence": 0.87, "severity": "medium",
+  "notes": "Lesions on the lower canopy…", "commonName": "Maize",
+  "botanicalName": "Zea mays", "pathogenName": "Cercospora zeae-maydis", "provider": "gemini" }
+```
+
+- **Providers in order**: OpenAI (`OPENAI_API_KEY`, model `OPENAI_VISION_MODEL`, default `gpt-6-astra`) then Gemini (`GEMINI_API_KEY`, `GEMINI_MODEL`, default `gemini-3.5-flash-lite`). The first success wins; a hard client fault (bad key, bad payload) stops the chain honestly instead of wasting the fallback. All attempts must fit inside `CLASSIFY_TOTAL_BUDGET_MS` (42 s) with per-attempt caps of 20 s.
+- **One prompt, one schema**: both providers share the same system prompt and strict JSON schema (`server/classify.mjs`), so verdicts are comparable across providers, and responses are clamped on this side (label ≤ 48 chars, confidence 0–1, severity vocabulary) before reaching the app.
+- **It is a suggestion**: the app shows label + confidence + notes and lets the scout confirm or overrule the type and severity before saving. The report itself works fully offline; without signal, the AI chip says so and the report saves without an AI label.
+- **Provenance, not bulk**: photos are downscaled to 1024 px / JPEG 0.6 on the phone, kept in memory only, and their SHA-256 hashes (not the bytes) are signed into the scout record, so any later photo can be tied to its record without bloating localStorage.
+- **Costs are rate-limited**: 10 classifications per IP per minute; the endpoint answers `503 ai_unconfigured` when no key is set, and the whole feature degrades to nothing.
+
 ## What it does
 
 | Tab | Feature |
 |---|---|
 | Farm | Walk the boundary, mark corner points, get area and perimeter. Fixes worse than 50 m are refused. |
 | Farm › Seed & fertiliser | Seed and fertiliser quantities from the walked area. Rates are editable starting points, not recommendations. |
-| Scout | Geotagged, signed field reports (pest, disease, water stress, weeds, nutrient, healthy) with a GNSS quality score. |
+| Scout | Geotagged, signed field reports (pest, disease, water stress, weeds, nutrient, healthy) with a GNSS quality score. Up to 3 photos are hashed into the record, and an optional "Check with AI" runs the photos through a vision model to suggest a diagnosis — a suggestion the scout confirms, never an auto-label. |
 | Scout › Outbreaks | Heat map of reports and outbreak alerts (3+ reports of one problem within 1 km in 14 days). Reports with quality under 50 are left out. |
 | Trees | Record planting and a survival check, send them for verification, see status and payouts. |
 | Records | Seal records into a batch (Merkle root), publish it to the ledger, and verify any record. |
