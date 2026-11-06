@@ -64,10 +64,21 @@ ADMIN_TOKEN=<token> node scripts/seed.mjs http://localhost:8123
 
 Verifiers are upgraded standard users. Standard users do not see verifier routes or navigation tabs by default.
 
-1. **Application**: Logged-in standard users can access an "Apply to be a Verifier" flow inside the Records tab of the app, submitting their full name, email, organisation, and qualification reason (`POST /api/auth/apply`).
+1. **Application**: Logged-in standard users can access an "Apply to be a Verifier" flow in the Profile tab, submitting their full name, email, organisation, and qualification reason (`POST /api/auth/apply`).
 2. **Admin approval**: Administrators review pending applications in the admin console. Approving an application generates a unique activation code (e.g. `VACT-XXXX-XXXX`), provided to the approved user off-band.
-3. **Activation**: The standard user enters their activation code into the "Activate verifier role" component in the app (`POST /api/auth/activate`).
+3. **Activation**: The standard user enters their activation code into the "Activate verifier role" component in the Profile tab (`POST /api/auth/activate`).
 4. **Upgrade & Unlock**: Submitting a valid activation code immediately upgrades the user's account and session to the `verifier` role. This dynamically unlocks and displays the Verifier navigation tabs and Submissions Queue in their user-facing app view, and routes them straight to the queue. Verifiers can review submissions in the app or via the full console.
+
+Decisions in the review queue are signed with the verifier's browser-local ECDSA key — the signature, not the login session, authorises each decision in the registry.
+
+### Farmer app structure
+
+The farmer app (`app.html`) is organised around a phone-friendly bottom nav and an avatar user menu:
+
+- **Home (dashboard)** — the landing tab for every role: greeting, live stats computed on this phone (farms, total area, scout reports, records sealed, trees tracked), quick actions (walk boundary, report sighting, seal records, review queue for verifiers) and recent activity.
+- **Profile** — the identity card (display name kept on-device, signing key fingerprint, local record counts), the server account state (username, role, session expiry) with sign-in/out, and the verifier application/activation flow.
+- **Settings** — security (the device-local PIN lock screen, which covers the whole app until unlocked, with a reset path for a forgotten PIN), key backup and multi-device sync, the optional ledger key, data export/demo/reset, and about info.
+- **Proper sign-out** — the avatar menu (top-right) holds profile/settings/sign-out. Sign out ends the server session through `POST /api/auth/logout`; the device identity and its records always stay on the phone.
 
 Decisions in the review queue are signed with the verifier's browser-local ECDSA key — the signature, not the login session, authorises each decision in the registry.
 

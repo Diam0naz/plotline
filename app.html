@@ -329,11 +329,26 @@
         </div>
 
         <!-- Verifier / operator route (server session, separate from the device identity) -->
-        <p class="gw-switch-link" style="border-top:1px solid #e2e8f0; padding-top:var(--s3); margin-top:var(--s2)"><a href="#" id="gw-verifier-link">Verifier or operator? Sign in →</a></p>
+        <p class="gw-switch-link" style="border-top:1px solid var(--border-2); padding-top:var(--s3); margin-top:var(--s2)"><a href="#" id="gw-verifier-link">Verifier or operator? Sign in →</a></p>
       </div>
     </div>
 
   </div>
+</div>
+
+<!-- ── PIN lock overlay: covers everything until the phone is unlocked ── -->
+<div id="lock-overlay" class="lock-overlay" hidden>
+  <form id="lock-form" class="lock-card stack">
+    <div class="brand lock-brand">Plot<span>line</span></div>
+    <h2>This phone is locked</h2>
+    <p class="lock-sub">Enter the PIN you set for this device. The app's records, scans and signing key stay sealed until you do.</p>
+    <label class="lock-label">PIN
+      <input id="lock-pin" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="Your PIN">
+    </label>
+    <div id="lock-err" class="lock-err" role="alert"></div>
+    <button class="primary wide lg" type="submit">Unlock</button>
+    <button id="lock-reset" class="quiet sm" type="button">Forgot the PIN? Reset this phone's data</button>
+  </form>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
@@ -348,18 +363,107 @@
     <span class="telemetry-beacon"><span class="beacon-dot"></span><span class="beacon-label">AGRI-GNSS</span></span>
   </div>
   <div class="chips">
-    <span id="gps-chip" class="chip chip-radar" hidden><span class="radar-ping"></span><span id="gps-text">📍 GPS</span></span>
-    <span id="net-chip" class="chip ok" hidden>● Offline</span>
-    <span id="app-user-pill" class="chip chip-user" style="display:none"></span>
-    <button id="app-auth-btn" class="sm quiet" type="button">Sign in</button>
-    <button id="app-logout-btn" class="sm quiet" type="button" style="display:none">Sign out</button>
+    <span id="gps-chip" class="chip chip-radar" hidden><span class="radar-ping"></span><span id="gps-text">GPS</span></span>
+    <span id="net-chip" class="chip ok" hidden>Offline</span>
+    <div class="user-menu" id="user-menu">
+      <button id="app-user-btn" class="user-btn" type="button" aria-haspopup="menu" aria-expanded="false" style="display:none">
+        <span id="user-avatar" class="user-avatar">—</span>
+        <span id="app-user-pill" class="user-name-pill"></span>
+        <svg class="user-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+      </button>
+      <div id="user-dropdown" class="user-dropdown" hidden role="menu">
+        <div class="user-dropdown-head">
+          <span class="user-avatar user-avatar-lg" id="user-avatar-menu">—</span>
+          <div class="user-dropdown-id">
+            <b id="user-menu-name">—</b>
+            <span class="text-sm" id="user-menu-role">—</span>
+          </div>
+        </div>
+        <button role="menuitem" data-tab-jump="profile" class="user-dropdown-item">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+          Profile
+        </button>
+        <button role="menuitem" data-tab-jump="settings" class="user-dropdown-item">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
+          Settings
+        </button>
+        <div class="user-dropdown-sep"></div>
+        <button id="app-logout-btn" role="menuitem" class="user-dropdown-item user-dropdown-danger">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+          Sign out
+        </button>
+      </div>
+    </div>
+    <button id="app-auth-btn" class="sm" type="button">Sign in</button>
   </div>
 </header>
 
 <main>
 
+  <!-- ══════════ DASHBOARD ══════════ -->
+  <section id="tab-dashboard" class="tab active">
+    <div id="dash-greeting" class="dash-greeting">
+      <h1 id="dash-hello">Welcome back</h1>
+      <p id="dash-sub" class="muted small">Your farm at a glance — everything below is signed on this phone.</p>
+    </div>
+
+    <div class="dash-stats">
+      <div class="dash-stat">
+        <span class="dash-stat-icon stat-farm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><path d="M6 20v-7h12v7"/><path d="M9 13V9h6v4"/><path d="M12 9V4l7 5h-14l7-5" fill="none"/></svg></span>
+        <b id="dash-farms">0</b>
+        <span class="dash-stat-label">Farms · <span id="dash-area" class="mono">0.00 ha</span></span>
+      </div>
+      <div class="dash-stat">
+        <span class="dash-stat-icon stat-scout"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+        <b id="dash-reports">0</b>
+        <span class="dash-stat-label">Scout reports</span>
+      </div>
+      <div class="dash-stat">
+        <span class="dash-stat-icon stat-records"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6"/><path d="M9 14h6"/></svg></span>
+        <b id="dash-records">0</b>
+        <span class="dash-stat-label">Records · <span id="dash-sealed" class="mono">0 sealed</span></span>
+      </div>
+      <div class="dash-stat">
+        <span class="dash-stat-icon stat-trees"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 7h-3l4 6H6l4-6H7z"/><path d="M12 16v5"/></svg></span>
+        <b id="dash-trees">0</b>
+        <span class="dash-stat-label">Trees tracked</span>
+      </div>
+    </div>
+
+    <div class="card stack">
+      <h2>Quick actions</h2>
+      <div class="dash-actions">
+        <button id="dash-walk" class="dash-action">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+          Walk boundary
+        </button>
+        <button id="dash-scout" class="dash-action">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          Report sighting
+        </button>
+        <button id="dash-seal" class="dash-action">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+          Seal records
+        </button>
+        <button id="dash-submissions" class="dash-action dash-action-verifier" style="display:none">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v4H3z"/><path d="M5 9v10h14V9"/><path d="M9 13h6"/></svg>
+          Review queue
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row between" style="align-items:baseline">
+        <h2>Recent activity</h2>
+        <button id="dash-view-all" class="text-sm quiet" type="button" style="border:0;background:none;cursor:pointer;color:var(--green-600)">All records ›</button>
+      </div>
+      <div id="dash-recent" class="list"></div>
+      <p id="dash-recent-empty" class="muted small" hidden>Nothing yet — walk a boundary or report a sighting to create your first record.</p>
+    </div>
+  </section>
+
   <!-- ══════════ FARM ══════════ -->
-  <section id="tab-farm" class="tab active">
+  <section id="tab-farm" class="tab">
     <div class="tab-head">
       <h1>Your farm</h1>
       <p>Walk the boundary once to get area, perimeter and inputs.</p>
@@ -379,13 +483,13 @@
     <div class="card stack">
       <div id="walk-stats" class="muted small"></div>
       <div id="walk-idle" class="stack">
-        <button id="walk-btn" class="primary wide lg">📍 Walk boundary</button>
+        <button id="walk-btn" class="primary wide lg">Walk boundary</button>
       </div>
       <div id="walk-tools" class="stack hidden">
-        <button id="drop-btn" class="primary wide lg">📌 Mark corner</button>
+        <button id="drop-btn" class="primary wide lg">Mark corner</button>
         <div class="row">
-          <button id="undo-btn" disabled>↩ Undo</button>
-          <button id="finish-btn" class="secondary" disabled>✓ Finish</button>
+          <button id="undo-btn" disabled>Undo</button>
+          <button id="finish-btn" class="secondary" disabled>Finish</button>
         </div>
         <button id="walk-cancel" class="quiet wide">Cancel walk</button>
       </div>
@@ -564,97 +668,8 @@
 
     <div class="card stack">
       <div id="rec-summary" class="muted small"></div>
-      <button id="seal-btn" class="primary wide lg">🔒 Seal records</button>
+      <button id="seal-btn" class="primary wide lg">Seal records</button>
       <p class="muted small">Sealing groups pending records under one fingerprint. Only the fingerprint leaves your phone.</p>
-      <details>
-        <summary class="muted small" style="cursor:pointer">Data &amp; demo tools ›</summary>
-        <div class="row" style="margin-top:var(--s3)">
-          <button id="export-btn">Export JSON</button>
-          <button id="demo-btn">Load demo data</button>
-        </div>
-        <div class="row">
-          <button id="reset-btn" class="danger">Reset all data</button>
-        </div>
-      </details>
-    </div>
-
-    <div class="card stack">
-      <h2>Backup &amp; sync</h2>
-      <p class="muted small">Your signing key lives on this phone. Back it up so clearing the browser or losing the phone does not cut you off.</p>
-      <div class="row">
-        <button id="key-export-btn">Export key backup</button>
-        <button id="key-import-btn">Restore key backup</button>
-      </div>
-      <input id="key-import-file" type="file" accept="application/json" hidden>
-      <div class="row">
-        <button id="sync-export-btn">Sync to another device</button>
-        <button id="sync-import-btn">Import sync bundle</button>
-      </div>
-      <input id="sync-import-file" type="file" accept="application/json" hidden>
-      <p class="muted small">Export the key backup and sync bundle here. On the new device, restore the key first, then import the bundle.</p>
-      <div class="row">
-        <button id="anchor-key-btn">Ledger key…</button>
-      </div>
-      <div class="row">
-        <button id="lock-set">🔐 Lock with PIN</button>
-        <button id="lock-remove" class="danger">Remove PIN</button>
-      </div>
-    </div>
-
-    <!-- Verifier Onboarding & Activation Flow -->
-    <div id="verifier-flow-section" class="apply-section stack">
-      <!-- State 1: Unauthenticated -->
-      <div id="verifier-logged-out" class="stack">
-        <h3>Become a verifier</h3>
-        <p>Independent verifiers review submissions and earn 5% of each credit sale. Sign in or create an account to apply or activate your verifier access.</p>
-        <button id="verifier-signin-btn" class="primary wide" type="button">Sign in / Register</button>
-      </div>
-
-      <!-- State 2: Logged in as Standard User -->
-      <div id="verifier-standard-user" class="stack" style="display:none">
-        <div id="apply-box" class="stack">
-          <h3>Apply to be a verifier</h3>
-          <p>Independent verifiers review submissions and earn 5% of each credit sale. Submit your application below. Once approved by the administrator, you will receive an activation code off-band to activate your verifier role.</p>
-          <form id="apply-form" class="stack">
-            <label>Full name
-              <input id="apply-name" required maxlength="80" placeholder="Your full name">
-            </label>
-            <label>Email address
-              <input id="apply-email" type="email" required maxlength="120" placeholder="you@example.com">
-            </label>
-            <label>Organisation (optional)
-              <input id="apply-org" maxlength="80" placeholder="Your employer or affiliation">
-            </label>
-            <label>Why do you want to be a verifier?
-              <textarea id="apply-reason" rows="3" required minlength="20" maxlength="600" placeholder="Briefly describe your background and interest in verifying smallholder agroforestry records…"></textarea>
-            </label>
-            <button id="apply-btn" class="secondary wide" type="submit">Submit application</button>
-            <div id="apply-result"></div>
-          </form>
-        </div>
-
-        <div id="activation-box" class="card stack" style="margin-top:var(--s4)">
-          <h3>Activate verifier role</h3>
-          <p class="muted small">Already received an activation code from the administrator? Enter your unique code below to upgrade your account and unlock the submissions queue.</p>
-          <form id="activation-form" class="stack">
-            <label>Activation code
-              <input id="activation-code" required maxlength="64" placeholder="e.g. VACT-XXXX-XXXX" autocomplete="off">
-            </label>
-            <button id="activate-btn" class="primary wide" type="submit">Activate Verifier Access</button>
-            <div id="activation-result"></div>
-          </form>
-        </div>
-      </div>
-
-      <!-- State 3: Active Verifier -->
-      <div id="verifier-active-user" class="stack" style="display:none">
-        <h3>✓ Verifier status active</h3>
-        <p>Your account has verified reviewer status. You can review submissions in the Verifier Queue tab or through the full desktop console.</p>
-        <div class="row">
-          <button id="goto-submissions-btn" class="primary" type="button">Open Submissions Queue</button>
-          <a href="console.html" class="button quiet">Open Console →</a>
-        </div>
-      </div>
     </div>
 
     <div class="card"><h2>Batches</h2><div id="batch-list" class="list"></div></div>
@@ -704,6 +719,165 @@
     </div>
   </section>
 
+  <!-- ══════════ PROFILE ══════════ -->
+  <section id="tab-profile" class="tab">
+    <div class="tab-head">
+      <h1>Profile</h1>
+      <p>Who signs the records on this phone, and which roles that identity can use.</p>
+    </div>
+
+    <div class="card profile-identity stack">
+      <div class="profile-hero">
+        <span class="user-avatar user-avatar-lg" id="profile-avatar">—</span>
+        <div class="profile-hero-id">
+          <b id="profile-hero-name">Field identity</b>
+          <span class="profile-hero-sub" id="profile-hero-sub">Device-only identity · works offline</span>
+        </div>
+      </div>
+      <div class="profile-grid">
+        <div class="profile-row"><span>Identity name</span><b>Field identity · this phone</b></div>
+        <div class="profile-row"><span>Signing key</span><code class="mono" id="profile-fp">—</code></div>
+        <div class="profile-row"><span>On this phone</span><b id="profile-stats">—</b></div>
+      </div>
+      <div class="stack">
+        <label>Farm display name
+          <input id="profile-name" maxlength="60" placeholder="e.g. Amina — Kibwezi farm">
+        </label>
+        <p class="muted small">Shown on this phone only (dashboard greeting and avatar) — it never leaves the device with your records.</p>
+      </div>
+    </div>
+
+    <div class="card stack">
+      <h2>Server account</h2>
+      <div class="profile-grid" id="profile-account">
+        <div class="profile-row"><span>Account</span><b class="muted">Signed out — offline only</b></div>
+      </div>
+      <div class="row">
+        <button id="profile-signin-btn" class="secondary" type="button">Sign in</button>
+        <button id="profile-signout-btn" class="quiet danger-quiet" type="button" style="display:none">Sign out</button>
+      </div>
+      <p class="muted small" id="profile-account-note">A server account is only needed to act as a verifier. Your farm records never depend on it.</p>
+    </div>
+
+    <!-- Verifier Onboarding & Activation Flow (moved from Records) -->
+    <div id="verifier-flow-section" class="apply-section stack">
+      <!-- State 1: Unauthenticated -->
+      <div id="verifier-logged-out" class="stack">
+        <h3>Become a verifier</h3>
+        <p>Independent verifiers review submissions and earn 5% of each credit sale. Sign in or create an account to apply or activate your verifier access.</p>
+        <button id="verifier-signin-btn" class="primary wide" type="button">Sign in / Register</button>
+      </div>
+
+      <!-- State 2: Logged in as Standard User -->
+      <div id="verifier-standard-user" class="stack" style="display:none">
+        <div id="apply-box" class="stack">
+          <h3>Apply to be a verifier</h3>
+          <p>Independent verifiers review submissions and earn 5% of each credit sale. Submit your application below. Once approved by the administrator, you will receive an activation code off-band to activate your verifier role.</p>
+          <form id="apply-form" class="stack">
+            <label>Full name
+              <input id="apply-name" required maxlength="80" placeholder="Your full name">
+            </label>
+            <label>Email address
+              <input id="apply-email" type="email" required maxlength="120" placeholder="you@example.com">
+            </label>
+            <label>Organisation (optional)
+              <input id="apply-org" maxlength="80" placeholder="Your employer or affiliation">
+            </label>
+            <label>Why do you want to be a verifier?
+              <textarea id="apply-reason" rows="3" required minlength="20" maxlength="600" placeholder="Briefly describe your background and interest in verifying smallholder agroforestry records…"></textarea>
+            </label>
+            <button id="apply-btn" class="secondary wide" type="submit">Submit application</button>
+            <div id="apply-result"></div>
+          </form>
+        </div>
+
+        <div id="activation-box" class="card stack" style="margin-top:var(--s4)">
+          <h3>Activate verifier role</h3>
+          <p class="muted small">Already received an activation code from the administrator? Enter your unique code below to upgrade your account and unlock the submissions queue.</p>
+          <form id="activation-form" class="stack">
+            <label>Activation code
+              <input id="activation-code" required maxlength="64" placeholder="e.g. VACT-XXXX-XXXX" autocomplete="off">
+            </label>
+            <button id="activate-btn" class="primary wide" type="submit">Activate Verifier Access</button>
+            <div id="activation-result"></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- State 3: Active Verifier -->
+      <div id="verifier-active-user" class="stack" style="display:none">
+        <h3>Verifier status active</h3>
+        <p>Your account has verified reviewer status. You can review submissions in the Verifier Queue tab or through the full desktop console.</p>
+        <div class="row">
+          <button id="goto-submissions-btn" class="primary" type="button">Open Submissions Queue</button>
+          <a href="console.html" class="button quiet">Open Console →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ SETTINGS ══════════ -->
+  <section id="tab-settings" class="tab">
+    <div class="tab-head">
+      <h1>Settings</h1>
+      <p>Security, backups and the tools that shape the app on this phone.</p>
+    </div>
+
+    <div class="card stack">
+      <h2>Security</h2>
+      <p class="muted small">A PIN lock is a device-local privacy screen: nothing renders until the PIN unlocks it — every time the app reopens. It is not an account password, and removing it after forgetting only ends in an app reset.</p>
+      <div class="row">
+        <button id="lock-set">Lock with PIN</button>
+        <button id="lock-remove" class="danger">Remove PIN</button>
+      </div>
+    </div>
+
+    <div class="card stack">
+      <h2>Backup &amp; sync</h2>
+      <p class="muted small">Your signing key lives on this phone. Back it up so clearing the browser or losing the phone does not cut you off.</p>
+      <div class="row">
+        <button id="key-export-btn">Export key backup</button>
+        <button id="key-import-btn">Restore key backup</button>
+      </div>
+      <input id="key-import-file" type="file" accept="application/json" hidden>
+      <div class="row">
+        <button id="sync-export-btn">Sync to another device</button>
+        <button id="sync-import-btn">Import sync bundle</button>
+      </div>
+      <input id="sync-import-file" type="file" accept="application/json" hidden>
+      <p class="muted small">On the new device: restore the key first, then import the sync bundle.</p>
+    </div>
+
+    <div class="card stack">
+      <h2>Ledger</h2>
+      <div class="row">
+        <button id="anchor-key-btn">Ledger key…</button>
+      </div>
+      <p class="muted small">Optional API key stored on this phone and sent as the Bearer token when anchoring batch fingerprints on the server.</p>
+    </div>
+
+    <div class="card stack">
+      <h2>Data</h2>
+      <div class="row">
+        <button id="export-btn">Export JSON</button>
+        <button id="demo-btn">Load demo data</button>
+      </div>
+      <div class="row">
+        <button id="reset-btn" class="danger">Reset all data</button>
+      </div>
+      <p class="muted small">Reset clears all farms, records and the signing key on this phone. Export a backup first if the signing key has not been saved elsewhere.</p>
+    </div>
+
+    <div class="card stack">
+      <h2>About</h2>
+      <div class="profile-grid">
+        <div class="profile-row"><span>Version</span><b class="mono">plotline v0.1.0</b></div>
+        <div class="profile-row"><span>Storage</span><b>This phone (localStorage) · server-optional</b></div>
+        <div class="profile-row"><span>Project</span><b class="mono" id="profile-project">—</b></div>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <!-- ── Dialogs ── -->
@@ -737,20 +911,23 @@
 
 <!-- ── Bottom nav ── -->
 <nav class="tabs" aria-label="Main">
-  <button data-tab="farm" class="on">
-    <span class="tab-icon">🌾</span>Farm
+  <button data-tab="dashboard" class="on">
+    <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/></svg></span>Home
+  </button>
+  <button data-tab="farm">
+    <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V10"/><path d="M12 10c0-3.5 2.5-6 6-6 0 3.5-2.5 6-6 6z"/><path d="M12 13c0-2.8-2.3-5-5-5 0 2.8 2.3 5 5 5z"/><path d="M4 20h16"/></svg></span>Farm
   </button>
   <button data-tab="scout">
-    <span class="tab-icon">🔍</span>Scout
+    <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>Scout
   </button>
   <button data-tab="trees">
-    <span class="tab-icon">🌳</span>Trees
+    <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l5 7h-3l4 6h-5l0 0"/><path d="M13 3l-5 7h3l-4 6h5"/><path d="M12 16v5"/></svg></span>Trees
   </button>
   <button data-tab="records">
-    <span class="tab-icon">📋</span>Records
+    <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h4"/></svg></span>Records
   </button>
   <button data-tab="submissions" id="tab-btn-submissions" class="verifier-only" style="display:none">
-    <span class="tab-icon">📑</span>Submissions
+    <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v4H3z"/><path d="M5 9v10h14V9"/><path d="M9 13h6"/></svg></span>Queue
   </button>
 </nav>
 </div><!-- /app-shell -->

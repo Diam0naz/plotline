@@ -756,57 +756,89 @@ async function ensureVerifierKey() {
 }
 
 function updateAuthUI() {
-  const userPill = $('#app-user-pill');
+  const userBtn = $('#app-user-btn');
   const authBtn = $('#app-auth-btn');
-  const logoutBtn = $('#app-logout-btn');
+  const signoutItem = $('#app-logout-btn');
   const loggedOutSection = $('#verifier-logged-out');
   const standardSection = $('#verifier-standard-user');
   const activeVerifierSection = $('#verifier-active-user');
   const subTabBtn = $('#tab-btn-submissions');
   const subSection = $('#tab-submissions');
+  const dashVerifierBtn = $('#dash-submissions');
+
+  // The identity gateway sits in front of the app shell, so any unlocked
+  // identity — server account or device-only — gets the avatar menu. The
+  // quick "Sign in" button is only needed while there is no identity at all.
+  if (userBtn) { userBtn.style.display = ''; renderUserMenu(); }
+  if (authBtn) authBtn.style.display = S.keys?.priv ? 'none' : '';
+  if (signoutItem) signoutItem.style.display = currentSession ? '' : 'none';
 
   if (!currentSession) {
-    if (authBtn) authBtn.style.display = '';
-    if (userPill) { userPill.style.display = 'none'; userPill.textContent = ''; }
-    if (logoutBtn) logoutBtn.style.display = 'none';
-
     if (loggedOutSection) loggedOutSection.style.display = '';
     if (standardSection) standardSection.style.display = 'none';
     if (activeVerifierSection) activeVerifierSection.style.display = 'none';
-
     if (subTabBtn) subTabBtn.style.display = 'none';
     if (subSection) subSection.style.display = 'none';
-  } else if (currentSession.role === 'verifier') {
-    if (authBtn) authBtn.style.display = 'none';
-    if (userPill) {
-      userPill.style.display = '';
-      userPill.textContent = `${currentSession.username} · verifier`;
-    }
-    if (logoutBtn) logoutBtn.style.display = '';
-
-    if (loggedOutSection) loggedOutSection.style.display = 'none';
-    if (standardSection) standardSection.style.display = 'none';
-    if (activeVerifierSection) activeVerifierSection.style.display = '';
-
-    // Unlock verifier routes
-    if (subTabBtn) subTabBtn.style.display = '';
-    if (subSection) subSection.style.display = '';
+    if (dashVerifierBtn) dashVerifierBtn.style.display = 'none';
   } else {
-    // Standard User ('user')
-    if (authBtn) authBtn.style.display = 'none';
-    if (userPill) {
-      userPill.style.display = '';
-      userPill.textContent = currentSession.username;
-    }
-    if (logoutBtn) logoutBtn.style.display = '';
-
+    const isVerifier = currentSession.role === 'verifier';
     if (loggedOutSection) loggedOutSection.style.display = 'none';
-    if (standardSection) standardSection.style.display = '';
-    if (activeVerifierSection) activeVerifierSection.style.display = 'none';
+    if (standardSection) standardSection.style.display = isVerifier ? 'none' : '';
+    if (activeVerifierSection) activeVerifierSection.style.display = isVerifier ? '' : 'none';
+    if (subTabBtn) subTabBtn.style.display = isVerifier ? '' : 'none';
+    if (subSection) subSection.style.display = isVerifier ? '' : 'none';
+    if (dashVerifierBtn) dashVerifierBtn.style.display = isVerifier ? '' : 'none';
+  }
 
-    // Standard users must not see verifier routes by default
-    if (subTabBtn) subTabBtn.style.display = 'none';
-    if (subSection) subSection.style.display = 'none';
+  renderProfileAccount();
+  renderDashboard();
+}
+
+function initialsOf(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '—';
+  return parts.slice(0, 2).map((p) => p[0].toUpperCase()).join('');
+}
+
+function renderUserMenu() {
+  const name = S.name || currentSession?.username || 'Field identity';
+  const sub = currentSession
+    ? `${currentSession.role === 'verifier' ? 'Verifier' : 'User'} · ${currentSession.username}`
+    : 'Local identity · not signed in';
+  const avatar = initialsOf(name);
+  for (const el of [$('#user-avatar'), $('#user-avatar-menu'), $('#profile-avatar')]) {
+    if (el) el.textContent = avatar;
+  }
+  const pill = $('#app-user-pill');
+  if (pill) pill.textContent = name;
+  const menuName = $('#user-menu-name');
+  if (menuName) menuName.textContent = name;
+  const menuRole = $('#user-menu-role');
+  if (menuRole) menuRole.textContent = sub;
+}
+
+function toggleUserMenu(open) {
+  const dd = $('#user-dropdown');
+  if (!dd) return;
+  const show = open ?? dd.hidden;
+  dd.hidden = !show;
+  $('#app-user-btn')?.setAttribute('aria-expanded', String(show));
+}
+
+function closeUserMenu() { toggleUserMenu(false); }
+
+async function signOut() {
+  try {
+    await fetch('api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+  } finally {
+    currentSession = null;
+    closeUserMenu();
+    updateAuthUI();
+    toast('Signed out.');
+    const activeTab = $('.tab.active')?.id;
+    if (activeTab === 'tab-submissions' || activeTab === 'tab-profile') {
+      showTab('dashboard');
+    }
   }
 }
 
@@ -821,9 +853,9 @@ function handleRoleRedirection(s) {
     ensureVerifierKey();
     showTab('submissions');
   } else {
-    // Route standard users to standard app view
+    // Route standard users to their dashboard
     updateAuthUI();
-    showTab('farm');
+    showTab('dashboard');
   }
 }
 
@@ -865,7 +897,15 @@ function closeAuthModal() {
 }
 
 function wireAuthEvents() {
+  $('#app-user-btn')?.addEventListener('click', (e) => { e.stopPropagation(); toggleUserMenu(); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.user-menu')) closeUserMenu(); });
+  $$('.user-dropdown-item[data-tab-jump]')?.forEach((el) => el.addEventListener('click', () => {
+    const target = el.dataset.tabJump;
+    closeUserMenu();
+    showTab(target);
+  }));
   $('#app-auth-btn')?.addEventListener('click', () => openAuthModal('signin'));
+  $('#profile-signin-btn')?.addEventListener('click', () => openAuthModal('signin'));
   $('#verifier-signin-btn')?.addEventListener('click', () => openAuthModal('signin'));
   $('#modal-auth-close')?.addEventListener('click', closeAuthModal);
   $('#modal-tab-signin')?.addEventListener('click', () => setModalAuthMode('signin'));
@@ -962,20 +1002,9 @@ function wireAuthEvents() {
     }
   });
 
-  // Logout
-  $('#app-logout-btn')?.addEventListener('click', async () => {
-    try {
-      await fetch('api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
-    } finally {
-      currentSession = null;
-      updateAuthUI();
-      toast('Signed out.');
-      const activeTab = $('.tab.active')?.id;
-      if (activeTab === 'tab-submissions') {
-        showTab('farm');
-      }
-    }
-  });
+  // Logout (user dropdown + profile card)
+  $('#app-logout-btn')?.addEventListener('click', signOut);
+  $('#profile-signout-btn')?.addEventListener('click', signOut);
 
   // Task 2: Verifier Application UI Flow
   $('#apply-form')?.addEventListener('submit', async (e) => {
@@ -1269,7 +1298,112 @@ async function handleDecision(action) {
 const PARENT = { inputs: 'farm', heat: 'scout' };
 function renderAll() {
   renderFarmList(); renderScoutHeader(); renderRecords(); prefillInputs(); renderTrees();
+  renderDashboard(); renderProfileIdentity();
   if ($('#tab-heat').classList.contains('active')) renderHeat();
+}
+
+// ---------- dashboard / profile / settings ----------
+function dashLabel(rec) {
+  const kinds = {
+    farm: 'Boundary saved',
+    scout: TYPES[rec.data?.type] ? `Scout: ${TYPES[rec.data.type]}` : 'Scout report',
+    planting: 'Trees planted',
+    survival: 'Survival check',
+  };
+  return kinds[rec.body.kind] || rec.body.kind;
+}
+
+function renderDashboard() {
+  const dash = $('#dash-hello');
+  if (!dash) return;
+
+  const nf = S.farms.length;
+  const areaHa = S.farms.reduce((a, f) => a + (f.areaM2 ? C.m2ToHa(f.areaM2) : 0), 0);
+  const nScout = S.records.filter((r) => r.body.kind === 'scout').length;
+  const nTrees = S.records.filter((r) => r.body.kind === 'planting' || r.body.kind === 'survival').length;
+  const nSealed = S.records.filter((r) => r.batchId != null).length;
+
+  $('#dash-farms').textContent = nf;
+  $('#dash-area').textContent = `${areaHa.toFixed(2)} ha`;
+  $('#dash-reports').textContent = nScout;
+  $('#dash-records').textContent = S.records.length;
+  $('#dash-sealed').textContent = `${nSealed} sealed`;
+  $('#dash-trees').textContent = nTrees;
+
+  const hour = new Date().getHours();
+  const dayPart = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const who = S.name || (currentSession?.username) || 'there';
+  dash.textContent = `${dayPart}, ${who}`;
+  $('#dash-sub').textContent = nf
+    ? `${nf} farm${nf === 1 ? '' : 's'} · ${areaHa.toFixed(2)} ha · ${S.records.length} signed record${S.records.length === 1 ? '' : 's'} on this phone`
+    : 'Everything below is signed on this phone. Start by walking your boundary.';
+
+  const recent = [...S.records].slice(-5).reverse();
+  const list = $('#dash-recent');
+  const empty = $('#dash-recent-empty');
+  if (!recent.length) {
+    if (list) list.innerHTML = '';
+    if (empty) empty.hidden = false;
+  } else {
+    if (empty) empty.hidden = true;
+    if (list) list.innerHTML = recent.map((r) => `
+      <div class="item">
+        <div class="lead">
+          <strong>${esc(dashLabel(r))}</strong>
+          <span class="sub">${esc(farmById(r.body.farmId)?.name || 'No farm')} · ${esc(fmtTime(r.body.ts))}</span>
+        </div>
+        <span class="badge ${r.batchId != null ? 'good' : 'ok'}">${r.batchId != null ? 'sealed' : 'pending'}</span>
+      </div>`).join('');
+  }
+}
+
+function renderProfileIdentity() {
+  const heroName = $('#profile-hero-name');
+  if (!heroName) return;
+  const name = S.name || 'Field identity';
+  heroName.textContent = name;
+  const sub = $('#profile-hero-sub');
+  if (sub) sub.textContent = S.fp ? `Device-only identity · works offline` : 'No identity on this phone';
+  const fpEl = $('#profile-fp');
+  if (fpEl) fpEl.textContent = fmtFingerprint(S.fp);
+  const nf = S.farms.length, nr = S.records.length, nb = S.batches.length;
+  const statsEl = $('#profile-stats');
+  if (statsEl) statsEl.textContent = `${nf} farm${nf === 1 ? '' : 's'} · ${nr} record${nr === 1 ? '' : 's'} · ${nb} batch${nb === 1 ? '' : 'es'}`;
+  const nameInput = $('#profile-name');
+  if (nameInput && document.activeElement !== nameInput) nameInput.value = S.name || '';
+  const projEl = $('#profile-project');
+  if (projEl) projEl.textContent = PROJECT_ID || '(not set)';
+  const av = $('#profile-avatar');
+  if (av) av.textContent = initialsOf(name);
+  renderUserMenu();
+}
+
+function renderProfileAccount() {
+  const ac = $('#profile-account');
+  if (!ac) return;
+  const signinBtn = $('#profile-signin-btn');
+  const signoutBtn = $('#profile-signout-btn');
+  const note = $('#profile-account-note');
+
+  if (!currentSession) {
+    ac.innerHTML = `<div class="profile-row"><span>Account</span><b>Signed out — offline only</b></div>`;
+    if (signinBtn) signinBtn.style.display = '';
+    if (signoutBtn) signoutBtn.style.display = 'none';
+    if (note) note.textContent = 'A server account is only needed to act as a verifier. Your farm records never depend on it.';
+    return;
+  }
+
+  const role = currentSession.role === 'verifier' ? 'Verifier' : 'User';
+  const friendlyExpires = currentSession.expiresAt ? fmtTime(currentSession.expiresAt) : '—';
+  ac.innerHTML = `
+    <div class="profile-row"><span>Account</span><b>${esc(currentSession.username)}</b></div>
+    <div class="profile-row"><span>Role</span><b>${esc(role)}</b></div>
+    <div class="profile-row"><span>Session expires</span><b class="text-sm">${esc(friendlyExpires)}</b></div>`;
+  if (signinBtn) signinBtn.style.display = 'none';
+  if (signoutBtn) signoutBtn.style.display = '';
+  if (note) note.textContent = currentSession.role === 'verifier'
+    ? 'Verifier sessions last 12 hours. Sign in again after that to continue reviewing.'
+    : 'A server account is only used for the verifier role. Your farm records never depend on it.';
 }
 function showTab(name) {
   // Verifier route guard: standard users cannot see verifier routes
@@ -1286,11 +1420,28 @@ function showTab(name) {
   if (name === 'inputs') calcInputs();
   if (name === 'records') renderRecords();
   if (name === 'trees') refreshTrees();
+  if (name === 'dashboard' || name === 'profile') renderDashboard(), renderProfileIdentity();
   if (name === 'submissions') loadSubmissionsQueue();
   window.scrollTo(0, 0);
 }
 $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 $$('[data-sub]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.sub)));
+
+// Dashboard quick actions
+$('#dash-walk')?.addEventListener('click', () => { showTab('farm'); setTimeout(() => $('#walk-btn')?.click(), 120); });
+$('#dash-scout')?.addEventListener('click', () => showTab('scout'));
+$('#dash-seal')?.addEventListener('click', () => showTab('records'));
+$('#dash-view-all')?.addEventListener('click', () => showTab('records'));
+$('#dash-submissions')?.addEventListener('click', () => showTab('submissions'));
+
+// Profile: the farm display name stays on this phone only
+$('#profile-name')?.addEventListener('input', (e) => {
+  const v = e.target.value.trim().slice(0, 60);
+  if (v) S.name = v; else delete S.name;
+  save();
+  renderProfileIdentity();
+  renderDashboard();
+});
 
 // ---------- first run ----------
 function closeOnboarding(start) {
@@ -1322,8 +1473,19 @@ window.addEventListener('offline', netChip);
 async function init() {
   load();
   wireGateway(); // the split-screen signup / login gate
+  // A set PIN lock is the privacy screen: nothing renders (not even the gateway)
+  // until the correct PIN unlocks this phone.
+  if (getLock()) { showLockOverlay(); return; }
   const registered = !!(S.keys && S.keys.priv && S.fp);
   showGateway(registered ? 'login' : 'signup');
+}
+
+async function unlockFromLockScreen() {
+  $('#lock-overlay').hidden = true;
+  document.body.classList.remove('locked');
+  const registered = !!(S.keys && S.keys.priv && S.fp);
+  if (registered) return continueInit();
+  showGateway('signup');
 }
 
 // ── Identity gateway (split-screen signup / login) ───────────────────────────
@@ -1795,12 +1957,15 @@ async function lockOk(pin, lock = getLock()) {
   } catch { return false; }
 }
 
-// Read the lock from anywhere (init calls this before anything else happens on screen).
-async function showLockIfNeeded() {
+// The PIN lock overlay: shown at boot instead of the gateway when a lock is set.
+function showLockIfNeeded() {
   if (!getLock()) return;
   document.body.classList.add('locked');
   const overlay = $('#lock-overlay');
-  if (overlay) overlay.hidden = false;
+  if (overlay) {
+    overlay.hidden = false;
+    $('#lock-pin')?.focus();
+  }
 }
 
 $('#lock-form')?.addEventListener('submit', async (e) => {
@@ -1810,9 +1975,8 @@ $('#lock-form')?.addEventListener('submit', async (e) => {
   if (await lockOk(pin)) {
     $('#lock-pin').value = '';
     $('#lock-err').textContent = '';
-    document.body.classList.remove('locked');
-    $('#lock-overlay').hidden = true;
     toast('Unlocked');
+    await unlockFromLockScreen();
   } else {
     $('#lock-err').textContent = 'Wrong PIN. Try again.';
   }
