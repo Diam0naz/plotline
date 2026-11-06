@@ -76,7 +76,37 @@ function evaluatePixel(s) {
 }`;
 
 export function ndviConfigured(env = process.env) {
-  return !!(env.SENTINELHUB_TOKEN || (env.SENTINELHUB_CLIENT_ID && env.SENTINELHUB_CLIENT_SECRET));
+  return credsFor(env).mode !== 'none';
+}
+
+// Which service is actually being addressed. Two providers speak the same
+// Sentinel Hub API protocol:
+//   • commercial Sentinel Hub (services.sentinel-hub.com, SINERGISE/Planet)
+//   • the free Copernicus Data Space Ecosystem (sh.dataspace.copernicus.eu)
+// CDSE is recognised by its COPERNICUS_* credentials, or an explicit base URL —
+// the token realm differs (`identity.dataspace.copernicus.eu`, realm CDSE).
+export function ndviEndpoints(env = {}) {
+  const isCdse = !!(env.COPERNICUS_CLIENT_ID || env.COPERNICUS_CLIENT_SECRET || env.COPERNICUS_TOKEN);
+  const base = env.SENTINELHUB_BASE_URL || (isCdse ? 'https://sh.dataspace.copernicus.eu' : 'https://services.sentinel-hub.com');
+  const tokenUrl = env.SENTINELHUB_AUTH_URL
+    || (base.includes('dataspace.copernicus.eu')
+      ? 'https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token'
+      : `${base}/auth/realms/main/protocol/openid-connect/token`);
+  return { base, tokenUrl };
+}
+
+export function credsFor(env = {}) {
+  // SENTINELHUB_* names first (they also let you point a custom base URL);
+  // COPERNICUS_* are the free Data Space equivalent, same API protocol.
+  if (env.SENTINELHUB_TOKEN) return { mode: 'bearer', token: env.SENTINELHUB_TOKEN };
+  if (env.SENTINELHUB_CLIENT_ID && env.SENTINELHUB_CLIENT_SECRET) {
+    return { mode: 'oauth', clientId: env.SENTINELHUB_CLIENT_ID, clientSecret: env.SENTINELHUB_CLIENT_SECRET };
+  }
+  if (env.COPERNICUS_TOKEN) return { mode: 'bearer', token: env.COPERNICUS_TOKEN };
+  if (env.COPERNICUS_CLIENT_ID && env.COPERNICUS_CLIENT_SECRET) {
+    return { mode: 'oauth', clientId: env.COPERNICUS_CLIENT_ID, clientSecret: env.COPERNICUS_CLIENT_SECRET };
+  }
+  return { mode: 'none' };
 }
 
 // ---------- degrees → bbox for a buffer around a point ----------
@@ -97,17 +127,18 @@ function isoDaysAgo(iso, days) { return new Date(new Date(iso).getTime() - days 
 // ---------- auth (client-credentials OAuth; a raw bearer skips this) ----------
 let tokenCache = null;
 export async function sentinelHubToken({ env = process.env, fetchImpl = fetch }) {
-  if (env.SENTINELHUB_TOKEN) return env.SENTINELHUB_TOKEN;
-  const base = env.SENTINELHUB_BASE_URL || 'https://services.sentinel-hub.com';
-  const key = `${base}|${env.SENTINELHUB_CLIENT_ID}`;
+  const creds = credsFor(env);
+  if (creds.mode === 'bearer') return creds.token;
+  const { tokenUrl } = ndviEndpoints(env);
+  const key = `${tokenUrl}|${creds.clientId}`;
   if (tokenCache && tokenCache.key === key && Date.now() < tokenCache.expiresAt) return tokenCache.token;
-  const res = await fetchImpl(`${base}/auth/realms/main/protocol/openid-connect/token`, {
+  const res = await fetchImpl(tokenUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
-      client_id: env.SENTINELHUB_CLIENT_ID,
-      client_secret: env.SENTINELHUB_CLIENT_SECRET,
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
     }).toString(),
   });
   if (!res.ok) throw Object.assign(new Error(`sentinel hub auth ${res.status}`), { code: 'auth_failed' });
@@ -227,7 +258,7 @@ export async function ndviEvidence({
   const effectiveTo = validIso(dateTo) ? new Date(dateTo).toISOString() : checkedAt;
 
   try {
-    const base = env.SENTINELHUB_BASE_URL || 'https://services.sentinel-hub.com';
+    const { base } = ndviEndpoints(env);
     const token = await sentinelHubToken({ env, fetchImpl });
     const res = await fetchImpl(`${base}/api/v1/statistical`, {
       method: 'POST',

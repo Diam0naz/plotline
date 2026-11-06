@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ndviEvidence, NDVI_DEFAULTS, NDVI_SOURCE, bboxFor, parseNdviStats, statsRequest, ndviConfigured } from './ndvi.mjs';
+import { ndviEvidence, NDVI_DEFAULTS, NDVI_SOURCE, bboxFor, parseNdviStats, statsRequest, ndviConfigured, ndviEndpoints, credsFor } from './ndvi.mjs';
 import { createApp } from './server.mjs';
 
 const NOW = () => new Date('2026-11-15T12:00:00.000Z');
@@ -222,4 +222,68 @@ test('ndvi: parse and geometry helpers behave in isolation', () => {
   const polar = bboxFor(84.9, 10, 10);
   assert.ok(polar[3] > 84.9 && polar[3] <= 85);
   assert.ok(Math.abs(polar[0] - 10) > 0.5, '10 km of longitude at lat 84.9 spans about a degree');
+});
+
+// ---------- Copernicus Data Space aliases (the free Sentinel Hub brother) ----------
+
+test('ndvi: COPERNICUS_* credentials resolve the CDSE endpoints', () => {
+  assert.equal(ndviConfigured({ COPERNICUS_CLIENT_ID: 'c-id', COPERNICUS_CLIENT_SECRET: 'c-secret' }), true);
+  assert.equal(ndviConfigured({ COPERNICUS_TOKEN: 'c-bearer' }), true);
+  assert.equal(ndviConfigured({ COPERNICUS_CLIENT_ID: 'only' }), false, 'a lone id is not a credential');
+
+  const cdse = ndviEndpoints({ COPERNICUS_CLIENT_ID: 'c-id', COPERNICUS_CLIENT_SECRET: 'c-secret' });
+  assert.equal(cdse.base, 'https://sh.dataspace.copernicus.eu');
+  assert.match(cdse.tokenUrl, /identity\.dataspace\.copernicus\.eu\/auth\/realms\/CDSE\//);
+
+  const sh = ndviEndpoints({});
+  assert.equal(sh.base, 'https://services.sentinel-hub.com');
+  assert.match(sh.tokenUrl, /services\.sentinel-hub\.com\/auth\/realms\/main\//);
+
+  // An explicit base wins, and a CDSE base implies the CDSE realm.
+  assert.equal(ndviEndpoints({ COPERNICUS_TOKEN: 't', SENTINELHUB_BASE_URL: 'https://custom.example' }).base, 'https://custom.example');
+  assert.match(ndviEndpoints({ SENTINELHUB_BASE_URL: 'https://sh.dataspace.copernicus.eu' }).tokenUrl, /realms\/CDSE\//);
+  // ...unless the token URL itself is set.
+  assert.equal(ndviEndpoints({ SENTINELHUB_AUTH_URL: 'https://id.example/token',SENTINELHUB_BASE_URL: 'https://sh.dataspace.copernicus.eu' }).tokenUrl, 'https://id.example/token');
+
+  const creds = credsFor({ SENTINELHUB_CLIENT_ID: 'a', SENTINELHUB_CLIENT_SECRET: 'b', COPERNICUS_CLIENT_ID: 'c' });
+  assert.equal(creds.mode, 'oauth');
+  assert.equal(creds.clientId, 'a');
+});
+
+test('ndvi: a COPERNICUS bearer token signs statistics on the CDSE host', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts = {}) => {
+    calls.push({ url: String(url), opts });
+    return ok();
+  };
+  const out = await ndviEvidence({ lat: 9, lon: 9, env: { COPERNICUS_TOKEN: 'c-bearer' }, fetchImpl, now: NOW });
+
+  assert.equal(calls.length, 1, 'a bearer skips the token step');
+  assert.match(calls[0].url, /^https:\/\/sh\.dataspace\.copernicus\.eu\/api\/v1\/statistical$/);
+  assert.equal(calls[0].opts.headers.authorization, 'Bearer c-bearer');
+  assert.equal(out.status, 'ok');
+});
+
+test('ndvi: the CDSE OAuth flow authenticates against the CDSE realm', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts = {}) => {
+    calls.push({ url: String(url), body: opts.body, opts });
+    if (String(url).includes('identity.dataspace.copernicus.eu')) {
+      return { ok: true, json: async () => ({ access_token: 'cdse-tok', expires_in: 300 }) };
+    }
+    return ok();
+  };
+  const out = await ndviEvidence({
+    lat: 9, lon: 9,
+    env: { COPERNICUS_CLIENT_ID: 'c-id', COPERNICUS_CLIENT_SECRET: 'c-secret' },
+    fetchImpl, now: NOW,
+  });
+
+  const tokenCall = calls.find((c) => c.url.includes('openid-connect/token'));
+  assert.ok(tokenCall, 'the token endpoint is called');
+  assert.match(tokenCall.url, /identity\.dataspace\.copernicus\.eu/);
+  assert.match(tokenCall.body, /client_id=c-id/);
+  const statsCall = calls.find((c) => c.url.includes('/api/v1/statistical'));
+  assert.equal(statsCall.opts.headers.authorization, 'Bearer cdse-tok');
+  assert.equal(out.status, 'ok');
 });
