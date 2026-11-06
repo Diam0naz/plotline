@@ -25,6 +25,64 @@ The app submits under the project named in `<meta name="plotline-project">` in `
 
 GNSS and the service worker need a secure origin: `localhost` works for testing; real phones need HTTPS.
 
+## Roles and sign-in
+
+Plotline uses a strict unified authentication interface. All roles — Standard Users, Verifiers, and Admins — sign in through the same single login form (Email/Username and Password). There are no separate "Admin Login" or "Verifier Login" tabs, buttons, or links anywhere in the public-facing UI. A user looking at the login or signup interface cannot tell that privileged roles exist in the system.
+
+- **Unified Sign-In**: A single login form is used by all roles.
+- **Restricted Sign-Up**: Public account creation ("Sign Up") only allows standard users to self-register with their full name, email, username, and password. There is no Admin or Verifier sign-up.
+- **Role-Based Redirection**: Upon successful authentication through the unified form, the frontend inspects the user's role payload:
+  - `admin` is routed to the console / admin dashboard (`/console.html` overview).
+  - `verifier` is routed directly to the submissions queue (`/app.html` Submissions tab or `/console.html` review queue).
+  - Standard users (`user`) are routed to the standard app view (`/app.html`).
+
+### Admin access
+
+Admins sign in using the standard public login form with the fixed username `admin`. There is no sign-up for admins; the account is pre-provisioned at boot one of two ways:
+
+1. **`ADMIN_PASSWORD` env var** (recommended for any real deployment):
+   ```
+   ADMIN_PASSWORD=mysecurepass node server/server.mjs
+   ```
+2. **Operator token** (default dev mode): when `ADMIN_PASSWORD` is not set, the server prints a random token on start — use it as the password. Example output:
+   ```
+   operator token: 3f8a2c1d9e4b7f6a
+   ```
+   Sign in through the unified public login form as `admin` with that token as the password. The system inspects the role and redirects to the admin console dashboard.
+
+The Bearer token is for scripts and direct API calls only, not for the UI:
+```
+Authorization: Bearer <operator-token>
+```
+
+To load demo data:
+```
+ADMIN_TOKEN=<token> node scripts/seed.mjs http://localhost:8123
+```
+
+### Verifier application and activation code process
+
+Verifiers are upgraded standard users. Standard users do not see verifier routes or navigation tabs by default.
+
+1. **Application**: Logged-in standard users can access an "Apply to be a Verifier" flow inside the Records tab of the app, submitting their full name, email, organisation, and qualification reason (`POST /api/auth/apply`).
+2. **Admin approval**: Administrators review pending applications in the admin console. Approving an application generates a unique activation code (e.g. `VACT-XXXX-XXXX`), provided to the approved user off-band.
+3. **Activation**: The standard user enters their activation code into the "Activate verifier role" component in the app (`POST /api/auth/activate`).
+4. **Upgrade & Unlock**: Submitting a valid activation code immediately upgrades the user's account and session to the `verifier` role. This dynamically unlocks and displays the Verifier navigation tabs and Submissions Queue in their user-facing app view, and routes them straight to the queue. Verifiers can review submissions in the app or via the full console.
+
+Decisions in the review queue are signed with the verifier's browser-local ECDSA key — the signature, not the login session, authorises each decision in the registry.
+
+### Security and session machinery
+
+- **Passwords** are hashed with scrypt (N=16384, r=8, p=1, per-hash salt) and compared in constant time; plaintext never touches disk.
+- **Sessions** are random 256-bit tokens in an HttpOnly, SameSite=Lax cookie (Secure on non-localhost origins), expiring after 12 hours. The server stores only `sha256(token)` in `data/sessions.json` (mode 0600) and purges expired sessions on use — a copy of the data directory cannot be replayed as a login.
+- **Path protection**: operator routes accept an admin session *or* the operator token; the submissions queue accepts admins and signed-in verifiers; everyone else sees only the public routes. Cookie-authenticated writes must carry a matching `Origin`, so a stolen-cookie request from another host is refused; login is rate-limited per IP.
+- **Every response** carries the security headers: a Content-Security-Policy, `x-frame-options: DENY` and no referrer.
+- **Farmers (the app's users) have no server accounts by design**: their identity is the P-256 key on the phone, and offline-first use must never depend on a connection. The app's optional **PIN lock** is a device-local privacy screen (nothing renders until the PIN unlocks it), not account security.
+
+## Pitch deck
+
+`pitch-deck.html` is a self-contained 13-slide deck (no dependencies, same offline-first rules as the app). Open it directly in a browser, present full-screen (F11) with →/space, or serve it with the app at [`/pitch-deck.html`](http://localhost:8123/pitch-deck.html). Ctrl+P prints one slide per landscape A4 page. Everything on it is either verified against the codebase or marked with a `——` placeholder to fill in before presenting.
+
 ## What it does
 
 | Tab | Feature |

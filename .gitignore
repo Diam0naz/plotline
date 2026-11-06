@@ -1,9 +1,16 @@
 # Runtime state: ledger, registry, verifier list and signing keys
 data/
 
+# Secrets: real env files hold tokens and passwords. .env.example is the template.
+.env
+.env.local
+.env.local.*
+*.env
+
 node_modules/
 
 # Logs and OS noise
 *.log
 npm-debug.log*
 .DS_Store
+.neon

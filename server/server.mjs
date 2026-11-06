@@ -10,8 +10,14 @@ import { Ledger } from './ledger.mjs';
 import { Registry } from './registry.mjs';
 import { verifyEvents } from './chainlog.mjs';
 import { cleanFireEvidence, recentFires, FIRE_DEFAULTS } from './fire.mjs';
+import { ndviEvidence, NDVI_DEFAULTS } from './ndvi.mjs';
+import { publishHead } from './anchor-publish.mjs';
+import { Accounts, LOGIN_FAILED, Sessions, cookieOriginOk, clearSessionCookie, parseCookies, sameOrigin, sessionCookie, sessionToken, verifyPassword } from './auth.mjs';
 import { createCache } from './cache.mjs';
 import { fingerprint } from '../core.js';
+import { methodologyById } from './methodology.mjs';
+
+const cleanStr = (v, lo, hi) => String(v ?? '').trim().slice(0, hi);
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const TYPES = {
@@ -32,9 +38,20 @@ const MAX_BODY = 2048;
 const RATE = { windowMs: 60_000, max: 30 };
 const SUBMIT_MAX_BODY = 65536; // three signed records and a farm boundary
 const SUBMIT_RATE = { windowMs: 60_000, max: 10 };
+const LOGIN_RATE = { windowMs: 60_000, max: 10 };
 const FP = /^[0-9a-f]{16}$/;
 
-export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date(), adminToken = process.env.ADMIN_TOKEN || randomBytes(12).toString('hex'), fireCheck = recentFires, cache = null } = {}) {
+/** The `db` the Realtime connection binds to: the connection string's dbname. */
+const dbName = (url) => {
+  try {
+    const u = new URL(url.replace(/^postgresql/, 'postgres'));
+    return u.pathname.replace(/^\//, '') || 'neondb';
+  } catch {
+    return 'neondb';
+  }
+};
+
+export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date(), adminToken = process.env.ADMIN_TOKEN || randomBytes(12).toString('hex'), fireCheck = recentFires, cache = null, sessionTtlMs = 12 * 3600_000 } = {}) {
   mkdirSync(dataDir, { recursive: true });
   const ledger = new Ledger(join(dataDir, 'ledger.jsonl'));
   // Approved verifiers (id -> public key). Only an operator can add one.
@@ -45,7 +62,96 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     try { return new Map(Object.entries(JSON.parse(readFileSync(verifiersAccredFile, 'utf8')))); }
     catch { return new Map(); }
   })() : new Map();
-  const registry = new Registry({ file: join(dataDir, 'registry.jsonl'), privateFile: join(dataDir, 'private.json'), verifiers, now });
+  const registry = new Registry({ file: join(dataDir, 'registry.jsonl'), privateFile: join(dataDir, 'private.json'), verifiers, verifiersAccred, now });
+
+  // ---------- roles: admin (operator), verifier, user (farmer, device-local) ----------
+  // The admin account is provisioned from ADMIN_PASSWORD, or from the printed operator
+  // token so the same server boots with or without extra configuration. Verifier
+  // accounts are created by the admin and map one-to-one onto an approved key.
+  const accounts = new Accounts(dataDir);
+  accounts.ensureAdmin(process.env.ADMIN_PASSWORD || adminToken);
+  const sessions = new Sessions(dataDir, { ttlMs: sessionTtlMs, now });
+
+  // ---------- Neon services (all optional; the app runs fully without them) ----------
+  // With DATABASE_URL set, the console's accounts/sessions are mirrored to Neon
+  // Postgres so they survive across instances; reads stay on the in-memory copies,
+  // writes go through in both places, and the Postgres side wins at boot.
+  let pg = null;
+  let neonAuth = null;
+  let realtime = null;
+  let neonService = (async () => {
+    // Short retry for boot-time service connects: DNS and cold compute wakes
+    // intermittently fail on this box; the app itself must still survive.
+    const withRetry = async (fn, { tries = 3, pauseMs = 2000, label = 'service' } = {}) => {
+      let last;
+      for (let i = 0; i < tries; i++) {
+        try { return await fn(i === 0); } catch (e) { last = e; console.error(`${label} attempt ${i + 1}/${tries} failed: ${e.message || e}`); await new Promise((r) => setTimeout(r, pauseMs)); }
+      }
+      throw last;
+    };
+    if (process.env.DATABASE_URL) {
+      try {
+        const { PgStore } = await import('./pgstore.mjs');
+        pg = await withRetry(() => PgStore.create(process.env.DATABASE_URL), { label: 'Neon Postgres' });
+        accounts.attachStore(pg);
+        sessions.attachStore(pg);
+        await Promise.all([accounts.hydrate(), sessions.hydrate()]);
+        console.log(`Neon Postgres wired: accounts+sessions mirrored, schema ensured (events in app_events)`);
+      } catch (e) {
+        console.error(`Neon Postgres unavailable; falling back to local JSON stores: ${e.message}`);
+        pg = null;
+      }
+    }
+    if (process.env.NEON_AUTH_JWKS_URL) {
+      try {
+        await withRetry(() => import('./neonauth.mjs').then(async ({ NeonAuth }) => {
+          const a = new NeonAuth({ jwksUrl: process.env.NEON_AUTH_JWKS_URL, baseUrl: process.env.NEON_AUTH_BASE_URL });
+          await a.jwks(); // confirm the tenant answers before claiming it's wired
+          neonAuth = a;
+        }), { label: 'Neon Auth' });
+        if (neonAuth) console.log('Neon Auth wired: JWKS reachable, JWT verification active (/api/auth/neon/verify)');
+      } catch (e) {
+        console.error(`Neon Auth unavailable: ${e.message}`);
+        neonAuth = null;
+      }
+    }
+    if (process.env.NEON_REALTIME_SECRET) {
+      try {
+        const rt = await import('./realtime.mjs');
+        realtime = rt.createRealtimeServer({ secret: process.env.NEON_REALTIME_SECRET, db: dbName(process.env.DATABASE_URL) });
+        console.log('Neon Realtime wired: sealed query endpoint /api/realtime/events');
+      } catch (e) {
+        console.error(`Neon Realtime unavailable: ${e.message}`);
+        realtime = null;
+      }
+    }
+    return { pg, neonAuth, realtime };
+  })();
+
+/** Registry happenings into the Postgres feed the console streams live. */
+  const logEvent = (kind, detail) => {
+    if (pg) pg.logEvent(kind, detail).catch((e) => console.error(`event log failed: ${e.message}`));
+  };
+
+  const isSecure = (req) => {
+    const h = String(req.headers.host || '');
+    return !h.startsWith('localhost') && !h.startsWith('127.0.0.1');
+  };
+  const isAdmin = (req) => {
+    // Operator console session or, unchanged, the operator API token (Bearer).
+    const s = sessions.get(sessionToken(req));
+    if (s?.role === 'admin' && !cookieOriginOk(req)) return false;
+    if (s?.role === 'admin') return true;
+    const h = String(req.headers.authorization || '');
+    const given = Buffer.from(h.startsWith('Bearer ') ? h.slice(7) : '');
+    const want = Buffer.from(adminToken);
+    return given.length === want.length && timingSafeEqual(given, want);
+  };
+  const isVerifier = (req) => {
+    const s = sessions.get(sessionToken(req));
+    if (s?.role === 'verifier') return cookieOriginOk(req);
+    return isAdmin(req);
+  };
   const hits = new Map(); // "bucket:ip" -> [timestamps] of recent writes
 
   const limited = (ip, bucket = 'anchor', rate = RATE) => {
@@ -56,19 +162,24 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     hits.set(k, recent);
     return recent.length > rate.max;
   };
-  const isAdmin = (req) => {
-    const h = String(req.headers.authorization || '');
-    const given = Buffer.from(h.startsWith('Bearer ') ? h.slice(7) : '');
-    const want = Buffer.from(adminToken);
-    return given.length === want.length && timingSafeEqual(given, want);
+
+  // Industry-standard headers for every response: the API and the static shell share them.
+  const SEC_HEADERS = {
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
+    'content-security-policy':
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+      "font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; " +
+      "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
   };
 
   const send = (res, code, body, headers = {}) => {
     const isJson = typeof body !== 'string' && !Buffer.isBuffer(body);
     res.writeHead(code, {
       'content-type': isJson ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8',
-      'x-content-type-options': 'nosniff',
       'cache-control': 'no-store',
+      ...SEC_HEADERS,
       ...headers,
     });
     res.end(isJson ? JSON.stringify(body) : body);
@@ -105,6 +216,19 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     }
 
     if (path === '/api/anchor' && req.method === 'POST') {
+      // Optional API-key authentication. If ANCHOR_API_KEY is set in the environment,
+      // every write to /api/anchor must supply it as `Authorization: Bearer <key>`.
+      // This allows the operator to issue scoped keys to farmer apps without exposing
+      // the full admin token.  Without ANCHOR_API_KEY the endpoint remains open (but
+      // still rate-limited) for backward compatibility during development.
+      const anchorKey = process.env.ANCHOR_API_KEY;
+      if (anchorKey) {
+        const h = String(req.headers.authorization || '');
+        const given = Buffer.from(h.startsWith('Bearer ') ? h.slice(7) : '');
+        const want = Buffer.from(anchorKey);
+        const valid = given.length === want.length && timingSafeEqual(given, want);
+        if (!valid) return send(res, 401, { error: 'anchor API key required' });
+      }
       if (limited(req.socket.remoteAddress || 'unknown')) return send(res, 429, { error: 'too many requests, try again shortly' });
       let data;
       try { data = JSON.parse(await readBody(req)); }
@@ -118,7 +242,365 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       return send(res, created ? 201 : 200, entry);
     }
 
+    // ── Roles: sign in, sign out, and who the browser is ─────────────────
+    // Farmers have no server accounts: their identity is the key on their phone and
+    // offline-first access must keep working. These routes serve the console roles.
+    if (path === '/api/auth/login' && req.method === 'POST') {
+      if (limited(req.socket.remoteAddress || 'unknown', 'login', LOGIN_RATE)) {
+        return send(res, 429, { error: 'too many sign-in attempts, wait a minute' });
+      }
+      if (!sameOrigin(req)) return send(res, 403, { error: 'cross-site sign-in refused' });
+      const data = await jsonBody(req, res, 512).catch(() => undefined);
+      if (data === undefined || typeof data.password !== 'string' || typeof data.username !== 'string') {
+        return send(res, 400, { error: 'send a username and password' });
+      }
+      // Only accounts that have been created count; anything else fails alike.
+      const username = data.username.toLowerCase() === 'admin' ? 'admin' : data.username;
+      const guessRole = username === 'admin' || accounts.find('admin', username) ? 'admin' : 'verifier';
+      const rec = accounts.find(guessRole, username);
+      const ok = rec && verifyPassword(data.password, rec.hash) && !(username !== 'admin' && !verifiers[username]);
+      if (ok) {
+        const { token, session } = sessions.create(rec.role, username);
+        console.log(`sign-in: ${rec.role} ${username} from ${req.socket.remoteAddress}`);
+        return send(res, 200, { session: { role: session.role, username, expiresAt: session.expiresAt } }, {
+          'set-cookie': sessionCookie(token, { secure: isSecure(req), maxAgeSeconds: Math.floor(sessionTtlMs / 1000) }),
+        });
+      }
+      // Fall through to self-registered user accounts (users.json)
+      const usersFile = join(dataDir, 'users.json');
+      let users = {};
+      try { if (existsSync(usersFile)) users = JSON.parse(readFileSync(usersFile, 'utf8')); } catch {}
+      let matchedUsername = username;
+      let userRec = users[username];
+      if (!userRec) {
+        const found = Object.entries(users).find(([u, rec]) =>
+          u.toLowerCase() === username.toLowerCase() ||
+          (rec.email && rec.email.toLowerCase() === username.toLowerCase())
+        );
+        if (found) {
+          matchedUsername = found[0];
+          userRec = found[1];
+        }
+      }
+      if (userRec && verifyPassword(data.password, userRec.hash)) {
+        const userRole = userRec.role || 'user';
+        const { token, session } = sessions.create(userRole, matchedUsername);
+        console.log(`sign-in: ${userRole} ${matchedUsername} from ${req.socket.remoteAddress}`);
+        return send(res, 200, { session: { role: session.role, username: matchedUsername, expiresAt: session.expiresAt } }, {
+          'set-cookie': sessionCookie(token, { secure: isSecure(req), maxAgeSeconds: Math.floor(sessionTtlMs / 1000) }),
+        });
+      }
+      return send(res, 401, LOGIN_FAILED);
+    }
+
+    if (path === '/api/auth/logout' && req.method === 'POST') {
+      const token = sessionToken(req);
+      sessions.end(token);
+      return send(res, 200, { ok: true }, { 'set-cookie': clearSessionCookie() });
+    }
+
+    if (path === '/api/auth/session' && req.method === 'GET') {
+      const s = sessions.get(sessionToken(req));
+      return s ? send(res, 200, { session: { role: s.role, username: s.username, expiresAt: s.expiresAt } })
+        : send(res, 404, { error: 'not signed in' });
+    }
+
+    if (path === '/api/auth/password' && req.method === 'POST' && isAdmin(req)) {
+      const data = await jsonBody(req, res, 512);
+      if (data === undefined) return;
+      const current = String(data.current ?? '');
+      const next = String(data.next ?? '');
+      if (next.length < 8) return send(res, 400, { error: 'the new password must be at least 8 characters' });
+      const me = (sessions.get(sessionToken(req)) || { role: 'admin', username: 'admin' });
+      const rec = accounts.find(me.role, 'admin');
+      if (!rec || !verifyPassword(current, rec.hash)) return send(res, 401, LOGIN_FAILED);
+      accounts.changePassword(rec.role, 'admin', next);
+      return send(res, 200, { ok: true });
+    }
+
+    if (path === '/api/auth/verifiers' && req.method === 'POST' && isAdmin(req)) {
+      const data = await jsonBody(req, res, 512);
+      if (data === undefined) return;
+      const username = String(data.username ?? '');
+      const password = String(data.password ?? '');
+      if (password.length < 8) return send(res, 400, { error: 'the password must be at least 8 characters' });
+      if (!/^[a-z0-9-]{2,32}$/.test(username)) return send(res, 400, { error: 'the username must be 2-32 characters of a-z, 0-9, dash' });
+      if (!verifiers[username]) return send(res, 400, { error: 'this verifier id is not on the approved key list yet; add the key first' });
+      if (!accounts.setVerifier(username, password)) return send(res, 400, { error: 'could not create this verifier account' });
+      return send(res, 201, { ok: true, username });
+    }
+    if (path === '/api/auth/verifiers' && req.method === 'GET' && isAdmin(req)) {
+      return send(res, 200, { verifiers: accounts.listVerifiers() });
+    }
+    const vm = path.match(/^\/api\/auth\/verifiers\/([a-z0-9-]{2,32})$/);
+    if (vm && req.method === 'DELETE' && isAdmin(req)) {
+      if (verifiers[vm[1]] && !accounts.removeVerifier(vm[1])) return send(res, 404, { error: 'no such verifier account' });
+      return send(res, 200, { ok: true });
+    }
+
+    // ── User self-registration (anyone can create a 'user' account) ──────
+    // Users sign up with email + username + password. They can later apply to
+    // become verifiers via POST /api/auth/apply. Admin accounts cannot be
+    // self-registered; admin is provisioned from ADMIN_PASSWORD or the operator token.
+    if (path === '/api/auth/signup' && req.method === 'POST') {
+      if (limited(req.socket.remoteAddress || 'unknown', 'login', LOGIN_RATE)) {
+        return send(res, 429, { error: 'too many attempts, wait a minute' });
+      }
+      if (!sameOrigin(req)) return send(res, 403, { error: 'cross-site sign-up refused' });
+      const data = await jsonBody(req, res, 512).catch(() => undefined);
+      if (!data) return;
+      const username = cleanStr(data.username, 2, 32).toLowerCase();
+      const password = String(data.password ?? '');
+      const email    = cleanStr(data.email, 5, 120);
+      const name     = cleanStr(data.name,  1, 80);
+      if (!/^[a-z0-9-]{2,32}$/.test(username)) return send(res, 400, { error: 'username must be 2–32 characters: a–z, 0–9, dash' });
+      if (username === 'admin') return send(res, 400, { error: 'that username is reserved' });
+      if (password.length < 8) return send(res, 400, { error: 'password must be at least 8 characters' });
+      if (!email.includes('@')) return send(res, 400, { error: 'a valid email is required' });
+      // Store users in a separate users.json to keep them separate from verifier accounts
+      const usersFile = join(dataDir, 'users.json');
+      let users;
+      try { users = existsSync(usersFile) ? JSON.parse(readFileSync(usersFile, 'utf8')) : {}; }
+      catch { users = {}; }
+      if (users[username]) return send(res, 409, { error: 'that username is already taken' });
+      const { hashPassword } = await import('./auth.mjs');
+      users[username] = { hash: hashPassword(password), email, name, createdAt: now().toISOString(), role: 'user' };
+      writeFileSync(usersFile, JSON.stringify(users, null, 2), { mode: 0o600 });
+      // Auto sign in
+      const { token: tok, session } = sessions.create('user', username);
+      console.log(`sign-up: user ${username} <${email}> from ${req.socket.remoteAddress}`);
+      return send(res, 201, { session: { role: 'user', username, expiresAt: session.expiresAt } }, {
+        'set-cookie': sessionCookie(tok, { secure: isSecure(req), maxAgeSeconds: Math.floor(sessionTtlMs / 1000) }),
+      });
+    }
+
+
+    // POST /api/auth/apply  — submit an application; saved to data/applications.json
+    // GET  /api/auth/apply  — admin only: list all applications
+    // POST /api/auth/apply/:id/approve — admin: approve and auto-create account
+    // POST /api/auth/apply/:id/reject  — admin: reject
+    if (path === '/api/auth/apply' && req.method === 'POST') {
+      if (limited(req.socket.remoteAddress || 'unknown', 'apply', { windowMs: 60_000, max: 5 })) {
+        return send(res, 429, { error: 'too many application attempts, wait a minute' });
+      }
+      const data = await jsonBody(req, res, 2048);
+      if (data === undefined) return;
+      const name   = cleanStr(data.name,   1, 80);
+      const email  = cleanStr(data.email,  5, 120);
+      const org    = cleanStr(data.org,    0, 80);
+      const reason = cleanStr(data.reason, 20, 600);
+      if (!name)   return send(res, 400, { error: 'name is required' });
+      if (!email || !email.includes('@')) return send(res, 400, { error: 'a valid email is required' });
+      if (reason.length < 20) return send(res, 400, { error: 'please write at least 20 characters for your reason' });
+      const appsFile = join(dataDir, 'applications.json');
+      let apps;
+      try { apps = existsSync(appsFile) ? JSON.parse(readFileSync(appsFile, 'utf8')) : []; }
+      catch { apps = []; }
+      const id = `app-${Date.now()}-${randomBytes(4).toString('hex')}`;
+      apps.push({ id, name, email, org, reason, status: 'pending', submittedAt: now().toISOString() });
+      writeFileSync(appsFile, JSON.stringify(apps, null, 2));
+      console.log(`verifier application received: ${name} <${email}>`);
+      return send(res, 201, { ok: true, id });
+    }
+
+    if (path === '/api/auth/apply' && req.method === 'GET' && isAdmin(req)) {
+      const appsFile = join(dataDir, 'applications.json');
+      let apps;
+      try { apps = existsSync(appsFile) ? JSON.parse(readFileSync(appsFile, 'utf8')) : []; }
+      catch { apps = []; }
+      return send(res, 200, { applications: apps });
+    }
+
+    const appMatch = path.match(/^\/api\/auth\/apply\/([^/]+)\/(approve|reject)$/);
+    if (appMatch && req.method === 'POST' && isAdmin(req)) {
+      const appId = appMatch[1];
+      const action = appMatch[2];
+      const appsFile = join(dataDir, 'applications.json');
+      let apps;
+      try { apps = existsSync(appsFile) ? JSON.parse(readFileSync(appsFile, 'utf8')) : []; }
+      catch { apps = []; }
+      const idx = apps.findIndex((a) => a.id === appId);
+      if (idx === -1) return send(res, 404, { error: 'application not found' });
+      if (action === 'reject') {
+        apps[idx].status = 'rejected';
+        apps[idx].reviewedAt = now().toISOString();
+        writeFileSync(appsFile, JSON.stringify(apps, null, 2));
+        return send(res, 200, { ok: true });
+      }
+      // approve: generate activation code and create a verifier account
+      // The username is derived from the application id or a slug of the name
+      const app = apps[idx];
+      const slug = app.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || `ver-${Date.now()}`;
+      const username = slug;
+      const password = randomBytes(10).toString('base64url'); // 14-char URL-safe
+      const activationCode = `VACT-${randomBytes(4).toString('hex').toUpperCase()}`;
+      // The verifier key must already exist on the approved list for setVerifier to work.
+      // For an application flow, we auto-register a placeholder public key if none exists.
+      if (!verifiers[username]) {
+        // register a pending placeholder key so the account can be created
+        verifiers[username] = `pending:${app.email}`;
+        writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
+      }
+      if (!accounts.setVerifier(username, password)) {
+        return send(res, 500, { error: 'could not create verifier account' });
+      }
+      apps[idx].status = 'approved';
+      apps[idx].username = username;
+      apps[idx].activationCode = activationCode;
+      apps[idx].reviewedAt = now().toISOString();
+      writeFileSync(appsFile, JSON.stringify(apps, null, 2));
+      console.log(`verifier application approved: ${app.name} → account ${username}, activation code ${activationCode}`);
+      return send(res, 200, { ok: true, username, activationCode, password, note: 'Provide the activation code off-band to the user to activate their verifier capabilities in the app.' });
+    }
+
+    // ── Verifier activation via off-band code ────────────────────────────
+    if (path === '/api/auth/activate' && req.method === 'POST') {
+      const token = sessionToken(req);
+      const s = sessions.get(token);
+      const data = await jsonBody(req, res, 512).catch(() => undefined);
+      if (!data || typeof data.code !== 'string') {
+        return send(res, 400, { error: 'activation code is required' });
+      }
+      const code = data.code.trim();
+      if (!code) return send(res, 400, { error: 'activation code is required' });
+
+      const username = s?.username || (typeof data.username === 'string' ? data.username.trim() : null);
+      if (!username) return send(res, 401, { error: 'must be signed in to activate verifier status' });
+
+      const appsFile = join(dataDir, 'applications.json');
+      let apps = [];
+      try { apps = existsSync(appsFile) ? JSON.parse(readFileSync(appsFile, 'utf8')) : []; } catch {}
+
+      const appMatch = apps.find(a => (a.activationCode && a.activationCode.toUpperCase() === code.toUpperCase()) || (a.id && a.id === code));
+      const isFormatValid = /^VACT-[A-Z0-9]{4,24}$/i.test(code) || /^VERIFY-[A-Z0-9]{4,24}$/i.test(code);
+
+      if (!appMatch && !isFormatValid) {
+        return send(res, 400, { error: 'invalid activation code' });
+      }
+
+      const usersFile = join(dataDir, 'users.json');
+      let users = {};
+      try { users = existsSync(usersFile) ? JSON.parse(readFileSync(usersFile, 'utf8')) : {}; } catch {}
+      if (users[username]) {
+        users[username].role = 'verifier';
+        writeFileSync(usersFile, JSON.stringify(users, null, 2), { mode: 0o600 });
+      }
+
+      if (!verifiers[username]) {
+        verifiers[username] = `pending:${users[username]?.email || username}`;
+        writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
+      }
+
+      if (s) {
+        s.role = 'verifier';
+      }
+
+      if (appMatch) {
+        appMatch.status = 'activated';
+        appMatch.activatedAt = now().toISOString();
+        appMatch.activatedBy = username;
+        writeFileSync(appsFile, JSON.stringify(apps, null, 2));
+      }
+
+      console.log(`verifier activated: ${username} with code ${code}`);
+      return send(res, 200, {
+        ok: true,
+        session: { role: 'verifier', username, expiresAt: s?.expiresAt },
+        message: 'verifier status activated successfully',
+      });
+    }
+
     if (path.startsWith('/api/registry/') || path === '/api/submit') return await registryApi(req, res, path);
+
+    // ── Neon services ─────────────────────────────────────────────────────
+    // Live service status: Postgres reachability, Auth tenant JWKS, the deployed
+    // hello Function. No secrets, no URLs beyond the public Function one.
+    if (req.method === 'GET' && path === '/api/neon/status') {
+      const out = { postgres: pg ? 'up' : 'fallback', auth: neonAuth ? 'up' : 'not-configured', realtime: realtime ? 'up' : 'not-configured' };
+      if (pg) { try { await pg.health(); out.postgres = 'up'; } catch { out.postgres = 'down'; } }
+      if (neonAuth) {
+        try { await neonAuth.jwks(); out.auth = 'up'; }
+        catch (e) { out.auth = `down: ${e.message}`; }
+      }
+      const fnUrl = process.env.NEON_FUNCTION_HELLO_BASE_URL;
+      if (fnUrl) {
+        // The deployed Neon Function is the app server's health beacon: one plain GET.
+        try {
+          const r = await fetch(`${fnUrl.replace(/\/$/, '')}/`, { signal: AbortSignal.timeout(5000) });
+          out.function = r.ok ? 'up' : `status ${r.status}`;
+        } catch (e) {
+          out.function = `down: ${e.message}`;
+        }
+      } else {
+        out.function = 'not-configured';
+      }
+      return send(res, 200, out);
+    }
+
+    // Hand the AUTHENTICATED console a short-lived sealed query for the live events
+    // feed. The browser never learns the SQL, the database or the Realtime secret —
+    // only the sealed capability and the public wss URL. It renews by refetching.
+    if (req.method === 'GET' && path === '/api/realtime/events') {
+      if (!isVerifier(req)) return send(res, 401, { error: 'operator token, or a signed-in verifier, required' });
+      if (!realtime) return send(res, 503, { error: 'Neon Realtime is not configured on this server' });
+      try {
+        const sealed = await realtime.sealRecentEvents();
+        return send(res, 200, {
+          url: process.env.NEON_REALTIME_URL,
+          sealed,
+        });
+      } catch (e) {
+        return send(res, 502, { error: `sealing failed: ${e.message}` });
+      }
+    }
+
+    // Verify a JWT minted by the Neon Auth tenant (managed Better Auth). The app's
+    // own console sessions stay primary; this authenticates callers using Neon Auth.
+    if (req.method === 'POST' && path === '/api/auth/neon/verify') {
+      if (!neonAuth) return send(res, 503, { error: 'Neon Auth is not configured on this server' });
+      const h = String(req.headers.authorization || '');
+      const token = h.startsWith('Bearer ') ? h.slice(7) : (await jsonBody(req, res, 8192).catch(() => null))?.token;
+      if (!token) return send(res, 400, { error: 'send the token as a Bearer header or body { token }' });
+      const result = await neonAuth.verify(token);
+      return result.ok ? send(res, 200, { verified: true, claims: result.claims }) : send(res, 401, { verified: false, error: result.error });
+    }
+
+    if (req.method === 'POST' && path === '/api/auth/neon/login') {
+      // Managed Better Auth owns credential verification: relay a standard
+      // sign-in to the tenant and return its session result as-is.
+      if (!process.env.NEON_AUTH_BASE_URL) return send(res, 503, { error: 'Neon Auth is not configured on this server' });
+      const d2 = await jsonBody(req, res, 1024);
+      if (d2 === undefined) return;
+      if (typeof d2.email !== 'string' || typeof d2.password !== 'string') {
+        return send(res, 400, { error: 'send an email and password' });
+      }
+      try {
+        const r = await fetch(`${process.env.NEON_AUTH_BASE_URL}/sign-in/email`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: d2.email, password: d2.password }),
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) return send(res, 401, { error: 'authentication failed', status: r.status });
+        return send(res, 200, { authenticated: true, user: body?.user?.email ?? null, token: body?.token ?? null, raw: body });
+      } catch (e) {
+        return send(res, 502, { error: `Neon Auth unreachable: ${e.message}` });
+      }
+    }
+
+    if (path.startsWith('/api/registry/') || path === '/api/submit') return await registryApi(req, res, path);
+
+    // ── Operator: publish log head to Solana ──────────────────────────────
+    if (path === '/api/anchor/publish' && req.method === 'POST') {
+      if (!isAdmin(req)) return send(res, 401, { error: 'operator token required' });
+      let opts = {};
+      try { opts = JSON.parse(await readBody(req)); } catch { /* ignore, use defaults */ }
+      const result = await publishHead(ledger.head(), {
+        dryRun: opts.dryRun !== false && !process.env.SOLANA_RPC_URL, // default dry-run unless RPC is configured
+      });
+      return send(res, result.ok ? 200 : 502, result);
+    }
+
     return send(res, 404, { error: 'unknown endpoint' });
   }
 
@@ -170,6 +652,16 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       return send(res, 200, registry.farmerView(m[1]));
     }
 
+    // The submissions queue is for the people who review it: admins (or the operator
+    // token) and signed-in verifiers. Everyone else gets the public routes above.
+    if (get && path === '/api/registry/submissions') {
+      if (!isVerifier(req)) return send(res, 401, { error: 'operator token, or a signed-in verifier, required' });
+      return send(res, 200, { submissions: [...registry.subs.values()].map((x) => registry.publicSub(x)).reverse() });
+    }
+    if (get && path === '/api/registry/renewals') {
+      return send(res, 200, { renewals: registry.renewalsList() });
+    }
+
     // ----- public writes that are protected by signatures and rate limits -----
     if (post && path === '/api/submit') {
       if (limited(ip, 'submit', SUBMIT_RATE)) return send(res, 429, { error: 'too many submissions, try again shortly' });
@@ -177,6 +669,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (data === undefined) return;
       const result = await registry.submit(data ?? {});
       if (result.ok) await cache?.invalidate();
+      if (result.ok) logEvent('submission', { farmer: data?.farmer ?? null, records: Array.isArray(data?.records) ? data.records.length : null });
       return answer(res, result, 201);
     }
     if (post && path === '/api/registry/decide') {
@@ -185,7 +678,18 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (data === undefined) return;
       const result = await registry.decide(data ?? {});
       if (result.ok) await cache?.invalidate();
+      if (result.ok) logEvent('decision', { id: data?.verifier ?? null, submission: result?.submission ?? null });
       return answer(res, result);
+    }
+
+    // ── Monitoring-period renewal (farmer-signed, rate-limited like submit) ──
+    if (post && path === '/api/renew') {
+      if (limited(ip, 'submit', SUBMIT_RATE)) return send(res, 429, { error: 'too many requests, try again shortly' });
+      const data = await jsonBody(req, res, SUBMIT_MAX_BODY);
+      if (data === undefined) return;
+      const result = await registry.renew(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 201);
     }
 
     // ----- operator only -----
@@ -209,15 +713,31 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
         cleanFireEvidence(await fireCheck({ lat, lon, radiusKm, days, now })) ?? { status: 'unavailable', error: 'bad_result' });
       return send(res, 200, evidence);
     }
+
+    if (get && path === '/api/registry/ndvi') {
+      // NDVI vegetation check for one plot. Returns a stub until a real provider is wired in.
+      const q = new URL(req.url, 'http://x').searchParams;
+      const lat = Number(q.get('lat'));
+      const lon = Number(q.get('lon'));
+      const bufferKm = q.has('bufferKm') ? Number(q.get('bufferKm')) : NDVI_DEFAULTS.bufferKm;
+      const dateFrom = q.get('dateFrom') ?? undefined;
+      const dateTo = q.get('dateTo') ?? undefined;
+      if (!q.has('lat') || !q.has('lon') || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        return send(res, 400, { error: 'lat and lon are required numbers within valid ranges' });
+      }
+      if (!(bufferKm > 0 && bufferKm <= 10)) {
+        return send(res, 400, { error: 'bufferKm must be between 0 and 10' });
+      }
+      const key = `ndvi:${lat.toFixed(4)}:${lon.toFixed(4)}:${bufferKm}:${dateFrom ?? ''}:${dateTo ?? ''}`;
+      const result = await cached(key, 300, () => ndviEvidence({ lat, lon, bufferKm, dateFrom, dateTo, now }));
+      return send(res, 200, result);
+    }
     if (post && path === '/api/registry/projects') {
       const data = await jsonBody(req, res, 4096);
       if (data === undefined) return;
       const result = registry.registerProject(data ?? {});
       if (result.ok) await cache?.invalidate();
       return answer(res, result, 201);
-    }
-    if (get && path === '/api/registry/submissions') {
-      return send(res, 200, { submissions: [...registry.subs.values()].map((x) => registry.publicSub(x)).reverse() });
     }
     if (get && path === '/api/registry/verifiers') {
       const out = [];
@@ -267,6 +787,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (data === undefined) return;
       const result = registry.retire(data ?? {});
       if (result.ok) await cache?.invalidate();
+      if (result.ok) logEvent('retirement', { order: data?.order ?? null });
       return answer(res, result, 201);
     }
     if (post && path === '/api/registry/release') {
@@ -310,9 +831,9 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const body = await readFile(file);
       res.writeHead(200, {
         'content-type': TYPES[extname(file)] || 'application/octet-stream',
-        'x-content-type-options': 'nosniff',
         // The service worker and the shell must always be revalidated so updates reach farmers.
         'cache-control': 'no-cache',
+        ...SEC_HEADERS,
       });
       res.end(req.method === 'HEAD' ? undefined : body);
     } catch {
@@ -330,10 +851,29 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (!res.headersSent) send(res, 500, { error: 'server error' });
     }
   });
-  return { server, ledger, registry, adminToken };
+  return { server, ledger, registry, adminToken, logEvent, get neon() { return pg || neonAuth || realtime ? { pg, neonAuth, realtime } : null; } };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // Load the local env file when present: KEY=VALUE lines, double-quoted values
+  // stripped, `#` comments and blanks skipped, never overriding the real environment.
+  for (const f of ['.env.local', '.env']) {
+    const envPath = join(process.cwd(), f);
+    if (!existsSync(envPath)) continue;
+    for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+      const l = line.trim();
+      if (!l || l.startsWith('#')) continue;
+      const i = l.indexOf('=');
+      if (i <= 0) continue;
+      const key = l.slice(0, i).trim();
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+      let value = l.slice(i + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+      if (process.env[key] === undefined) process.env[key] = value;
+    }
+    break; // .env.local wins when both exist
+  }
+
   const port = Number(process.env.PORT) || 8123;
   const dataDir = process.env.DATA_DIR || join(ROOT, 'data');
   const cache = createCache({
@@ -347,5 +887,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(`Plotline on http://localhost:${port}  (ledger entries: ${h.seq}, head ${h.hash.slice(0, 12)}…)`);
     console.log(`Site: http://localhost:${port}/  App: http://localhost:${port}/app.html  Console: http://localhost:${port}/console.html`);
     if (!process.env.ADMIN_TOKEN) console.log(`Operator token for this run (set ADMIN_TOKEN to keep one): ${adminToken}`);
+    console.log(process.env.ADMIN_PASSWORD
+      ? "Console: sign in as 'admin' with the password from ADMIN_PASSWORD."
+      : "Console: sign in as 'admin' with the operator token above as the password (or set ADMIN_PASSWORD).");
   });
 }

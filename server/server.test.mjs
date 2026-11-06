@@ -133,3 +133,23 @@ test('static files: app is served, server code and data are not', async () => {
     }
   });
 });
+
+test('API: ANCHOR_API_KEY turns the open endpoint into a keyed one, reads stay public', async (t) => {
+  const prev = process.env.ANCHOR_API_KEY;
+  t.after(() => { if (prev === undefined) delete process.env.ANCHOR_API_KEY; else process.env.ANCHOR_API_KEY = prev; });
+  await withServer(async (base) => {
+    // No key configured: the endpoint stays open for development.
+    const open = await fetch(base + '/api/anchor', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ root: root(50), count: 1 }) });
+    assert.equal(open.status, 201);
+
+    process.env.ANCHOR_API_KEY = 'ledger-key-1';
+    const noKey = await fetch(base + '/api/anchor', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ root: root(51), count: 1 }) });
+    assert.equal(noKey.status, 401);
+    const wrong = await fetch(base + '/api/anchor', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer nope' }, body: JSON.stringify({ root: root(51), count: 1 }) });
+    assert.equal(wrong.status, 401);
+    const good = await fetch(base + '/api/anchor', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ledger-key-1' }, body: JSON.stringify({ root: root(51), count: 1 }) });
+    assert.equal(good.status, 201);
+    // Lookups of what was anchored stay public without a key.
+    assert.equal((await fetch(`${base}/api/anchor/${root(51)}`)).status, 200);
+  });
+});

@@ -23,7 +23,7 @@ const serial = (n) => `${SERIAL_PREFIX}-${String(n).padStart(8, '0')}`;
 const HEX64 = /^[0-9a-f]{64}$/;
 
 export class Registry {
-  constructor({ file, privateFile = null, verifiers = {}, now = () => new Date(), priceKobo = DEFAULT_PRICE_KOBO }) {
+  constructor({ file, privateFile = null, verifiers = {}, verifiersAccred = null, now = () => new Date(), priceKobo = DEFAULT_PRICE_KOBO }) {
     this.log = new ChainLog(file);
     // Phone numbers never go on the public log: only a salted hash and a masked form do.
     this.privateFile = privateFile;
@@ -32,6 +32,7 @@ export class Registry {
       : { salt: randomBytes(16).toString('hex'), numbers: {} };
     if (privateFile && !existsSync(privateFile)) writeFileSync(privateFile, JSON.stringify(this.priv), { mode: 0o600 });
     this.verifiers = verifiers; // id -> public JWK
+    this.verifiersAccred = verifiersAccred instanceof Map ? verifiersAccred : new Map(Object.entries(verifiersAccred ?? {}));
     this.now = now;
     this.priceKobo = priceKobo;
     this.reset();
@@ -57,6 +58,7 @@ export class Registry {
     this.payouts = [];
     this.pools = { community: 0, verifier: 0, platform: 0 };
     this.nextSerial = 1;
+    this.renewals = new Map(); // renewalId -> renewal record
   }
 
   // ---------- replay: the only place state changes ----------
@@ -134,6 +136,15 @@ export class Registry {
       case 'retired':
         this.orders.get(d.orderId).retired = { by: d.beneficiary, reason: d.reason, at: e.ts };
         break;
+      case 'renewal_submitted': {
+        this.renewals.set(d.renewalId, { ...d, status: 'pending', submittedAt: e.ts });
+        break;
+      }
+      case 'renewal_decided': {
+        const r = this.renewals.get(d.renewalId);
+        if (r) { r.status = d.approved ? 'approved' : 'rejected'; r.decidedAt = e.ts; r.decisionNote = d.note ?? null; }
+        break;
+      }
       default:
         throw new Error('unknown event type ' + e.type);
     }
@@ -270,6 +281,35 @@ export class Registry {
     if (s.status !== 'pending') return fail('already_decided', `Submission is already ${s.status}`);
     if (!['approve', 'reject'].includes(decision)) return fail('bad_decision', 'Decision must be approve or reject');
     if ((await fingerprint(vkey)) === s.fp) return fail('self_verification', 'A farmer cannot verify their own submission');
+
+    // ── Accreditation enforcement ─────────────────────────────────────────
+    // If the operator has recorded accreditation for this verifier, check that
+    // it covers the methodology and has not expired.
+    const accred = this.verifiersAccred?.get(verifierId);
+    if (accred) {
+      // Expiry check
+      if (accred.expiresAt && new Date(accred.expiresAt) < this.now()) {
+        return fail('verifier_accreditation_expired',
+          `Verifier ${verifierId} accreditation expired at ${accred.expiresAt}. Re-accredit the verifier before accepting decisions.`);
+      }
+      // Methodology scope check
+      if (accred.methodologyId && s.methodology && accred.methodologyId !== s.methodology) {
+        return fail('verifier_methodology_mismatch',
+          `Verifier ${verifierId} is accredited for ${accred.methodologyId} but this submission uses ${s.methodology}.`);
+      }
+      // Scope check: 'validation-only' verifiers may not do periodic review decisions
+      if (accred.scope === 'validation-only' && s.isRenewal) {
+        return fail('verifier_scope_mismatch',
+          `Verifier ${verifierId} is accredited for validation only and cannot review monitoring-period renewals.`);
+      }
+      // 'review-only' verifiers may not validate initial submissions
+      if (accred.scope === 'review-only' && !s.isRenewal) {
+        return fail('verifier_scope_mismatch',
+          `Verifier ${verifierId} is accredited for review only and cannot validate initial submissions.`);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     if (decision === 'approve' && s.checks.flags.length && String(note).trim().length < 5) {
       return fail('note_required', 'This submission was flagged: write a note explaining why you approve it');
     }
@@ -282,9 +322,14 @@ export class Registry {
 
     this.emit('decided', { body, hash, sig });
     if (decision === 'approve') {
-      const acc = this.verifiersAccred?.get(verifierId);
       const issuance = this.issue(s);
-      if (issuance) issuance.verifierAccreditation = acc ? { standard: acc.standard, scope: acc.scope, expiresAt: acc.expiresAt } : null;
+      if (issuance && accred) {
+        issuance.verifierAccreditation = {
+          standard: accred.standard,
+          scope: accred.scope,
+          expiresAt: accred.expiresAt ?? null,
+        };
+      }
       return { ok: true, status: 'approved', issuance };
     }
     return { ok: true, status: 'rejected' };
@@ -392,46 +437,82 @@ export class Registry {
   }
 
   // ---------- 5. retirement: the buyer claims the units so they cannot be sold or claimed again ----------
-  // ---------- 4b. reversals: cancel unsold serials after fire, clearing or a failed check ----------
+  // ---------- 4b. reversals: cancel unsold serials; use buffer when sold credits are affected ----------
   reverse({ issuanceId, units, reason, evidence = null }) {
     const iss = this.issuances.find((i) => i.id === issuanceId);
     if (!iss) return fail('unknown_issuance', 'No such issuance');
     const text = String(reason ?? '').trim();
     if (text.length < 5 || text.length > 300) return fail('bad_reason', 'Give a reason (5-300 characters)');
-    // Total serial range in this issuance.
+
     const from = iss.from ?? 1;
     const to = iss.to ?? from;
     const total = to - from + 1;
-    // Known quantities.
     const bufUnits = iss.bufferUnits ?? 0;
     const currentReversed = iss.reversed ?? 0;
-    // Unsold outside the buffer = total - buffer already reversed so far.
-    const unsoldOutside = total - bufUnits - currentReversed;
-    // How many to reverse (default = all unsold).
-    const requested = units === undefined ? unsoldOutside : units;
-    const count = Math.max(1, Math.min(requested, unsoldOutside));
-    // If the caller asked for more than available, return an error.
-    if (count < requested) return fail('insufficient_unsold', `Only ${unsoldOutside} unsold units available (of ${total} total, ${bufUnits} in buffer)`);
-    // Priority: first take from unsold outside buffer, then from buffer.
-    const generalTake = Math.min(count, unsoldOutside);
-    const bufTake = count - generalTake;
-    // Compute serial ranges.
-    // General unsold start at issuance.from and go for generalTake units.
-    const gFrom = from;
-    const gTo = from + generalTake - 1;
-    // Buffer units start after the general unsold range.
-    const bFrom = from + generalTake;
+    // Serials that have been sold/transferred out of this issuance.
+    const soldUnits = (iss.next ?? from) - from;
+    // Unsold outside the buffer that we can cancel directly.
+    const unsoldOutside = Math.max(0, total - bufUnits - soldUnits - currentReversed);
+    // Buffer serials still available (not already used in a prior reversal).
+    const bufferAvailable = Math.max(0, bufUnits - Math.max(0, currentReversed - unsoldOutside));
+
+    const requested = units === undefined ? unsoldOutside + bufferAvailable : Number(units);
+    if (!Number.isInteger(requested) || requested < 1) {
+      return fail('bad_units', 'units must be a positive integer');
+    }
+
+    // Sold credits are never cancelled here — that needs a buyer dispute process. If the
+    // request asks for more than what remains unsold, refuse rather than sweeping the
+    // whole buffer or pretending sold credits were covered.
+    const cancellable = unsoldOutside + bufferAvailable;
+    if (requested > cancellable) {
+      return fail('insufficient_unsold',
+        `Only ${cancellable} unit(s) can be cancelled (${unsoldOutside} unsold, ${bufferAvailable} in buffer).` +
+        (soldUnits > 0 ? ` ${soldUnits} sold unit(s) cannot be cancelled without a buyer dispute process.` : ''));
+    }
+
+    const cancelCount = requested;
+
+    // Priority: take from unsold general serials first, then from buffer.
+    const generalTake = Math.min(cancelCount, unsoldOutside);
+    const bufTake = cancelCount - generalTake;
+
+    // Serial ranges: general unsold start at iss.from + soldUnits.
+    const gFrom = from + soldUnits;
+    const gTo = gFrom + generalTake - 1;
+    // Buffer serials come after the general range.
+    const bufStart = iss.bufferFrom ?? (to - bufUnits + 1);
+    const bFrom = bufStart + Math.max(0, currentReversed - unsoldOutside);
     const bTo = bFrom + bufTake - 1;
-    // Overall reversed range spans from first taken to last taken.
+
     const rFrom = generalTake > 0 ? gFrom : bFrom;
     const rTo = generalTake > 0 && bufTake > 0 ? bTo : (generalTake > 0 ? gTo : bTo);
+
     this.emit('reversed', {
-      issuanceId, units: count, reason: text, from: rFrom, to: rTo,
-      serialFrom: serial(rFrom), serialTo: serial(rTo),
+      issuanceId,
+      units: cancelCount,
+      reason: text,
+      from: rFrom,
+      to: rTo,
+      serialFrom: serial(rFrom),
+      serialTo: serial(rTo),
       evidence: evidence ? String(evidence).slice(0, 200) : null,
       usedBuffer: bufTake > 0,
+      bufferUnitsRetired: bufTake,
     });
-    return { ok: true, cancellation: { issuanceId, units: count, serialFrom: serial(rFrom), serialTo: serial(rTo), reason: text, usedBuffer: bufTake > 0 } };
+
+    return {
+      ok: true,
+      cancellation: {
+        issuanceId,
+        units: cancelCount,
+        serialFrom: serial(rFrom),
+        serialTo: serial(rTo),
+        reason: text,
+        usedBuffer: bufTake > 0,
+        bufferUnitsRetired: bufTake,
+      },
+    };
   }
 
   // ---------- 4c. Article 6: who may claim these units, and are they adjusted? ----------
@@ -463,6 +544,69 @@ export class Registry {
     if (who.length < 2 || who.length > 80) return fail('bad_beneficiary', 'Name who the retirement is for (2-80 characters)');
     this.emit('retired', { orderId, beneficiary: who, reason: String(reason).slice(0, 200) });
     return { ok: true, certificate: this.certificate(orderId) };
+  }
+
+  // ---------- 5b. monitoring-period renewals: re-measure a plot for a new vintage ----------
+  //
+  // A renewal is a new survival count for a previously approved submission. It lets a
+  // project re-verify trees that are still alive in a subsequent monitoring period and
+  // issue fresh credits against the re-measured vintage, rather than treating the
+  // original approval as perpetual.
+  //
+  // Workflow:
+  //   1. Farmer submits a renewal (POST /api/submit with type='renewal' and priorSubId).
+  //   2. Registry runs the same automatic checks as a normal submission.
+  //   3. A verifier decides (approve/reject) via the normal decide() flow.
+  //   4. On approval, a new issuance is created for the re-measured vintage.
+  //
+  // This method handles step 1.
+  async renew({ records, pub, msisdn, methodologyId, projectId = null, priorSubId, monitoringPeriodStart, monitoringPeriodEnd }) {
+    // The prior submission must exist and be approved.
+    const prior = this.subs.get(priorSubId);
+    if (!prior) return fail('unknown_prior_submission', 'No prior submission found for this renewal');
+    if (prior.status !== 'approved') return fail('prior_not_approved', 'The prior submission must be approved before renewal');
+
+    // Run the same validation as a normal submit.
+    const result = await this.submit({ records, pub, msisdn, methodologyId, projectId });
+    if (!result.ok || result.status === 'rejected') return result;
+
+    const periodStart = monitoringPeriodStart ? new Date(monitoringPeriodStart) : null;
+    const periodEnd = monitoringPeriodEnd ? new Date(monitoringPeriodEnd) : null;
+
+    if (!periodStart || isNaN(periodStart.getTime())) {
+      return fail('bad_period_start', 'monitoringPeriodStart must be a valid ISO date');
+    }
+    if (!periodEnd || isNaN(periodEnd.getTime()) || periodEnd <= periodStart) {
+      return fail('bad_period_end', 'monitoringPeriodEnd must be a date after monitoringPeriodStart');
+    }
+
+    const renewalId = `RNW-${String(this.renewals.size + 1).padStart(4, '0')}`;
+    this.emit('renewal_submitted', {
+      renewalId,
+      subId: result.subId,
+      priorSubId,
+      monitoringPeriodStart: periodStart.toISOString(),
+      monitoringPeriodEnd: periodEnd.toISOString(),
+      // Vintage is derived from the monitoring period end, not the submission receipt date.
+      vintage: periodEnd.getUTCFullYear(),
+    });
+
+    // Patch the sub to carry the renewal metadata so it appears in the queue.
+    const sub = this.subs.get(result.subId);
+    if (sub) {
+      sub.renewalId = renewalId;
+      sub.priorSubId = priorSubId;
+      sub.monitoringPeriodStart = periodStart.toISOString();
+      sub.monitoringPeriodEnd = periodEnd.toISOString();
+      sub.vintage = periodEnd.getUTCFullYear();
+      sub.isRenewal = true;
+    }
+
+    return { ok: true, subId: result.subId, renewalId, status: result.status, checks: result.checks };
+  }
+
+  renewalsList() {
+    return [...this.renewals.values()];
   }
 
   certificate(orderId) {
