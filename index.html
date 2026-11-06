@@ -14,73 +14,86 @@
 <link rel="stylesheet" href="site.css">
 </head>
 <body class="site">
+
 <header class="top site-nav">
   <a class="brand" href="./">Plot<span>line</span></a>
   <nav aria-label="Site">
     <a href="#how">How it works</a>
-    <a href="#built">What it does</a>
-    <a href="console.html">Console</a>
+    <a href="#features">Features</a>
+    <a href="#roles">Get started</a>
+    <a href="console.html">Sign in</a>
     <a class="nav-cta" href="app.html">Open the app</a>
   </nav>
 </header>
 
 <main>
+
+  <!-- Hero -->
   <section class="hero">
     <div class="hero-copy">
       <p class="eyebrow">Offline-first farm records</p>
       <h1>Proof of what<br><span>grows.</span></h1>
-      <p class="lede">Map your farm by walking it, report problems where you see them, and turn living trees into records anyone can verify — on a phone, with or without a network.</p>
+      <p class="lede">Map your farm by walking it, report problems where you see them, and turn living trees into verified carbon credits — on a phone, with or without a network.</p>
       <div class="cta-row">
         <a class="cta primary" href="app.html">Open the app</a>
         <a class="cta" href="#how">How records work</a>
       </div>
-      <p class="fine">Installs to your home screen · no account · no wallet · no fees</p>
+      <p class="fine">Installs to your home screen &nbsp;·&nbsp; no account &nbsp;·&nbsp; no wallet &nbsp;·&nbsp; no fees</p>
     </div>
 
     <div class="proof" aria-hidden="true">
-      <div class="proof-head"><span class="mono">Batch 4a91c2</span><span class="pill">in ledger #12</span></div>
-      <div class="proof-big">0.42 <small>ha</small></div>
-      <p class="proof-sub">Boundary walked at ±4 m · 4 corners</p>
-      <div class="proof-grid">
-        <div><b>68</b><span>records sealed</span></div>
-        <div><b>3</b><span>reports this week</span></div>
+      <div class="proof-head">
+        <span class="mono">Batch 4a91c2</span>
+        <span class="pill">Ledger #12</span>
       </div>
-      <div class="proof-hash mono">root 8f21…c40d</div>
+      <div class="proof-big">0.42 <small>ha</small></div>
+      <p class="proof-sub">Boundary walked at ±4 m &nbsp;·&nbsp; 4 corners</p>
+      <div class="proof-grid">
+        <div><b>68</b><span>Records sealed</span></div>
+        <div><b>3</b><span>Reports this week</span></div>
+        <div><b>91</b><span>Credits issued</span></div>
+        <div><b>₦5,460</b><span>Farmer payout</span></div>
+      </div>
+      <div class="proof-hash">root&nbsp; 8f21…c40d &nbsp;·&nbsp; verified ✓</div>
     </div>
   </section>
 
+  <div class="leaf-band" aria-hidden="true"></div>
+
+  <!-- How it works -->
   <section id="how" class="band">
     <h2>Records you can prove, even offline</h2>
-    <p class="band-lede">Three steps, all of them on the phone. No wallet, no fee, no signal needed.</p>
+    <p class="band-lede">Three steps, all on the phone. No wallet, no fee, no signal needed until you publish.</p>
     <ol class="steps3">
       <li>
         <span class="n">1</span>
         <h3>Measure</h3>
-        <p>Walk the boundary and mark each corner. Every fix is scored for accuracy, and a fix worse than 50 m is refused.</p>
+        <p>Walk the boundary and mark each corner. Every GPS fix is scored for accuracy — anything worse than 50 m is refused.</p>
       </li>
       <li>
         <span class="n">2</span>
         <h3>Sign and seal</h3>
-        <p>Each record is hashed and signed with a key that stays on the device. Sealing groups records under one fingerprint.</p>
+        <p>Each record is hashed and signed with a key that stays on the device. Sealing groups records under one Merkle fingerprint.</p>
       </li>
       <li>
         <span class="n">3</span>
         <h3>Prove it later</h3>
-        <p>Only the fingerprint is published to an append-only ledger. Anyone can re-check a record and its Merkle proof.</p>
+        <p>Only the fingerprint is published to an append-only ledger. Anyone can re-check a record with its Merkle proof — online or off.</p>
       </li>
     </ol>
   </section>
 
-  <section id="built" class="band">
+  <!-- Features -->
+  <section id="features" class="band">
     <h2>What is inside</h2>
     <div class="cards4">
       <article>
-        <h3>Boundary and inputs</h3>
+        <h3>Boundary &amp; inputs</h3>
         <p>Area, perimeter, plant counts and seed or fertiliser quantities from the plot you walked.</p>
       </article>
       <article>
-        <h3>Scouting</h3>
-        <p>Pest, disease, water stress, weeds or nutrient deficiency, pinned to where you saw it and signed.</p>
+        <h3>Field scouting</h3>
+        <p>Pest, disease, water stress, weeds or nutrient deficiency, pinned to where you saw it and signed on the phone.</p>
       </article>
       <article>
         <h3>Outbreak watch</h3>
@@ -88,25 +101,60 @@
       </article>
       <article>
         <h3>Verified carbon credits</h3>
-        <p>Planting and survival checks go to an independent verifier, who approves before one-tonne credits are issued.</p>
+        <p>Planting and survival checks go to an independent verifier. Approval issues unique serial numbers — one tonne, one serial.</p>
       </article>
     </div>
   </section>
 
-  <section class="band climate">
-    <div>
-      <h2>Verified tonnes, paid in kobo</h2>
-      <p>Approved plots issue unique serial numbers, one per tonne of CO₂e. A sale splits automatically between farmer, community, verifier and platform, with holds for unsafe payout changes and a hash-chained audit log of every step.</p>
-      <a class="cta" href="app.html">Try the flow</a>
-    </div>
-    <div class="split-demo" aria-hidden="true">
-      <div class="split-row"><span>Farmer</span><b>60%</b></div>
-      <div class="split-row"><span>Community</span><b>25%</b></div>
-      <div class="split-row"><span>Verifier</span><b>5%</b></div>
-      <div class="split-row"><span>Platform</span><b>10%</b></div>
-      <p class="fine">Demo split, editable in the methodology file.</p>
+  <!-- Role CTAs -->
+  <section id="roles" class="band role-band">
+    <div class="band" style="border-top:0; padding:0">
+      <h2>Your role on Plotline</h2>
+      <p class="band-lede">Different access paths for farmers, independent verifiers, and programme operators.</p>
+      <div class="role-cards">
+
+        <div class="role-card">
+          <div class="role-icon">🌱</div>
+          <h3>Farmer</h3>
+          <p>Map your farm, scout the field, plant trees and send them for verification. No account needed — your signing key lives on your phone.</p>
+          <a class="cta primary" href="app.html">Open the app</a>
+        </div>
+
+        <div class="role-card">
+          <div class="role-icon">🔍</div>
+          <h3>Verifier</h3>
+          <p>Review submissions, check the evidence, and sign decisions. Standard users can apply and activate verifier capabilities directly in the app.</p>
+          <a class="cta" href="app.html">Open the app</a>
+        </div>
+
+        <div class="role-card">
+          <div class="role-icon">⚙️</div>
+          <h3>Admin / Operator</h3>
+          <p>Register projects, manage the submissions queue, issue credits, handle payouts, and audit everything.</p>
+        </div>
+
+      </div>
     </div>
   </section>
+
+  <!-- Climate layer -->
+  <section class="climate">
+    <div class="climate-inner">
+      <div>
+        <h2>Verified tonnes, paid in kobo</h2>
+        <p>Approved plots issue unique serial numbers — one per tonne of CO₂e. A sale splits automatically between farmer, community, verifier and platform, with holds for unsafe payout changes and a hash-chained audit log of every step.</p>
+        <a class="cta" href="app.html">Try the flow →</a>
+      </div>
+      <div class="split-demo" aria-hidden="true">
+        <div class="split-row"><span>Farmer</span><b>60%</b></div>
+        <div class="split-row"><span>Community</span><b>25%</b></div>
+        <div class="split-row"><span>Verifier</span><b>5%</b></div>
+        <div class="split-row"><span>Platform</span><b>10%</b></div>
+        <p class="fine">Demo split — editable in the methodology file.</p>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <footer class="site-footer">
@@ -117,8 +165,8 @@
     </div>
     <div class="foot-col">
       <h4>Product</h4>
-      <a href="app.html">Open the app</a>
-      <a href="console.html">Operator console</a>
+      <a href="app.html">Farmer app</a>
+      <a href="console.html">Sign in</a>
       <a href="#how">How records work</a>
     </div>
     <div class="foot-col">
@@ -127,9 +175,10 @@
     </div>
   </div>
   <div class="foot-note">
-    <p>Demo build: credits are simulated, payouts are simulated and the per-tree conversion factor is a placeholder. Map tiles © OpenStreetMap contributors.</p>
+    <p>Demo build: credits are simulated, payouts are simulated, and the per-tree conversion factor is a placeholder. Map tiles © OpenStreetMap contributors.</p>
     <p>Plotline · 2026</p>
   </div>
 </footer>
+
 </body>
 </html>

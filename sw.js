@@ -1,6 +1,6 @@
 // Service worker: the app shell is cached on install so Plotline opens with no network.
 // Map tiles are cached as they are viewed, so areas you have already looked at stay visible offline.
-const VERSION = 'plotline-v6';
+const VERSION = 'plotline-v7';
 const SHELL = [
   './',
   './index.html',
@@ -11,6 +11,12 @@ const SHELL = [
   './core.js',
   './manifest.webmanifest',
   './icon.svg',
+  './assets/monstera/pattern.jpg',
+  './assets/monstera/pattern-dark.jpg',
+  './assets/monstera/pattern-mist.jpg',
+  './assets/monstera/leaf.png',
+  './assets/monstera/leaf-dark.png',
+  './assets/monstera/leaf-mist.png',
   './vendor/leaflet/leaflet.css',
   './vendor/leaflet/leaflet.js',
   './vendor/leaflet/leaflet-heat.js',

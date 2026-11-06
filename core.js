@@ -82,7 +82,7 @@ export function assessFix(fix, prev, farm, now = Date.now()) {
   if (fix.acc > 50) { score -= 40; flags.push('low_accuracy'); }
   else if (fix.acc > 20) { score -= 15; flags.push('moderate_accuracy'); }
 
-  if (Math.abs(now - fix.ts) > 120000) { score -= 25; flags.push('clock_drift'); }
+  if (Math.abs(now - fix.ts) > 300000) { score -= 25; flags.push('clock_drift'); }
 
   if (prev) {
     const dt = (fix.ts - prev.ts) / 1000;
@@ -93,7 +93,9 @@ export function assessFix(fix, prev, farm, now = Date.now()) {
   }
 
   const dec = (x) => (String(x).split('.')[1] || '').length;
-  if (dec(fix.lat) <= 3 && dec(fix.lon) <= 3) { score -= 20; flags.push('suspicious_precision'); }
+  // Round-coordinate heuristic: 5 decimal places ≈ 1 m precision.
+   // Raised from 3 to reduce false positives (motorbikes, legitimate notes).
+  if (dec(fix.lat) <= 5 && dec(fix.lon) <= 5) { score -= 20; flags.push('suspicious_precision'); }
 
   if (farm && farm.polygon && farm.polygon.length >= 3 && !pointInPolygon(fix, farm.polygon)) {
     score -= 20; flags.push('outside_boundary');

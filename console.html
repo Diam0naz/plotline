@@ -3,108 +3,631 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plotline registry console</title>
+<title>Plotline console</title>
 <meta name="theme-color" content="#476633">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="console.css">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+/* ══════════════════════════════════════════════
+   Console-specific layout
+══════════════════════════════════════════════ */
+body.console { padding-bottom: 0; }
+body.console main { max-width: 1200px; margin: 0 auto; padding: var(--s4) var(--s5) var(--s8); }
+
+/* ── Console top bar ── */
+.console-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5);
+}
+.console-top .right { display: flex; align-items: center; gap: var(--s3); }
+.console-top .user-pill {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 6px 12px; border-radius: var(--r-pill);
+  background: var(--surface-2); border: 1px solid var(--border);
+  font-size: 13px; font-weight: 500;
+}
+.console-top .user-pill .role-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+}
+.console-top .user-pill .role-dot.admin { background: var(--amber); }
+
+/* ── Auth screen ── */
+body.auth-page { background: var(--grey-50); }
+.auth-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s6) var(--s4);
+}
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r4);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+.auth-card-head {
+  padding: var(--s6) var(--s6) var(--s5);
+  border-bottom: 1px solid var(--border-2);
+  background: var(--surface);
+}
+.auth-card-head .brand { margin-bottom: var(--s4); }
+.auth-card-head h1 { font-size: 22px; margin-bottom: var(--s1); }
+.auth-card-head p  { font-size: 14px; color: var(--text-2); }
+.auth-card-body { padding: var(--s5) var(--s6); }
+.auth-card-foot {
+  padding: var(--s4) var(--s6);
+  border-top: 1px solid var(--border-2);
+  background: var(--grey-50);
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: center;
+}
+.auth-card-foot a { color: var(--green); font-weight: 500; }
+
+
+/* ── Console nav ── */
+.cnav {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 0 var(--s5);
+  border-bottom: 1px solid var(--border-2);
+  background: var(--surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cnav::-webkit-scrollbar { display: none; }
+.cnav button {
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  min-height: auto;
+  box-shadow: none;
+  transition: color var(--t-fast);
+}
+.cnav button:hover:not(:disabled) { color: var(--text); background: transparent; border-color: transparent; }
+.cnav button.on { color: var(--green); border-bottom-color: var(--green); font-weight: 600; }
+
+/* ── Panel ── */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Page layout helpers ── */
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s4);
+}
+@media (min-width: 900px) { .split { grid-template-columns: 1.15fr 1fr; align-items: start; } }
+
+/* ── Dashboard header row ── */
+.dash-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin-bottom: var(--s4);
+  flex-wrap: wrap;
+}
+.dash-head h1 { font-size: 26px; margin-bottom: 4px; }
+.dash-head p  { color: var(--text-2); font-size: 14px; }
+
+/* ── Section header within a panel ── */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s3);
+}
+.section-head h2 { font-size: 15px; }
+
+/* ── Table ── */
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th { text-align: left; padding: 8px 10px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); border-bottom: 1px solid var(--border); }
+.tbl td { padding: 10px 10px; border-bottom: 1px solid var(--border-2); vertical-align: middle; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tr:hover td { background: var(--grey-50); }
+
+/* ── Verifier application cards ── */
+.apply-card {
+  border: 1.5px solid var(--border);
+  border-radius: var(--r2);
+  padding: var(--s4);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.apply-card.new { border-color: var(--amber-border); background: var(--amber-bg); }
+.apply-card .ac-name { font-size: 15px; font-weight: 600; }
+.apply-card .ac-email { font-size: 13px; color: var(--text-2); }
+.apply-card .ac-reason { font-size: 13px; color: var(--text); background: var(--grey-50); border-radius: var(--r1); padding: var(--s2) var(--s3); }
+
+/* ── Decision bar ── */
+.decision-bar {
+  display: flex;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--grey-50);
+  border-top: 1px solid var(--border-2);
+  border-radius: 0 0 var(--r2) var(--r2);
+}
+
+/* ── Detail panel ── */
+#detail {
+  min-height: 200px;
+}
+#detail .placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  padding: var(--s8);
+  color: var(--text-3);
+  text-align: center;
+  font-size: 14px;
+}
+
+/* ── Token display ── */
+.token-box {
+  background: var(--grey-900);
+  color: var(--green-400);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r2);
+  word-break: break-all;
+  line-height: 1.7;
+}
+
+/* ── Sidebar mini-stat ── */
+.mini-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+.mini-stat {
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r2);
+  padding: var(--s3);
+  text-align: center;
+}
+.mini-stat b { display: block; font-size: 22px; font-family: var(--font-display); font-weight: 700; color: var(--text); }
+.mini-stat span { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ── Realtime feed ── */
+.rt-entry {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-2);
+  font-size: 13px;
+  display: flex;
+  gap: var(--s2);
+  align-items: baseline;
+}
+.rt-entry:last-child { border-bottom: 0; }
+.rt-entry .rt-time { color: var(--text-3); white-space: nowrap; font-family: var(--font-mono); font-size: 11px; }
+.rt-entry .rt-kind { font-weight: 600; }
+
+/* ── Fire/NDVI evidence ── */
+.evidence-row {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--border-2);
+  font-size: 13px;
+}
+.evidence-row .ev-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.evidence-row .ev-dot.red { background: var(--red); }
+.evidence-row .ev-dot.amber { background: var(--amber); }
+.evidence-row .ev-dot.green { background: var(--green); }
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  body.console main { padding: var(--s3) var(--s3) var(--s8); }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .mini-stats { grid-template-columns: 1fr 1fr; }
+}
+</style>
 </head>
+
+<!-- body class set by JS: console, auth-page, or nothing -->
 <body class="console">
-<header class="top">
-  <div class="brand">Plot<span>line</span> <small>registry console</small></div>
-  <div class="chips"><span class="chip bad">SIMULATED: not a registered carbon registry</span></div>
-</header>
 
-<main>
-  <div class="card">
-    <div class="grid2">
-      <label>Operator token
-        <input id="token" type="password" autocomplete="off" placeholder="printed when the server starts">
-      </label>
-      <label>This verifier
-        <input id="vid" value="ver-1" maxlength="32">
-      </label>
+<!-- ══════════════════════════════════════════════
+     AUTH SCREEN  (shown until session established)
+══════════════════════════════════════════════ -->
+<div id="auth-screen" class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-card-head">
+      <div class="brand">Plot<span>line</span></div>
+      <!-- Mode tabs: Sign in / Create account -->
+      <div style="display:flex;gap:0;margin:var(--s4) 0 0;border-bottom:1px solid var(--border-2)">
+        <button id="tab-signin" class="auth-mode-tab active"
+          style="flex:1;padding:10px;border:0;border-bottom:2px solid var(--green);background:none;font-weight:600;font-size:14px;color:var(--green);cursor:pointer">Sign in</button>
+        <button id="tab-signup" class="auth-mode-tab"
+          style="flex:1;padding:10px;border:0;border-bottom:2px solid transparent;background:none;font-weight:500;font-size:14px;color:var(--text-2);cursor:pointer">Create account</button>
+      </div>
     </div>
-    <div class="row">
-      <button id="vreg">Register this browser as a verifier</button>
-      <button id="reload" class="primary">Reload everything</button>
+
+    <!-- Sign in form -->
+    <div id="panel-signin" class="auth-card-body">
+      <form id="login-form" class="stack">
+        <label>Email or Username
+          <input id="login-user" autocomplete="username" placeholder="Email or username" required>
+        </label>
+        <label>Password
+          <input id="login-pass" type="password" autocomplete="current-password" placeholder="Your password" required>
+        </label>
+        <div id="login-err" class="alert-box red text-sm" hidden></div>
+        <button id="login-btn" class="primary wide" type="submit">Sign in →</button>
+      </form>
     </div>
-    <div id="vinfo" class="muted small"></div>
+
+    <!-- Sign up form -->
+    <div id="panel-signup" class="auth-card-body" hidden>
+      <form id="signup-form" class="stack">
+        <label>Full name
+          <input id="signup-name" required maxlength="80" placeholder="Your full name">
+        </label>
+        <label>Email address
+          <input id="signup-email" type="email" required maxlength="120" placeholder="you@example.com">
+        </label>
+        <label>Username
+          <input id="signup-user" required maxlength="32" placeholder="lowercase letters, numbers, dashes" autocomplete="username">
+          <span class="hint">2–32 characters: a–z, 0–9, dash</span>
+        </label>
+        <label>Password
+          <input id="signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+        </label>
+        <div id="signup-err" class="alert-box red text-sm" hidden></div>
+        <button id="signup-btn" class="primary wide" type="submit">Create account →</button>
+      </form>
+    </div>
+
+    <div class="auth-card-foot">
+      <span id="auth-foot-signin">Don't have an account? <a href="#" id="go-signup">Create one</a> &nbsp;·&nbsp; <a href="app.html">Farmer app →</a></span>
+      <span id="auth-foot-signup" hidden>Already have an account? <a href="#" id="go-signin">Sign in</a> &nbsp;·&nbsp; <a href="app.html">Farmer app →</a></span>
+    </div>
   </div>
+</div>
 
-  <nav class="ctabs">
-    <button data-p="verify" class="on">Verify</button>
-    <button data-p="market">Market</button>
-    <button data-p="money">Money</button>
-    <button data-p="log">Public log</button>
+<!-- ══════════════════════════════════════════════
+     CONSOLE SHELL  (shown when authenticated)
+══════════════════════════════════════════════ -->
+<div id="console-shell" hidden>
+
+  <header class="top console-top">
+    <div style="display:flex;align-items:center;gap:var(--s4)">
+      <a href="./" class="brand brand-sm">Plot<span>line</span></a>
+      <div class="chips">
+        <span class="chip bad" style="font-size:11px">SIMULATED — not a registered carbon registry</span>
+      </div>
+    </div>
+    <div class="right">
+      <div id="session-pill" class="user-pill">
+        <div id="role-dot" class="role-dot"></div>
+        <span id="session-label">—</span>
+      </div>
+      <button id="logout-btn" class="sm quiet">Sign out</button>
+    </div>
+  </header>
+
+  <!-- ── Console nav ── -->
+  <nav class="cnav" id="cnav" aria-label="Console">
+    <!-- Admin tabs -->
+    <button data-p="overview" class="on admin-tab">Overview</button>
+    <button data-p="queue"    class="admin-tab">Submissions</button>
+    <button data-p="projects" class="admin-tab">Projects</button>
+    <button data-p="verifiers-mgmt" class="admin-tab">Verifiers</button>
+    <button data-p="market"  class="admin-tab">Market</button>
+    <button data-p="money"   class="admin-tab">Money</button>
+    <button data-p="log"     class="admin-tab">Audit log</button>
+    <!-- Verifier tabs -->
+    <button data-p="verify"  class="verifier-tab">Review queue</button>
+    <button data-p="my-decisions" class="verifier-tab">My decisions</button>
+    <button data-p="market"  class="verifier-tab">Market</button>
+    <button data-p="log"     class="verifier-tab">Audit log</button>
   </nav>
 
-  <section id="p-verify" class="panel active">
-    <div class="split">
-      <div>
-        <div id="cmap" class="map"></div>
-        <div class="card"><h2>Submissions</h2><div id="queue" class="list"></div></div>
+  <main>
+
+    <!-- ══ ADMIN: Overview ══ -->
+    <section id="p-overview" class="panel">
+      <div class="dash-head">
+        <div>
+          <h1>Dashboard overview</h1>
+          <p>Programme health at a glance.</p>
+        </div>
+        <div class="chips">
+          <span id="neon-chip" class="chip">Neon: checking…</span>
+        </div>
       </div>
-      <div class="card" id="detail"><div class="muted">Choose a submission to review.</div></div>
-    </div>
-  </section>
 
-  <section id="p-market" class="panel">
-    <div class="card stack">
-      <h2>Buyer market</h2>
-      <div id="mk-sum" class="muted"></div>
-      <div class="grid2">
-        <label>Buyer<input id="buyer" value="Demo Buyer Ltd" maxlength="80"></label>
-        <label>Credits (1 credit = 1 tCO₂e)<input id="units" type="number" min="1" step="1" value="10"></label>
+      <div class="stat-grid" id="overview-stats">
+        <div class="stat green">
+          <div class="stat-label">Credits issued</div>
+          <div class="stat-value" id="stat-credits">—</div>
+          <div class="stat-sub">Unique serials</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Submissions</div>
+          <div class="stat-value" id="stat-submissions">—</div>
+          <div class="stat-sub">All time</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Pending review</div>
+          <div class="stat-value" id="stat-pending">—</div>
+          <div class="stat-sub">In queue</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Farmers active</div>
+          <div class="stat-value" id="stat-farmers">—</div>
+          <div class="stat-sub">Unique keys</div>
+        </div>
       </div>
-      <button id="buy" class="primary">Buy credits (simulated payment)</button>
-      <div id="mk-msg"></div>
-    </div>
-    <div class="card stack">
-      <h2>Public serial check</h2>
-      <p class="muted small">The same lookup a buyer or auditor can run without an account. One serial always means one tonne.</p>
-      <div class="row"><input id="serial" placeholder="PL-NG-00000001" maxlength="13"><button id="check-serial">Check serial</button></div>
-      <div id="serial-out"></div>
-    </div>
-    <div class="card"><h2>Issued lots</h2><div id="lots" class="list"></div></div>
-    <div class="card"><h2>Orders and retirements</h2><div id="orders" class="list"></div></div>
-  </section>
 
-  <section id="p-money" class="panel">
-    <div class="card"><h2>Reconciliation</h2><div id="recon"></div></div>
-    <div class="card"><h2>Farmers</h2><div id="farmers" class="list"></div></div>
-  </section>
+      <div class="split" style="margin-top:var(--s4)">
+        <div>
+          <div class="card">
+            <div class="section-head"><h2>Recent submissions</h2><button class="sm quiet" id="overview-refresh">Refresh</button></div>
+            <div id="overview-queue" class="list"></div>
+          </div>
+          <div class="card">
+            <div class="section-head"><h2>Verifier applications <span id="apply-badge" class="badge ok" hidden></span></h2></div>
+            <div id="overview-applies" class="list"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="section-head"><h2>Live registry feed <span class="badge">Neon Realtime</span></h2></div>
+            <div id="rt-status" class="muted small" style="margin-bottom:var(--s2)">Connecting…</div>
+            <div id="rt-feed"></div>
+          </div>
+          <div class="card">
+            <h2>Neon services</h2>
+            <div id="neon-status" class="muted small">Checking…</div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  <section id="p-register" class="panel">
-    <div class="card stack">
-      <h2>Register a new project</h2>
-      <div class="row"><label>Project name <input id="prj-name" maxlength="80"></label><label>Proponent <input id="prj-proponent" maxlength="80"></label></div>
-      <div class="row"><label>Boundary hash (64 hex, optional) <input id="prj-boundary" maxlength="64"></label><label>Ecoregion (optional) <input id="prj-ecoregion" maxlength="80"></label></div>
-      <div class="row"><label>Methodology ID <input id="prj-methodology" value="CURRENT"></label><label>Crediting start <input id="prj-start" type="date"></label></div>
-      <div class="row"><label>Crediting end <input id="prj-end" type="date"></label></div>
-      <div class="row"><label>Additionality (20-600 chars) <textarea id="prj-additionality" rows="3"></textarea></label></div>
-      <div class="row"><label>Land use prior <select id="prj-tenure"><option value="owned">owned</option><option value="customary">customary</option><option value="lease">lease</option><option value="community">community</option><option value="public">public</option></select></label></div>
-      <div class="row"><label>Validation ref <input id="prj-validation" maxlength="120"></label><label>FPIC ref (optional) <input id="prj-fpic" maxlength="120"></label></div>
-      <button id="prj-submit" class="primary">Register project</button>
-      <div id="prj-msg" class="muted small"></div>
-    </div>
-  </section>
+    <!-- ══ ADMIN: Submissions queue ══ -->
+    <section id="p-queue" class="panel">
+      <div class="dash-head">
+        <div><h1>Submissions queue</h1><p>Review, assign, and manage incoming tree verification submissions.</p></div>
+      </div>
+      <div class="split">
+        <div>
+          <div id="cmap" class="map"></div>
+          <div class="card">
+            <div class="section-head">
+              <h2>All submissions</h2>
+              <select id="queue-filter" style="width:auto;min-height:34px;font-size:13px;padding:4px 8px">
+                <option value="">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="flagged">Flagged</option>
+              </select>
+            </div>
+            <div id="queue" class="list"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card" id="detail">
+            <div class="placeholder">
+              <span style="font-size:32px">🗂</span>
+              <p>Select a submission to review its details, evidence and decision history.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  <section id="p-log" class="panel">
-    <div class="card stack">
-      <h2>Public log, checked in your browser</h2>
-      <p class="muted small">This page downloads the whole log and recomputes every hash here, without trusting the server's own check. Change one past entry anywhere and the chain breaks at that entry.</p>
-      <div id="logcheck"></div>
-    </div>
-    <div class="card"><h2>Entries</h2><div id="loglist" class="list"></div></div>
-  </section>
-</main>
+    <!-- ══ ADMIN: Projects ══ -->
+    <section id="p-projects" class="panel">
+      <div class="dash-head">
+        <div><h1>Projects</h1><p>Registered programmes and their methodology.</p></div>
+        <button class="primary sm" id="prj-new-btn">+ Register project</button>
+      </div>
+      <div id="prj-list" class="list"></div>
 
-<dialog id="cert"><div id="cert-body"></div><div class="row"><button id="cert-close" class="primary">Close</button></div></dialog>
+      <div class="card stack" id="prj-form-card" hidden>
+        <h2>Register a new project</h2>
+        <div class="grid2">
+          <label>Project name <input id="prj-name" maxlength="80" placeholder="Community Agroforestry Phase 1"></label>
+          <label>Proponent <input id="prj-proponent" maxlength="80" placeholder="Organisation name"></label>
+        </div>
+        <div class="grid2">
+          <label>Boundary hash (hex, optional) <input id="prj-boundary" maxlength="64"></label>
+          <label>Ecoregion (optional) <input id="prj-ecoregion" maxlength="80"></label>
+        </div>
+        <div class="grid2">
+          <label>Methodology ID <input id="prj-methodology" value="CURRENT"></label>
+          <label>Crediting start <input id="prj-start" type="date"></label>
+        </div>
+        <div class="grid2">
+          <label>Crediting end <input id="prj-end" type="date"></label>
+          <label>Prior land use
+            <select id="prj-tenure">
+              <option value="owned">Owned</option>
+              <option value="customary">Customary</option>
+              <option value="lease">Lease</option>
+              <option value="community">Community</option>
+              <option value="public">Public</option>
+            </select>
+          </label>
+        </div>
+        <label>Additionality statement (20–600 chars)
+          <textarea id="prj-additionality" rows="3"></textarea>
+        </label>
+        <div class="grid2">
+          <label>Validation reference <input id="prj-validation" maxlength="120"></label>
+          <label>FPIC reference (optional) <input id="prj-fpic" maxlength="120"></label>
+        </div>
+        <div class="row">
+          <button id="prj-submit" class="primary">Register project</button>
+          <button id="prj-cancel" class="quiet">Cancel</button>
+        </div>
+        <div id="prj-msg" class="muted small"></div>
+      </div>
+    </section>
+
+    <!-- ══ ADMIN: Verifiers management ══ -->
+    <section id="p-verifiers-mgmt" class="panel">
+      <div class="dash-head">
+        <div><h1>Verifier management</h1><p>Approved keys, accounts, and pending applications.</p></div>
+      </div>
+
+      <div class="split">
+        <div>
+          <div class="card">
+            <div class="section-head">
+              <h2>Pending applications <span id="apps-count" class="badge ok" hidden></span></h2>
+            </div>
+            <div id="applications-list" class="list"></div>
+            <div id="applications-empty" class="muted small" style="padding:var(--s3)">No pending applications.</div>
+          </div>
+
+          <div class="card stack">
+            <h2>Create verifier account</h2>
+            <p class="muted small">The verifier id must match a key already on the approved list.</p>
+            <div class="grid2">
+              <label>Verifier id <input id="ver-username" maxlength="32" placeholder="ver-1"></label>
+              <label>Password <input id="ver-password" type="password" placeholder="min 8 chars"></label>
+            </div>
+            <button id="ver-create" class="primary sm">Create account</button>
+            <div id="ver-msg" class="muted small"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="section-head"><h2>Verifier accounts</h2><button id="ver-list-refresh" class="sm quiet">Refresh</button></div>
+            <div id="ver-list" class="list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ ADMIN + VERIFIER: Market ══ -->
+    <section id="p-market" class="panel">
+      <div class="dash-head"><div><h1>Buyer market</h1><p>Credit sales, serial lookup, and retirement records.</p></div></div>
+      <div class="grid2" style="margin-bottom:var(--s4)">
+        <div class="card stack">
+          <h2>Buy credits</h2>
+          <div id="mk-sum" class="muted small"></div>
+          <label>Buyer name <input id="buyer" value="Demo Buyer Ltd" maxlength="80"></label>
+          <label>Credits (1 credit = 1 tCO₂e) <input id="units" type="number" min="1" step="1" value="10"></label>
+          <button id="buy" class="primary">Buy credits (simulated)</button>
+          <div id="mk-msg" class="muted small"></div>
+        </div>
+        <div class="card stack">
+          <h2>Serial lookup</h2>
+          <p class="muted small">Public: lookup any serial without an account.</p>
+          <div class="row">
+            <input id="serial" placeholder="PL-NG-00000001" maxlength="16" style="flex:1">
+            <button id="check-serial" class="secondary sm">Check</button>
+          </div>
+          <div id="serial-out"></div>
+        </div>
+      </div>
+      <div class="card"><div class="section-head"><h2>Issued lots</h2></div><div id="lots" class="list"></div></div>
+      <div class="card"><div class="section-head"><h2>Orders &amp; retirements</h2></div><div id="orders" class="list"></div></div>
+    </section>
+
+    <!-- ══ ADMIN: Money ══ -->
+    <section id="p-money" class="panel">
+      <div class="dash-head"><div><h1>Money</h1><p>Reconciliation, farmer payouts, and the credit split.</p></div></div>
+      <div class="card"><h2>Reconciliation</h2><div id="recon"></div></div>
+      <div class="card"><div class="section-head"><h2>Farmers</h2></div><div id="farmers" class="list"></div></div>
+    </section>
+
+    <!-- ══ ADMIN + VERIFIER: Audit log ══ -->
+    <section id="p-log" class="panel">
+      <div class="dash-head"><div><h1>Public audit log</h1><p>Hash-chained. Verified in your browser — no trust in the server's check.</p></div></div>
+      <div class="card">
+        <div id="logcheck" class="muted small" style="margin-bottom:var(--s3)">Checking chain integrity…</div>
+        <div id="loglist" class="list"></div>
+      </div>
+    </section>
+
+    <!-- ══ VERIFIER: Review queue ══ -->
+    <section id="p-verify" class="panel">
+      <div class="dash-head">
+        <div><h1>Review queue</h1><p>Sign your decisions with the browser key. The signature, not the login, authorises each decision.</p></div>
+      </div>
+      <div class="split">
+        <div>
+          <div id="vmap" class="map"></div>
+          <div class="card">
+            <div class="section-head"><h2>Submissions assigned to you</h2></div>
+            <div id="v-queue" class="list"></div>
+          </div>
+        </div>
+        <div>
+          <div class="card" id="v-detail">
+            <div class="placeholder">
+              <span style="font-size:32px">🔍</span>
+              <p>Select a submission to review its evidence and sign a decision.</p>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Verifier key</h2>
+            <div id="vinfo" class="muted small"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ VERIFIER: My decisions ══ -->
+    <section id="p-my-decisions" class="panel">
+      <div class="dash-head"><div><h1>My decisions</h1><p>Every decision you have signed, with fire evidence included.</p></div></div>
+      <div class="card"><div id="my-dec-list" class="list"></div></div>
+    </section>
+
+  </main>
+</div><!-- /console-shell -->
+
+<dialog id="cert"><div id="cert-body"></div><div class="row" style="margin-top:var(--s4)"><button id="cert-close" class="primary wide">Close</button></div></dialog>
+
+<!-- Application review dialog -->
+<dialog id="apply-dialog">
+  <h2 style="margin-bottom:var(--s4)">Verifier application</h2>
+  <div id="apply-dialog-body" class="stack"></div>
+  <div class="row" style="margin-top:var(--s5)">
+    <button id="apply-reject" class="danger">Reject</button>
+    <button id="apply-approve" class="primary">Approve &amp; create account</button>
+    <button id="apply-close"  class="quiet">Close</button>
+  </div>
+</dialog>
+
 <div id="toast" role="status" aria-live="polite"></div>
+
 <script src="vendor/leaflet/leaflet.js"></script>
 <script type="module" src="console.js"></script>
 </body>

@@ -6,7 +6,6 @@
 <title>Plotline — farm mapping and verifiable records</title>
 <meta name="theme-color" content="#476633">
 <meta name="description" content="Offline-first GNSS farm mapping, scouting and verifiable records for smallholder farmers.">
-<!-- The programme this app submits under. A deployment sets this to its registered project. -->
 <meta name="plotline-project" content="PRJ-0001">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,18 +14,351 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="style.css">
+<style>
+  /* ── App-only overrides ── */
+  main { max-width: 640px; margin: 0 auto; padding: 0 var(--s4) var(--s4); }
+
+  /* Tab icons using emoji — lightweight, no icon font needed */
+  .tabs button { font-size: 11px; font-weight: 600; }
+  .tab-icon { font-size: 22px; display: block; margin-bottom: 2px; }
+
+  /* Verifier-apply section inside Records tab */
+  .apply-section {
+    background: var(--green-50);
+    border: 1.5px solid var(--green-200);
+    border-radius: var(--r3);
+    padding: var(--s5);
+  }
+  .apply-section h3 { color: var(--green-700); margin-bottom: var(--s2); }
+  .apply-section p  { font-size: 14px; color: var(--text-2); margin-bottom: var(--s3); }
+
+  /* Compact stats strip */
+  .stats-strip {
+    display: flex;
+    gap: var(--s3);
+    overflow-x: auto;
+    padding: var(--s2) 0;
+    scrollbar-width: none;
+  }
+  .stats-strip::-webkit-scrollbar { display: none; }
+  .stat-pill {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--s2) var(--s4);
+    background: var(--green-50);
+    border: 1px solid var(--green-200);
+    border-radius: var(--r-pill);
+    min-width: 80px;
+  }
+  .stat-pill b { font-size: 18px; font-family: var(--font-display); font-weight: 700; color: var(--green-700); }
+  .stat-pill span { font-size: 11px; color: var(--text-3); text-align: center; white-space: nowrap; }
+
+  /* GPS quality indicator */
+  .gps-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: 4px; }
+  .gps-fill { height: 100%; border-radius: 2px; background: var(--green); transition: width .4s ease; }
+
+  /* Lock screen: replaced by the gateway's "Welcome back" panel (PIN there) */
+</style>
 </head>
 <body>
-<header class="top">
-  <div class="brand">Plot<span>line</span></div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SPLIT-SCREEN AUTH GATEWAY (CLIMATE DOODLE + SIGNUP/LOGIN)
+     Takes unauthenticated visitors to Signup (if not registered)
+     or Login (if registered).
+══════════════════════════════════════════════════════════════ -->
+<div id="auth-gateway" class="auth-gateway" style="display:none">
+  <div class="auth-gateway-inner">
+
+    <!-- ── Left Half: Climate Action Doodle & Telemetry Art ── -->
+    <div class="climate-art-half">
+      <div class="climate-header-block">
+        <div class="climate-eyebrow">
+          <span class="tel-dot"></span>
+          <span>GNSS Agri-Telemetry &amp; Carbon Proof</span>
+        </div>
+        <h1>Proof of what<br><span>grows.</span></h1>
+        <p class="climate-lede">Map boundaries with centimeter-scored GNSS fixes. Audit living tree survival and seal verifiable carbon credits on-device with zero network dependency.</p>
+      </div>
+
+      <!-- Climate Action Doodle Stage -->
+      <div class="climate-doodle-stage">
+        <svg class="climate-svg-doodle" viewBox="0 0 640 680" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="treeCanopyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#34d399" />
+              <stop offset="40%" stop-color="#10b981" />
+              <stop offset="100%" stop-color="#065f46" />
+            </linearGradient>
+            <linearGradient id="trunkGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#3e2723" />
+              <stop offset="50%" stop-color="#5d4037" />
+              <stop offset="100%" stop-color="#271c19" />
+            </linearGradient>
+            <linearGradient id="beamGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+              <stop offset="0%" stop-color="#10b981" stop-opacity="0.65" />
+              <stop offset="35%" stop-color="#10b981" stop-opacity="0.22" />
+              <stop offset="100%" stop-color="#10b981" stop-opacity="0.01" />
+            </linearGradient>
+            <linearGradient id="soilGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#1c2b20" />
+              <stop offset="30%" stop-color="#121d15" />
+              <stop offset="100%" stop-color="#080e0a" />
+            </linearGradient>
+            <pattern id="polyGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(52, 211, 153, 0.14)" stroke-width="1"/>
+            </pattern>
+          </defs>
+
+          <!-- Technical Grid & Compass Circles -->
+          <g opacity="0.4">
+            <circle cx="320" cy="340" r="260" stroke="#10b981" stroke-width="1" stroke-dasharray="4 8" opacity="0.3"/>
+            <circle cx="320" cy="340" r="180" stroke="#10b981" stroke-width="1" stroke-dasharray="2 6" opacity="0.2"/>
+            <line x1="320" y1="60" x2="320" y2="620" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="3 3"/>
+            <line x1="40" y1="340" x2="600" y2="340" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="3 3"/>
+          </g>
+
+          <!-- Topographic Elevation Contours -->
+          <g opacity="0.35">
+            <path d="M20 280 Q 180 230, 320 270 T 620 250" fill="none" stroke="#34d399" stroke-width="1.5" stroke-dasharray="4 4" />
+            <path d="M20 310 Q 150 280, 310 300 T 620 300" fill="none" stroke="#10b981" stroke-width="1.2" />
+            <path d="M20 350 Q 210 320, 340 360 T 620 340" fill="none" stroke="#059669" stroke-width="1.2" stroke-dasharray="6 4" />
+            <path d="M20 400 Q 170 370, 330 410 T 620 390" fill="none" stroke="#047857" stroke-width="1.5" />
+          </g>
+
+          <!-- Satellite Orbit Arc & Telemetry -->
+          <path d="M 80 180 C 200 70, 440 60, 580 140" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="5 5" opacity="0.6"/>
+          <!-- Satellite Unit -->
+          <g transform="translate(420, 80)">
+            <circle cx="0" cy="0" r="14" stroke="#38bdf8" stroke-width="1" fill="none" class="sat-radar-wave" />
+            <circle cx="0" cy="0" r="28" stroke="#38bdf8" stroke-width="1" fill="none" opacity="0.5" class="sat-radar-wave" />
+            <rect x="-10" y="-8" width="20" height="16" rx="3" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
+            <rect x="-34" y="-6" width="20" height="12" rx="1" fill="#0284c7" stroke="#bae6fd" stroke-width="1"/>
+            <rect x="14" y="-6" width="20" height="12" rx="1" fill="#0284c7" stroke="#bae6fd" stroke-width="1"/>
+            <line x1="0" y1="8" x2="0" y2="15" stroke="#38bdf8" stroke-width="2"/>
+            <circle cx="0" cy="16" r="2.5" fill="#38bdf8"/>
+            <text x="36" y="4" font-family="'Roboto Mono', monospace" font-size="10" fill="#7dd3fc" font-weight="600">GNSS L1/L5 (RTK LOCK)</text>
+          </g>
+
+          <!-- Downlink Telemetry Beam onto Farm Boundary -->
+          <polygon points="420,96 200,430 460,430" fill="url(#beamGrad)" class="carbon-flux-beam"/>
+
+          <!-- Soil Stratum Layer (Subterranean Carbon Sink) -->
+          <path d="M 30 420 Q 180 410, 320 420 T 610 415 L 610 650 L 30 650 Z" fill="url(#soilGrad)" stroke="#22543d" stroke-width="1.5"/>
+
+          <!-- Soil Carbon Nodules -->
+          <g opacity="0.7">
+            <circle cx="120" cy="480" r="6" fill="#34d399" opacity="0.6"/>
+            <circle cx="180" cy="520" r="8" fill="#10b981" opacity="0.5"/>
+            <circle cx="280" cy="490" r="7" fill="#059669" opacity="0.7"/>
+            <circle cx="360" cy="540" r="9" fill="#34d399" opacity="0.6"/>
+            <circle cx="440" cy="500" r="6" fill="#10b981" opacity="0.8"/>
+            <circle cx="510" cy="530" r="8" fill="#059669" opacity="0.5"/>
+            <text x="70" y="580" font-family="'Roboto Mono', monospace" font-size="10" fill="#6ee7b7" opacity="0.8">SUBTERRANEAN CARBON SINK (+2.8 tCO₂e/ha)</text>
+          </g>
+
+          <!-- Agroforestry Living Tree Doodle -->
+          <!-- Deep Root Network -->
+          <g stroke="#8d6e63" stroke-linecap="round" opacity="0.85">
+            <path d="M 270 420 Q 260 480, 240 560 T 220 620" stroke-width="6" fill="none"/>
+            <path d="M 285 420 Q 280 490, 285 570 T 280 630" stroke-width="8" fill="none"/>
+            <path d="M 300 420 Q 320 480, 340 550 T 360 620" stroke-width="6" fill="none"/>
+            <path d="M 250 490 Q 210 520, 170 530" stroke-width="3" fill="none" stroke="#a1887f"/>
+            <path d="M 235 550 Q 190 570, 160 600" stroke-width="2" fill="none" stroke="#a1887f"/>
+            <path d="M 320 490 Q 370 510, 420 525" stroke-width="3" fill="none" stroke="#a1887f"/>
+            <path d="M 340 540 Q 390 570, 430 585" stroke-width="2" fill="none" stroke="#a1887f"/>
+          </g>
+
+          <!-- Tree Trunk -->
+          <path d="M 260 425 C 265 370, 260 320, 250 270 C 275 290, 295 290, 320 270 C 310 320, 305 370, 315 425 Z" fill="url(#trunkGrad)" stroke="#1b120c" stroke-width="2"/>
+          <path d="M 275 410 C 278 360, 275 320, 270 285" stroke="#3e2723" stroke-width="2" fill="none" opacity="0.6"/>
+          <path d="M 295 415 C 298 365, 295 325, 298 285" stroke="#3e2723" stroke-width="2" fill="none" opacity="0.6"/>
+
+          <!-- Layered Foliage Clusters -->
+          <g filter="drop-shadow(0 4px 12px rgba(0,0,0,0.3))">
+            <ellipse cx="285" cy="230" rx="95" ry="75" fill="url(#treeCanopyGrad)" opacity="0.95"/>
+            <ellipse cx="230" cy="245" rx="70" ry="60" fill="#059669" opacity="0.9"/>
+            <ellipse cx="340" cy="240" rx="75" ry="60" fill="#10b981" opacity="0.92"/>
+            <ellipse cx="285" cy="180" rx="80" ry="65" fill="#34d399" opacity="0.88"/>
+            <ellipse cx="215" cy="195" rx="55" ry="48" fill="#10b981" opacity="0.85"/>
+            <ellipse cx="355" cy="190" rx="60" ry="50" fill="#34d399" opacity="0.85"/>
+            <ellipse cx="285" cy="140" rx="50" ry="42" fill="#6ee7b7" opacity="0.95"/>
+          </g>
+
+          <!-- Carbon Flux Absorption Arrows -->
+          <g stroke="#34d399" stroke-width="2" stroke-linecap="round" opacity="0.9">
+            <path d="M 170 120 L 210 160" />
+            <line x1="210" y1="160" x2="200" y2="158"/>
+            <line x1="210" y1="160" x2="208" y2="150"/>
+            <text x="130" y="115" font-family="'Roboto Mono', monospace" font-size="11" fill="#34d399" font-weight="700">CO₂ ↓</text>
+
+            <path d="M 400 110 L 360 150" />
+            <line x1="360" y1="150" x2="370" y2="148"/>
+            <line x1="360" y1="150" x2="362" y2="140"/>
+            <text x="408" y="112" font-family="'Roboto Mono', monospace" font-size="11" fill="#34d399" font-weight="700">CO₂ ↓</text>
+          </g>
+
+          <!-- Walked Farm Boundary Polygon -->
+          <g id="farm-polygon-doodle" opacity="0.95">
+            <polygon points="120,430 460,405 520,460 190,480" fill="url(#polyGrid)" stroke="#10b981" stroke-width="2.5" stroke-dasharray="6 4"/>
+            <!-- Corner Pins -->
+            <circle cx="120" cy="430" r="7" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+            <text x="96" y="424" font-family="'Roboto Mono', monospace" font-size="11" fill="#ffffff" font-weight="700">C1</text>
+            <circle cx="460" cy="405" r="7" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+            <text x="472" y="405" font-family="'Roboto Mono', monospace" font-size="11" fill="#ffffff" font-weight="700">C2</text>
+            <circle cx="520" cy="460" r="7" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+            <text x="532" y="468" font-family="'Roboto Mono', monospace" font-size="11" fill="#ffffff" font-weight="700">C3</text>
+            <circle cx="190" cy="480" r="7" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+            <text x="170" y="500" font-family="'Roboto Mono', monospace" font-size="11" fill="#ffffff" font-weight="700">C4</text>
+          </g>
+
+          <!-- GNSS Rover Field Surveyor -->
+          <g transform="translate(180, 435)">
+            <line x1="0" y1="0" x2="0" y2="-36" stroke="#f59e0b" stroke-width="2"/>
+            <circle cx="0" cy="-38" r="4" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5"/>
+            <circle cx="0" cy="-38" r="9" stroke="#f59e0b" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>
+            <circle cx="-12" cy="-18" r="5" fill="#f8fafc"/>
+            <line x1="-12" y1="-13" x2="-8" y2="4" stroke="#f8fafc" stroke-width="2.5"/>
+            <line x1="-12" y1="-7" x2="0" y2="-12" stroke="#f8fafc" stroke-width="2"/>
+            <line x1="-8" y1="4" x2="-14" y2="18" stroke="#f8fafc" stroke-width="2"/>
+            <line x1="-8" y1="4" x2="-2" y2="18" stroke="#f8fafc" stroke-width="2"/>
+          </g>
+
+          <!-- Floating Industrial Telemetry Badges -->
+          <g class="floating-telemetry-pill" transform="translate(48, 220)">
+            <rect width="180" height="34" rx="6" fill="rgba(15, 23, 42, 0.88)" stroke="rgba(56, 189, 248, 0.4)" stroke-width="1.5" />
+            <circle cx="16" cy="17" r="4" fill="#38bdf8"/>
+            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#e0f2fe" font-weight="600">GNSS RTK ±0.03m FIX</text>
+          </g>
+
+          <g class="floating-telemetry-pill" transform="translate(405, 220)">
+            <rect width="195" height="34" rx="6" fill="rgba(15, 23, 42, 0.88)" stroke="rgba(52, 211, 153, 0.4)" stroke-width="1.5" />
+            <circle cx="16" cy="17" r="4" fill="#34d399"/>
+            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#dcfce7" font-weight="600">0.42 tCO₂e / TREE-YEAR</text>
+          </g>
+
+          <g class="floating-telemetry-pill" transform="translate(380, 330)">
+            <rect width="210" height="34" rx="6" fill="rgba(15, 23, 42, 0.88)" stroke="rgba(245, 158, 11, 0.4)" stroke-width="1.5" />
+            <circle cx="16" cy="17" r="4" fill="#f59e0b"/>
+            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#fef3c7" font-weight="600">MERKLE ROOT 8f21…c40d</text>
+          </g>
+
+          <!-- Crosshairs -->
+          <g stroke="rgba(255,255,255,0.2)" stroke-width="1">
+            <path d="M 40 40 L 55 40 M 40 40 L 40 55"/>
+            <path d="M 600 40 L 585 40 M 600 40 L 600 55"/>
+            <path d="M 40 640 L 55 640 M 40 640 L 40 625"/>
+            <path d="M 600 640 L 585 640 M 600 640 L 600 625"/>
+          </g>
+        </svg>
+      </div>
+
+      <!-- Telemetry Ticker -->
+      <div class="climate-telemetry-strip">
+        <div class="tel-item"><span class="tel-dot"></span><span>GNSS RTK ±1.8m ACTIVE</span></div>
+        <div class="tel-item"><span>ARTICLE 6.2 ACCREDITED</span></div>
+        <div class="tel-item"><span>OFFLINE-FIRST SHA-256</span></div>
+      </div>
+    </div>
+
+    <!-- ── Right Half: Industrial Auth Card (device identity — no server accounts) ── -->
+    <div class="auth-card-half">
+      <div class="auth-gateway-card">
+        <div class="gw-brand-row">
+          <div class="gw-brand">Plot<span>line</span></div>
+          <span class="gw-pill">Device identity</span>
+        </div>
+
+        <!-- Segmented Mode Switcher -->
+        <div class="gw-mode-switch">
+          <button id="gw-tab-signup" class="gw-tab active" type="button">Create identity</button>
+          <button id="gw-tab-signin" class="gw-tab" type="button">Welcome back</button>
+        </div>
+
+        <!-- Sign Up Panel — create the device field identity -->
+        <div id="gw-panel-signup">
+          <div class="gw-panel-head">
+            <h2>Create your field identity</h2>
+            <p>Plotline issues a signing key <strong>on this phone</strong> — your name is the only thing you give us. No password ever leaves the device.</p>
+          </div>
+          <form id="gw-signup-form" class="stack">
+            <label>Full name
+              <input id="gw-signup-name" required maxlength="80" placeholder="e.g. Amina Bello" autocomplete="name">
+            </label>
+            <label>Phone <span class="hint">optional — used on submitted records</span>
+              <input id="gw-signup-msisdn" type="tel" maxlength="20" placeholder="+234 800 000 0000" autocomplete="tel">
+            </label>
+            <label>PIN lock <span class="hint">optional — locks this app each time it opens</span>
+              <input id="gw-signup-pin" type="password" inputmode="numeric" minlength="4" maxlength="12" placeholder="At least 4 characters" autocomplete="new-password">
+            </label>
+            <label id="gw-signup-pin2-row" hidden>Confirm PIN
+              <input id="gw-signup-pin2" type="password" inputmode="numeric" maxlength="12" autocomplete="new-password">
+            </label>
+            <div id="gw-signup-fp" class="gw-fingerprint" hidden>
+              <span class="gw-fp-label">Signing key fingerprint</span>
+              <code id="gw-signup-fp-val" class="mono"></code>
+            </div>
+            <div id="gw-signup-err" class="alert-box red text-sm" hidden></div>
+            <button id="gw-signup-btn" class="primary wide lg" type="submit">Create my identity →</button>
+          </form>
+          <p class="gw-switch-link">This phone already has an identity? <a href="#" id="gw-go-signin">Welcome back</a></p>
+        </div>
+
+        <!-- Sign In Panel — unlock this device's existing identity -->
+        <div id="gw-panel-signin" hidden>
+          <div class="gw-panel-head">
+            <h2>Welcome back</h2>
+            <p>This phone already holds a field identity. Unlock it to continue — everything unlocks locally, no network needed.</p>
+          </div>
+          <div class="gw-identity card-flat">
+            <div class="gw-id-row"><span class="gw-id-label">Signed in as</span><b id="gw-id-name">—</b></div>
+            <div class="gw-id-row"><span class="gw-id-label">Key fingerprint</span><code id="gw-id-fp" class="mono">—</code></div>
+            <div class="gw-id-row"><span class="gw-id-label">On this device</span><span id="gw-id-stats" class="text-sm">—</span></div>
+          </div>
+          <form id="gw-login-form" class="stack">
+            <div id="gw-login-pin-row" hidden><label>PIN
+              <input id="gw-login-pin" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="Your PIN lock">
+            </label></div>
+            <div id="gw-login-err" class="alert-box red text-sm" hidden></div>
+            <button id="gw-login-btn" class="primary wide lg" type="submit">Unlock &amp; continue →</button>
+          </form>
+          <p class="gw-switch-link">Not you? <a href="#" id="gw-go-signup" class="text-red">Start a new identity</a> <span class="text-faint text-xs">(clears this phone's records)</span></p>
+        </div>
+
+        <!-- Verifier / operator route (server session, separate from the device identity) -->
+        <p class="gw-switch-link" style="border-top:1px solid #e2e8f0; padding-top:var(--s3); margin-top:var(--s2)"><a href="#" id="gw-verifier-link">Verifier or operator? Sign in →</a></p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     MAIN APPLICATION SHELL (SHOWN WHEN AUTHENTICATED OR GUEST)
+══════════════════════════════════════════════════════════════ -->
+<div id="app-shell" style="display:none">
+
+<!-- ── Mission Control Telemetry Top bar ── -->
+<header class="top industrial-top">
+  <div class="brand-industrial">
+    <a href="./" class="brand brand-sm">Plot<span>line</span></a>
+    <span class="telemetry-beacon"><span class="beacon-dot"></span><span class="beacon-label">AGRI-GNSS</span></span>
+  </div>
   <div class="chips">
-    <span id="net-chip" class="chip ok" hidden>offline</span>
-    <span id="gps-chip" class="chip" hidden>GPS</span>
+    <span id="gps-chip" class="chip chip-radar" hidden><span class="radar-ping"></span><span id="gps-text">📍 GPS</span></span>
+    <span id="net-chip" class="chip ok" hidden>● Offline</span>
+    <span id="app-user-pill" class="chip chip-user" style="display:none"></span>
+    <button id="app-auth-btn" class="sm quiet" type="button">Sign in</button>
+    <button id="app-logout-btn" class="sm quiet" type="button" style="display:none">Sign out</button>
   </div>
 </header>
 
 <main>
-  <!-- FARM -->
+
+  <!-- ══════════ FARM ══════════ -->
   <section id="tab-farm" class="tab active">
     <div class="tab-head">
       <h1>Your farm</h1>
@@ -36,19 +368,26 @@
       <button data-sub="farm" class="on">Boundary</button>
       <button data-sub="inputs">Seed &amp; fertiliser</button>
     </nav>
-    <div id="map-farm" class="map"></div>
-    <div class="card">
+    <div class="map-container">
+      <div id="map-farm" class="map"></div>
+      <div class="map-hud" id="farm-map-hud">
+        <div class="hud-stat"><span class="hud-label">GPS ACC</span><b id="hud-acc" class="hud-val mono">±— m</b></div>
+        <div class="hud-stat"><span class="hud-label">CORNERS</span><b id="hud-pts" class="hud-val mono">0 pts</b></div>
+        <div class="hud-stat"><span class="hud-label">AREA</span><b id="hud-area" class="hud-val mono">0.00 ha</b></div>
+      </div>
+    </div>
+    <div class="card stack">
       <div id="walk-stats" class="muted small"></div>
       <div id="walk-idle" class="stack">
-        <button id="walk-btn" class="primary">Walk boundary</button>
+        <button id="walk-btn" class="primary wide lg">📍 Walk boundary</button>
       </div>
       <div id="walk-tools" class="stack hidden">
-        <button id="drop-btn" class="primary">Mark corner</button>
+        <button id="drop-btn" class="primary wide lg">📌 Mark corner</button>
         <div class="row">
-          <button id="undo-btn" disabled>Undo point</button>
-          <button id="finish-btn" disabled>Finish</button>
+          <button id="undo-btn" disabled>↩ Undo</button>
+          <button id="finish-btn" class="secondary" disabled>✓ Finish</button>
         </div>
-        <button id="walk-cancel" class="quiet">Cancel walk</button>
+        <button id="walk-cancel" class="quiet wide">Cancel walk</button>
       </div>
       <form id="farm-form" class="stack hidden">
         <label>Farm name
@@ -57,7 +396,7 @@
         <label>Crop
           <select id="farm-crop"></select>
         </label>
-        <button class="primary" type="submit">Save farm</button>
+        <button class="primary wide" type="submit">Save farm</button>
       </form>
     </div>
     <div class="card">
@@ -66,7 +405,7 @@
     </div>
   </section>
 
-  <!-- SCOUT -->
+  <!-- ══════════ SCOUT ══════════ -->
   <section id="tab-scout" class="tab">
     <div class="tab-head">
       <h1>Scout</h1>
@@ -91,12 +430,12 @@
       <label>Note (optional)
         <textarea id="scout-note" rows="2" maxlength="200" placeholder="e.g. holes in leaves, near the north edge"></textarea>
       </label>
-      <button id="scout-btn" class="primary">Save report</button>
+      <button id="scout-btn" class="primary wide">Save report</button>
       <div id="scout-result"></div>
     </div>
   </section>
 
-  <!-- HEAT -->
+  <!-- ══════════ OUTBREAKS (sub of scout) ══════════ -->
   <section id="tab-heat" class="tab">
     <div class="tab-head">
       <h1>Outbreaks</h1>
@@ -107,18 +446,18 @@
       <button data-sub="heat" class="on">Outbreaks</button>
     </nav>
     <div class="filter-row">
-      <label for="heat-type">Show</label>
+      <label for="heat-type" style="flex:0 0 auto">Show</label>
       <select id="heat-type"></select>
     </div>
     <div id="map-heat" class="map"></div>
     <div class="card">
       <h2>Outbreak watch</h2>
       <div id="alerts" class="list"></div>
-      <p class="muted small">Alert: 3 or more reports of the same problem within 1 km in 14 days. Reports with a weak location fix are left out.</p>
+      <p class="muted small" style="margin-top:var(--s3)">Alert: 3+ reports of the same problem within 1 km in 14 days. Low-quality fixes are excluded.</p>
     </div>
   </section>
 
-  <!-- INPUTS -->
+  <!-- ══════════ INPUTS (sub of farm) ══════════ -->
   <section id="tab-inputs" class="tab">
     <div class="tab-head">
       <h1>Seed &amp; fertiliser</h1>
@@ -139,93 +478,240 @@
       <div class="grid2">
         <label>Row spacing (cm)<input id="in-row" type="number" min="1" inputmode="decimal"></label>
         <label>In-row spacing (cm)<input id="in-plant" type="number" min="1" inputmode="decimal"></label>
-        <label>Seed (kg/ha)<input id="in-seed" type="number" min="0" step="0.1" inputmode="decimal"></label>
+        <label>Seed rate (kg/ha)<input id="in-seed" type="number" min="0" step="0.1" inputmode="decimal"></label>
         <label>NPK (kg/ha)<input id="in-npk" type="number" min="0" inputmode="decimal"></label>
         <label>Urea (kg/ha)<input id="in-urea" type="number" min="0" inputmode="decimal"></label>
       </div>
       <div id="in-out" class="result"></div>
-      <p class="muted small">Starting points, not recommendations. Set them from extension guidance or a soil test.</p>
+      <p class="muted small">Starting points, not recommendations. Adjust from extension guidance or a soil test.</p>
     </div>
   </section>
 
-  <!-- TREES -->
+  <!-- ══════════ TREES ══════════ -->
   <section id="tab-trees" class="tab">
     <div class="tab-head">
       <h1>Trees</h1>
-      <p>Plant, check survival, and get paid for verified carbon credits.</p>
+      <p>Plant, check survival, and earn verified carbon credits.</p>
     </div>
+
+    <!-- Status strip -->
+    <div class="stats-strip" id="tr-stats-strip" hidden>
+      <div class="stat-pill"><b id="tr-count-stat">—</b><span>Planted</span></div>
+      <div class="stat-pill"><b id="tr-surv-stat">—</b><span>Survival</span></div>
+      <div class="stat-pill" style="background:var(--amber-bg);border-color:var(--amber-border)"><b id="tr-pend-stat" style="color:var(--amber)">—</b><span>Pending</span></div>
+      <div class="stat-pill"><b id="tr-cred-stat">—</b><span>Credits</span></div>
+    </div>
+
     <div class="card stack">
       <div id="tr-farm" class="muted small"></div>
-      <div class="steps">
+      <div class="steps" id="tr-steps">
         <div id="tr-s1" class="step"></div>
         <div id="tr-s2" class="step"></div>
         <div id="tr-s3" class="step"></div>
       </div>
     </div>
+
     <div id="tr-step-1" class="card stack">
       <h2>1. Record planting</h2>
       <div class="grid2">
         <label>Trees planted<input id="tr-count" type="number" min="1" step="1" inputmode="numeric"></label>
         <label>Species<select id="tr-species"></select></label>
       </div>
-      <button id="tr-plant-btn" class="primary">Save planting</button>
+      <button id="tr-plant-btn" class="primary wide">Save planting record</button>
     </div>
+
     <div id="tr-step-2" class="card stack">
       <h2>2. Survival check</h2>
       <p class="muted small">Count a sample of the trees you planted, then how many are alive.</p>
       <div class="grid2">
-        <label>Trees counted<input id="tr-sample" type="number" min="1" step="1" inputmode="numeric"></label>
+        <label>Trees sampled<input id="tr-sample" type="number" min="1" step="1" inputmode="numeric"></label>
         <label>Alive<input id="tr-alive" type="number" min="0" step="1" inputmode="numeric"></label>
       </div>
-      <button id="tr-surv-btn" class="primary">Save survival check</button>
+      <button id="tr-surv-btn" class="primary wide">Save survival check</button>
     </div>
+
     <div id="tr-step-3" class="card stack">
       <h2>3. Send for verification</h2>
       <label>Payout number (mobile money)
         <input id="tr-msisdn" type="tel" inputmode="tel" placeholder="0803 123 4567" maxlength="20">
+        <span class="hint">Used for credit payouts only — stored on this device.</span>
       </label>
-      <button id="tr-send-btn" class="primary">Send for verification</button>
+      <button id="tr-send-btn" class="primary wide">Send for verification</button>
       <div id="tr-outbox" class="muted small"></div>
-      <p class="muted small">A verifier must approve before credits are issued. Payments here are a sandbox simulation.</p>
+      <p class="muted small">A verifier must approve before credits are issued. Payments are a sandbox simulation.</p>
     </div>
+
     <div class="card">
-      <div class="row"><h2>Your submissions</h2><button id="tr-refresh" class="quiet">Refresh</button></div>
-      <div id="tr-earn" class="muted"></div>
+      <div class="row between">
+        <h2>Your submissions</h2>
+        <button id="tr-refresh" class="sm quiet">Refresh</button>
+      </div>
+      <div id="tr-earn" class="muted small" style="margin-bottom:var(--s2)"></div>
       <div id="tr-list" class="list"></div>
     </div>
-    <div class="card"><h2>Payouts</h2><div id="tr-pay" class="list"></div></div>
+    <div class="card">
+      <h2>Payouts</h2>
+      <div id="tr-pay" class="list"></div>
+    </div>
   </section>
 
-  <!-- RECORDS -->
+  <!-- ══════════ RECORDS ══════════ -->
   <section id="tab-records" class="tab">
     <div class="tab-head">
       <h1>Records</h1>
       <p>Signed proof of your work, checkable by anyone.</p>
     </div>
+
     <div class="card stack">
       <div id="rec-summary" class="muted small"></div>
-      <button id="seal-btn" class="primary">Seal records</button>
-      <p class="muted small">Sealing groups pending records under one fingerprint. Only that fingerprint leaves your phone.</p>
-      <details class="more">
-        <summary>Data and demo tools</summary>
-        <div class="row">
+      <button id="seal-btn" class="primary wide lg">🔒 Seal records</button>
+      <p class="muted small">Sealing groups pending records under one fingerprint. Only the fingerprint leaves your phone.</p>
+      <details>
+        <summary class="muted small" style="cursor:pointer">Data &amp; demo tools ›</summary>
+        <div class="row" style="margin-top:var(--s3)">
           <button id="export-btn">Export JSON</button>
           <button id="demo-btn">Load demo data</button>
         </div>
         <div class="row">
-          <button id="reset-btn" class="danger">Reset all</button>
+          <button id="reset-btn" class="danger">Reset all data</button>
         </div>
       </details>
     </div>
+
+    <div class="card stack">
+      <h2>Backup &amp; sync</h2>
+      <p class="muted small">Your signing key lives on this phone. Back it up so clearing the browser or losing the phone does not cut you off.</p>
+      <div class="row">
+        <button id="key-export-btn">Export key backup</button>
+        <button id="key-import-btn">Restore key backup</button>
+      </div>
+      <input id="key-import-file" type="file" accept="application/json" hidden>
+      <div class="row">
+        <button id="sync-export-btn">Sync to another device</button>
+        <button id="sync-import-btn">Import sync bundle</button>
+      </div>
+      <input id="sync-import-file" type="file" accept="application/json" hidden>
+      <p class="muted small">Export the key backup and sync bundle here. On the new device, restore the key first, then import the bundle.</p>
+      <div class="row">
+        <button id="anchor-key-btn">Ledger key…</button>
+      </div>
+      <div class="row">
+        <button id="lock-set">🔐 Lock with PIN</button>
+        <button id="lock-remove" class="danger">Remove PIN</button>
+      </div>
+    </div>
+
+    <!-- Verifier Onboarding & Activation Flow -->
+    <div id="verifier-flow-section" class="apply-section stack">
+      <!-- State 1: Unauthenticated -->
+      <div id="verifier-logged-out" class="stack">
+        <h3>Become a verifier</h3>
+        <p>Independent verifiers review submissions and earn 5% of each credit sale. Sign in or create an account to apply or activate your verifier access.</p>
+        <button id="verifier-signin-btn" class="primary wide" type="button">Sign in / Register</button>
+      </div>
+
+      <!-- State 2: Logged in as Standard User -->
+      <div id="verifier-standard-user" class="stack" style="display:none">
+        <div id="apply-box" class="stack">
+          <h3>Apply to be a verifier</h3>
+          <p>Independent verifiers review submissions and earn 5% of each credit sale. Submit your application below. Once approved by the administrator, you will receive an activation code off-band to activate your verifier role.</p>
+          <form id="apply-form" class="stack">
+            <label>Full name
+              <input id="apply-name" required maxlength="80" placeholder="Your full name">
+            </label>
+            <label>Email address
+              <input id="apply-email" type="email" required maxlength="120" placeholder="you@example.com">
+            </label>
+            <label>Organisation (optional)
+              <input id="apply-org" maxlength="80" placeholder="Your employer or affiliation">
+            </label>
+            <label>Why do you want to be a verifier?
+              <textarea id="apply-reason" rows="3" required minlength="20" maxlength="600" placeholder="Briefly describe your background and interest in verifying smallholder agroforestry records…"></textarea>
+            </label>
+            <button id="apply-btn" class="secondary wide" type="submit">Submit application</button>
+            <div id="apply-result"></div>
+          </form>
+        </div>
+
+        <div id="activation-box" class="card stack" style="margin-top:var(--s4)">
+          <h3>Activate verifier role</h3>
+          <p class="muted small">Already received an activation code from the administrator? Enter your unique code below to upgrade your account and unlock the submissions queue.</p>
+          <form id="activation-form" class="stack">
+            <label>Activation code
+              <input id="activation-code" required maxlength="64" placeholder="e.g. VACT-XXXX-XXXX" autocomplete="off">
+            </label>
+            <button id="activate-btn" class="primary wide" type="submit">Activate Verifier Access</button>
+            <div id="activation-result"></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- State 3: Active Verifier -->
+      <div id="verifier-active-user" class="stack" style="display:none">
+        <h3>✓ Verifier status active</h3>
+        <p>Your account has verified reviewer status. You can review submissions in the Verifier Queue tab or through the full desktop console.</p>
+        <div class="row">
+          <button id="goto-submissions-btn" class="primary" type="button">Open Submissions Queue</button>
+          <a href="console.html" class="button quiet">Open Console →</a>
+        </div>
+      </div>
+    </div>
+
     <div class="card"><h2>Batches</h2><div id="batch-list" class="list"></div></div>
-    <div class="card"><h2>Records</h2><div id="record-list" class="list"></div></div>
+    <div class="card"><h2>All records</h2><div id="record-list" class="list"></div></div>
   </section>
+
+  <!-- ══════════ SUBMISSIONS (VERIFIER QUEUE) ══════════ -->
+  <section id="tab-submissions" class="tab verifier-only" style="display:none">
+    <div class="tab-head">
+      <h1>Submissions Queue</h1>
+      <p>Review and verify tree planting and survival submissions.</p>
+    </div>
+    <div class="card stack">
+      <div class="row between">
+        <h2>Submissions for review</h2>
+        <button id="v-refresh-btn" class="sm quiet" type="button">Refresh</button>
+      </div>
+      <div class="filter-row">
+        <label for="v-filter-status" style="flex:0 0 auto">Status</label>
+        <select id="v-filter-status">
+          <option value="">All submissions</option>
+          <option value="pending" selected>Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <div id="v-submissions-list" class="list"></div>
+      <div id="v-submissions-empty" class="muted small" style="padding:var(--s3)">No submissions to display.</div>
+    </div>
+    <div class="card stack" id="v-submission-detail" hidden>
+      <h2>Submission details</h2>
+      <div id="v-detail-content"></div>
+      <label>Decision note (optional)
+        <textarea id="v-decision-note" rows="2" placeholder="e.g. Verified plot boundaries and tree survival"></textarea>
+      </label>
+      <div class="row">
+        <button id="v-approve-btn" class="primary" type="button">Approve</button>
+        <button id="v-reject-btn" class="danger" type="button">Reject</button>
+        <button id="v-close-detail-btn" class="quiet" type="button">Close</button>
+      </div>
+      <div id="v-decision-msg" class="muted small"></div>
+    </div>
+    <div class="card stack">
+      <h2>Verifier tools</h2>
+      <p class="muted small">Access full verification maps, VIIRS fire checks, and registry controls in the console.</p>
+      <a href="console.html" class="button secondary wide">Open full verifier console →</a>
+    </div>
+  </section>
+
 </main>
 
+<!-- ── Dialogs ── -->
 <dialog id="verify-dialog">
+  <h2 style="margin-bottom:var(--s3)">Record verification</h2>
   <div id="verify-body"></div>
-  <div class="row">
-    <button id="tamper-btn">Simulate tampering</button>
+  <div class="row" style="margin-top:var(--s4)">
+    <button id="tamper-btn" class="danger sm">Simulate tampering</button>
     <button id="close-verify" class="primary">Close</button>
   </div>
 </dialog>
@@ -240,19 +726,92 @@
       <li><span class="n">3</span><span><b>Seal and prove</b><br><span class="muted small">Lock your records into a batch and publish one fingerprint. Anyone can check it.</span></span></li>
     </ol>
     <p class="muted small">No account and no signal needed. Your signing key stays on this phone.</p>
-    <div class="row">
+    <div class="row" style="margin-top:var(--s4)">
       <button id="onboard-skip" class="quiet">Skip</button>
       <button id="onboard-go" class="primary">Start walking</button>
     </div>
   </div>
 </dialog>
 
+<!-- ── Lock screen is the "Welcome back" panel of the gateway above ── -->
+
+<!-- ── Bottom nav ── -->
 <nav class="tabs" aria-label="Main">
-  <button data-tab="farm" class="on">Farm</button>
-  <button data-tab="scout">Scout</button>
-  <button data-tab="trees">Trees</button>
-  <button data-tab="records">Records</button>
+  <button data-tab="farm" class="on">
+    <span class="tab-icon">🌾</span>Farm
+  </button>
+  <button data-tab="scout">
+    <span class="tab-icon">🔍</span>Scout
+  </button>
+  <button data-tab="trees">
+    <span class="tab-icon">🌳</span>Trees
+  </button>
+  <button data-tab="records">
+    <span class="tab-icon">📋</span>Records
+  </button>
+  <button data-tab="submissions" id="tab-btn-submissions" class="verifier-only" style="display:none">
+    <span class="tab-icon">📑</span>Submissions
+  </button>
 </nav>
+</div><!-- /app-shell -->
+
+<!-- ── Unified Authentication Modal (Role-Agnostic) ── -->
+<dialog id="auth-dialog">
+  <div class="auth-card" style="margin:0 auto;border:0;box-shadow:none">
+    <div class="auth-card-head">
+      <div class="brand">Plot<span>line</span></div>
+      <!-- Mode tabs: Sign in / Create account -->
+      <div style="display:flex;gap:0;margin:var(--s4) 0 0;border-bottom:1px solid var(--border-2)">
+        <button id="modal-tab-signin" class="auth-mode-tab active" type="button"
+          style="flex:1;padding:10px;border:0;border-bottom:2px solid var(--green);background:none;font-weight:600;font-size:14px;color:var(--green);cursor:pointer">Sign in</button>
+        <button id="modal-tab-signup" class="auth-mode-tab" type="button"
+          style="flex:1;padding:10px;border:0;border-bottom:2px solid transparent;background:none;font-weight:500;font-size:14px;color:var(--text-2);cursor:pointer">Create account</button>
+      </div>
+    </div>
+
+    <!-- Unified Sign in form -->
+    <div id="modal-panel-signin" class="auth-card-body">
+      <form id="modal-login-form" class="stack">
+        <label>Email or Username
+          <input id="modal-login-user" autocomplete="username" placeholder="Email or username" required>
+        </label>
+        <label>Password
+          <input id="modal-login-pass" type="password" autocomplete="current-password" placeholder="Your password" required>
+        </label>
+        <div id="modal-login-err" class="alert-box red text-sm" hidden></div>
+        <button id="modal-login-btn" class="primary wide" type="submit">Sign in →</button>
+      </form>
+    </div>
+
+    <!-- Restricted Sign up form (standard users only) -->
+    <div id="modal-panel-signup" class="auth-card-body" hidden>
+      <form id="modal-signup-form" class="stack">
+        <label>Full name
+          <input id="modal-signup-name" required maxlength="80" placeholder="Your full name">
+        </label>
+        <label>Email address
+          <input id="modal-signup-email" type="email" required maxlength="120" placeholder="you@example.com">
+        </label>
+        <label>Username
+          <input id="modal-signup-user" required maxlength="32" placeholder="lowercase letters, numbers, dashes" autocomplete="username">
+          <span class="hint">2–32 characters: a–z, 0–9, dash</span>
+        </label>
+        <label>Password
+          <input id="modal-signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+        </label>
+        <div id="modal-signup-err" class="alert-box red text-sm" hidden></div>
+        <button id="modal-signup-btn" class="primary wide" type="submit">Create account →</button>
+      </form>
+    </div>
+
+    <div class="auth-card-foot">
+      <span id="modal-foot-signin">Don't have an account? <a href="#" id="modal-go-signup">Create one</a></span>
+      <span id="modal-foot-signup" hidden>Already have an account? <a href="#" id="modal-go-signin">Sign in</a></span>
+      <div style="margin-top:var(--s2)"><button id="modal-auth-close" class="quiet sm" type="button">Cancel</button></div>
+    </div>
+  </div>
+</dialog>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script src="vendor/leaflet/leaflet.js"></script>

@@ -86,7 +86,7 @@ function startGps() {
   watchId = navigator.geolocation.watchPosition(
     (p) => {
       lastFix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, ts: p.timestamp };
-      updateGpsChip();
+      updateGpsChip(); updateHud();
       onLiveFix();
     },
     // Brief signal drops are normal in the field; only complain when there has been no fix for a while.
@@ -196,14 +196,27 @@ function drawFarmMap() {
 // ---------- boundary walk ----------
 const walk = { on: false, pts: [], done: false };
 
+function updateHud() {
+  // Mission-control HUD over the map (app.html). Guards: HUD exists only in the app shell.
+  const accEl = $('#hud-acc'), ptsEl = $('#hud-pts'), areaEl = $('#hud-area');
+  if (!accEl && !ptsEl && !areaEl) return;
+  const f = activeFarm();
+  const n = (walk.on || walk.done) ? walk.pts.length : (f ? f.polygon.length : 0);
+  const poly = (walk.on || walk.done) ? (n >= 3 ? walk.pts : null) : (f ? f.polygon : null);
+  const areaHa = poly ? C.m2ToHa(C.polygonAreaM2(poly)) : (f ? C.m2ToHa(f.areaM2) : 0);
+  if (accEl) accEl.textContent = lastFix ? '±' + Math.round(lastFix.acc) + ' m' : '±— m';
+  if (ptsEl) ptsEl.textContent = n + ' pts';
+  if (areaEl) areaEl.textContent = areaHa > 0 ? areaHa.toFixed(2) + ' ha' : '0.00 ha';
+}
 function walkStats() {
   const el = $('#walk-stats');
   const n = walk.pts.length;
   el.textContent = '';
-  if (!walk.on && !walk.done) return;
+  if (!walk.on && !walk.done) { updateHud(); return; }
   const area = n >= 3 ? C.m2ToHa(C.polygonAreaM2(walk.pts)).toFixed(3) + ' ha' : '—';
   const per = n >= 2 ? Math.round(C.perimeterM(walk.pts)) + ' m' : '—';
   el.textContent = `${n} point${n === 1 ? '' : 's'} · ${area} · perimeter ${per}`;
+  updateHud();
 }
 function walkButtons() {
   const naming = !$('#farm-form').classList.contains('hidden');
@@ -421,7 +434,11 @@ function treeEvidence(farm) {
   const mine = (k) => S.records.filter((r) => r.body.kind === k && r.body.farmId === farm.id);
   const farmRec = mine('farm')[0];
   const planting = mine('planting').pop();
-  const survival = planting ? mine('survival').filter((r) => S.records.indexOf(r) > S.records.indexOf(planting)).pop() : null;
+  // Find the most recent survival record that was created after the most recent planting.
+  const plantingTs = planting ? new Date(planting.body.ts).getTime() : 0;
+  const survival = planting
+    ? mine('survival').filter((r) => new Date(r.body.ts).getTime() > plantingTs).pop()
+    : null;
   const hashes = farmRec && planting && survival ? [farmRec.hash, planting.hash, survival.hash] : null;
   const sent = hashes && S.sent.includes(hashes.join('|'));
   return { farmRec, planting, survival, hashes, sent };
@@ -431,6 +448,25 @@ function renderTrees() {
   const f = activeFarm();
   $('#tr-farm').textContent = f ? `Farm: ${f.name} · ${C.m2ToHa(f.areaM2).toFixed(2)} ha` : 'Save a farm first (Farm tab).';
   const ev = treeEvidence(f);
+
+  // ── Stat strip ──────────────────────────────────────────────────────────
+  const strip = $('#tr-stats-strip');
+  if (ev.planting) {
+    $('#tr-count-stat').textContent = ev.planting.body.data.count;
+    const survPct = ev.survival
+      ? Math.round((ev.survival.body.data.alive / ev.survival.body.data.sampleSize) * 100) + '%'
+      : '—';
+    $('#tr-surv-stat').textContent = survPct;
+    const pending = treeView ? treeView.submissions.filter((s) => s.status === 'pending').length : (ev.sent ? '…' : '—');
+    $('#tr-pend-stat').textContent = pending;
+    $('#tr-cred-stat').textContent = treeView
+      ? treeView.submissions.reduce((a, s) => a + (s.units || 0), 0)
+      : '—';
+    strip.hidden = false;
+  } else {
+    strip.hidden = true;
+  }
+  // ── Step indicators ─────────────────────────────────────────────────────
   const step = (id, done, text, warn) => { const el = $(id); el.className = 'step ' + (done ? 'done' : warn ? 'warn' : ''); el.innerHTML = `<span class="mark">${done ? '✓' : warn ? '!' : '○'}</span><span>${text}</span>`; };
   step('#tr-s1', !!ev.planting, ev.planting ? `Planting signed: ${ev.planting.body.data.count} trees` : 'Planting not recorded yet');
   const survStale = ev.planting && !ev.survival;
@@ -582,9 +618,12 @@ async function publishBatches() {
   publishing = true;
   try {
     for (const b of todo) {
+      // When the operator requires a ledger key (ANCHOR_API_KEY on the server), the farmer
+      // keeps one on the device and sends it here; without a key the open endpoint still works.
+      const anchorKey = (stateAnchorKey() || '').trim();
       const res = await fetch('api/anchor', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(anchorKey ? { authorization: 'Bearer ' + anchorKey } : {}) },
         body: JSON.stringify({ root: b.root, count: b.count }),
       });
       if (!res.ok) throw new Error('ledger refused the batch');
@@ -698,6 +737,533 @@ $('#demo-btn').addEventListener('click', async () => {
   } catch (err) { toast(err.message); }
 });
 
+// ── Session & Verifier State ─────────────────────────────────────────────────
+let currentSession = null; // { role: 'admin'|'verifier'|'user', username, expiresAt }
+let vsubs = [];
+let vSelected = null;
+const VKEY = 'plotline.verifier';
+let vKey = null;
+
+async function ensureVerifierKey() {
+  if (vKey) return vKey;
+  try { vKey = JSON.parse(localStorage.getItem(VKEY)); } catch { vKey = null; }
+  if (!vKey || !vKey.keys) {
+    const keys = await C.generateKeys();
+    vKey = { keys, fp: await C.fingerprint(keys.pub) };
+    try { localStorage.setItem(VKEY, JSON.stringify(vKey)); } catch {}
+  }
+  return vKey;
+}
+
+function updateAuthUI() {
+  const userPill = $('#app-user-pill');
+  const authBtn = $('#app-auth-btn');
+  const logoutBtn = $('#app-logout-btn');
+  const loggedOutSection = $('#verifier-logged-out');
+  const standardSection = $('#verifier-standard-user');
+  const activeVerifierSection = $('#verifier-active-user');
+  const subTabBtn = $('#tab-btn-submissions');
+  const subSection = $('#tab-submissions');
+
+  if (!currentSession) {
+    if (authBtn) authBtn.style.display = '';
+    if (userPill) { userPill.style.display = 'none'; userPill.textContent = ''; }
+    if (logoutBtn) logoutBtn.style.display = 'none';
+
+    if (loggedOutSection) loggedOutSection.style.display = '';
+    if (standardSection) standardSection.style.display = 'none';
+    if (activeVerifierSection) activeVerifierSection.style.display = 'none';
+
+    if (subTabBtn) subTabBtn.style.display = 'none';
+    if (subSection) subSection.style.display = 'none';
+  } else if (currentSession.role === 'verifier') {
+    if (authBtn) authBtn.style.display = 'none';
+    if (userPill) {
+      userPill.style.display = '';
+      userPill.textContent = `${currentSession.username} · verifier`;
+    }
+    if (logoutBtn) logoutBtn.style.display = '';
+
+    if (loggedOutSection) loggedOutSection.style.display = 'none';
+    if (standardSection) standardSection.style.display = 'none';
+    if (activeVerifierSection) activeVerifierSection.style.display = '';
+
+    // Unlock verifier routes
+    if (subTabBtn) subTabBtn.style.display = '';
+    if (subSection) subSection.style.display = '';
+  } else {
+    // Standard User ('user')
+    if (authBtn) authBtn.style.display = 'none';
+    if (userPill) {
+      userPill.style.display = '';
+      userPill.textContent = currentSession.username;
+    }
+    if (logoutBtn) logoutBtn.style.display = '';
+
+    if (loggedOutSection) loggedOutSection.style.display = 'none';
+    if (standardSection) standardSection.style.display = '';
+    if (activeVerifierSection) activeVerifierSection.style.display = 'none';
+
+    // Standard users must not see verifier routes by default
+    if (subTabBtn) subTabBtn.style.display = 'none';
+    if (subSection) subSection.style.display = 'none';
+  }
+}
+
+function handleRoleRedirection(s) {
+  const role = s?.role;
+  if (role === 'admin') {
+    // Route admin to console/admin dashboard
+    window.location.href = 'console.html';
+  } else if (role === 'verifier') {
+    // Route verifier to the submissions queue
+    updateAuthUI();
+    ensureVerifierKey();
+    showTab('submissions');
+  } else {
+    // Route standard users to standard app view
+    updateAuthUI();
+    showTab('farm');
+  }
+}
+
+function setModalAuthMode(mode) {
+  const isSignin = mode === 'signin';
+  const panelSignin = $('#modal-panel-signin');
+  const panelSignup = $('#modal-panel-signup');
+  const footSignin = $('#modal-foot-signin');
+  const footSignup = $('#modal-foot-signup');
+
+  if (panelSignin) panelSignin.hidden = !isSignin;
+  if (panelSignup) panelSignup.hidden = isSignin;
+  if (footSignin) footSignin.hidden = !isSignin;
+  if (footSignup) footSignup.hidden = isSignin;
+
+  const tabIn = $('#modal-tab-signin');
+  const tabUp = $('#modal-tab-signup');
+  const activeStyle = 'border-bottom:2px solid var(--green);color:var(--green);font-weight:600';
+  const idleStyle = 'border-bottom:2px solid transparent;color:var(--text-2);font-weight:500';
+
+  if (tabIn) tabIn.style.cssText = tabIn.style.cssText.replace(/border-bottom:[^;]+;color:[^;]+;font-weight:[^;]+/, isSignin ? activeStyle : idleStyle);
+  if (tabUp) tabUp.style.cssText = tabUp.style.cssText.replace(/border-bottom:[^;]+;color:[^;]+;font-weight:[^;]+/, !isSignin ? activeStyle : idleStyle);
+
+  const loginErr = $('#modal-login-err');
+  const signupErr = $('#modal-signup-err');
+  if (loginErr) { loginErr.hidden = true; loginErr.textContent = ''; }
+  if (signupErr) { signupErr.hidden = true; signupErr.textContent = ''; }
+}
+
+function openAuthModal(mode = 'signin') {
+  setModalAuthMode(mode);
+  const d = $('#auth-dialog');
+  if (d && !d.open) d.showModal();
+}
+
+function closeAuthModal() {
+  const d = $('#auth-dialog');
+  if (d && d.open) d.close();
+}
+
+function wireAuthEvents() {
+  $('#app-auth-btn')?.addEventListener('click', () => openAuthModal('signin'));
+  $('#verifier-signin-btn')?.addEventListener('click', () => openAuthModal('signin'));
+  $('#modal-auth-close')?.addEventListener('click', closeAuthModal);
+  $('#modal-tab-signin')?.addEventListener('click', () => setModalAuthMode('signin'));
+  $('#modal-tab-signup')?.addEventListener('click', () => setModalAuthMode('signup'));
+  $('#modal-go-signup')?.addEventListener('click', (e) => { e.preventDefault(); setModalAuthMode('signup'); });
+  $('#modal-go-signin')?.addEventListener('click', (e) => { e.preventDefault(); setModalAuthMode('signin'); });
+
+  // Single Login Form (Email/Username and Password) used by everyone
+  $('#modal-login-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('#modal-login-btn');
+    const errBox = $('#modal-login-err');
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+    if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
+
+    try {
+      const res = await fetch('api/auth/login', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          username: $('#modal-login-user').value.trim(),
+          password: $('#modal-login-pass').value,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (errBox) {
+          errBox.textContent = json.error || 'Sign-in failed.';
+          errBox.hidden = false;
+        }
+        return;
+      }
+      $('#modal-login-pass').value = '';
+      currentSession = json.session;
+      closeAuthModal();
+
+      // Role-Based Redirection upon successful login
+      handleRoleRedirection(currentSession);
+    } catch (err) {
+      if (errBox) {
+        errBox.textContent = err.message || 'Network error.';
+        errBox.hidden = false;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sign in →';
+    }
+  });
+
+  // Restricted Sign-Up (only standard users can register)
+  $('#modal-signup-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('#modal-signup-btn');
+    const errBox = $('#modal-signup-err');
+    btn.disabled = true;
+    btn.textContent = 'Creating account…';
+    if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
+
+    try {
+      const res = await fetch('api/auth/signup', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: $('#modal-signup-name').value.trim(),
+          email: $('#modal-signup-email').value.trim(),
+          username: $('#modal-signup-user').value.trim(),
+          password: $('#modal-signup-pass').value,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (errBox) {
+          errBox.textContent = json.error || 'Sign-up failed.';
+          errBox.hidden = false;
+        }
+        return;
+      }
+      $('#modal-signup-pass').value = '';
+      currentSession = json.session; // standard user role
+      closeAuthModal();
+      handleRoleRedirection(currentSession);
+      toast(`Account created. Welcome, ${currentSession?.username}!`);
+    } catch (err) {
+      if (errBox) {
+        errBox.textContent = err.message || 'Network error.';
+        errBox.hidden = false;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Create account →';
+    }
+  });
+
+  // Logout
+  $('#app-logout-btn')?.addEventListener('click', async () => {
+    try {
+      await fetch('api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+    } finally {
+      currentSession = null;
+      updateAuthUI();
+      toast('Signed out.');
+      const activeTab = $('.tab.active')?.id;
+      if (activeTab === 'tab-submissions') {
+        showTab('farm');
+      }
+    }
+  });
+
+  // Task 2: Verifier Application UI Flow
+  $('#apply-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentSession) {
+      openAuthModal('signin');
+      return;
+    }
+    const btn = $('#apply-btn');
+    const resultBox = $('#apply-result');
+    btn.disabled = true;
+    btn.textContent = 'Submitting application…';
+    if (resultBox) resultBox.innerHTML = '';
+
+    try {
+      const payload = {
+        name: $('#apply-name').value.trim(),
+        email: $('#apply-email').value.trim(),
+        org: $('#apply-org').value.trim(),
+        reason: $('#apply-reason').value.trim(),
+      };
+      const res = await fetch('api/auth/apply', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (resultBox) {
+          resultBox.innerHTML = `<div class="alert-box red text-sm" style="margin-top:var(--s2)">${esc(json.error || 'Application failed.')}</div>`;
+        }
+        return;
+      }
+      if (resultBox) {
+        resultBox.innerHTML = `<div class="alert-box green text-sm" style="margin-top:var(--s2)">Application submitted successfully! Reference: <code>${esc(json.id || '')}</code>. Once approved by the administrator, you will receive an activation code off-band.</div>`;
+      }
+      $('#apply-reason').value = '';
+      toast('Application submitted.');
+    } catch (err) {
+      if (resultBox) {
+        resultBox.innerHTML = `<div class="alert-box red text-sm" style="margin-top:var(--s2)">${esc(err.message || 'Network error')}</div>`;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Submit application';
+    }
+  });
+
+  // Task 2: Verifier Activation UI Component
+  $('#activation-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentSession) {
+      openAuthModal('signin');
+      return;
+    }
+    const codeInput = $('#activation-code');
+    const code = codeInput ? codeInput.value.trim() : '';
+    const btn = $('#activate-btn');
+    const resultBox = $('#activation-result');
+
+    if (!code) return;
+    btn.disabled = true;
+    btn.textContent = 'Activating verifier role…';
+    if (resultBox) resultBox.innerHTML = '';
+
+    try {
+      const res = await fetch('api/auth/activate', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code, username: currentSession.username }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (resultBox) {
+          resultBox.innerHTML = `<div class="alert-box red text-sm" style="margin-top:var(--s2)">${esc(json.error || 'Activation failed.')}</div>`;
+        }
+        return;
+      }
+
+      // Upgrades local state/session to unlock and display Verifier tabs
+      currentSession = json.session || { ...currentSession, role: 'verifier' };
+      updateAuthUI();
+      await ensureVerifierKey();
+      if (codeInput) codeInput.value = '';
+      toast('Verifier access activated! Unlocking submissions queue…');
+
+      // Route directly to submissions queue
+      showTab('submissions');
+    } catch (err) {
+      if (resultBox) {
+        resultBox.innerHTML = `<div class="alert-box red text-sm" style="margin-top:var(--s2)">${esc(err.message || 'Network error')}</div>`;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Activate Verifier Access';
+    }
+  });
+
+  // Verifier Queue UI Controls
+  $('#v-refresh-btn')?.addEventListener('click', loadSubmissionsQueue);
+  $('#v-filter-status')?.addEventListener('change', renderSubmissionsQueue);
+  $('#v-close-detail-btn')?.addEventListener('click', () => {
+    const d = $('#v-submission-detail');
+    if (d) d.hidden = true;
+    vSelected = null;
+  });
+  $('#v-approve-btn')?.addEventListener('click', () => handleDecision('approve'));
+  $('#v-reject-btn')?.addEventListener('click', () => handleDecision('reject'));
+  $('#goto-submissions-btn')?.addEventListener('click', () => showTab('submissions'));
+}
+
+async function initAuth() {
+  wireAuthEvents();
+  try {
+    const res = await fetch('api/auth/session', { credentials: 'same-origin' });
+    if (res.ok) {
+      const data = await res.json();
+      currentSession = data.session || null;
+      if (currentSession?.role === 'admin') {
+        window.location.href = 'console.html';
+        return;
+      }
+      if (currentSession?.role === 'verifier') {
+        ensureVerifierKey();
+      }
+    } else {
+      currentSession = null;
+    }
+  } catch {
+    currentSession = null;
+  }
+  updateAuthUI();
+}
+
+async function loadSubmissionsQueue() {
+  if (!currentSession || currentSession.role !== 'verifier') return;
+  try {
+    const res = await fetch('api/registry/submissions', { credentials: 'same-origin' });
+    if (!res.ok) {
+      if (res.status === 401) toast('Verifier authentication required.');
+      return;
+    }
+    const data = await res.json();
+    vsubs = data.submissions || [];
+    renderSubmissionsQueue();
+  } catch (err) {
+    console.error('Failed to load submissions queue:', err);
+  }
+}
+
+function renderSubmissionsQueue() {
+  const listEl = $('#v-submissions-list');
+  const emptyEl = $('#v-submissions-empty');
+  if (!listEl) return;
+  const filter = $('#v-filter-status')?.value || '';
+  const filtered = filter ? vsubs.filter(s => s.status === filter) : vsubs;
+  if (!filtered.length) {
+    listEl.innerHTML = '';
+    if (emptyEl) emptyEl.hidden = false;
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+  listEl.innerHTML = filtered.map((s) => {
+    const flags = (s.flags?.length || 0) + (s.hard?.length || 0);
+    const badgeClass = s.status === 'approved' ? 'good' : s.status === 'pending' ? 'ok' : 'bad';
+    return `
+      <div class="item" data-vid="${esc(s.subId)}" style="cursor:pointer">
+        <div class="lead">
+          <strong>${esc(s.farmName || 'Plot')} · ${s.units || 0} tCO₂e</strong>
+          <span class="sub">${esc(short(s.farmerKey, 12))} · ${esc(fmtTime(s.receivedAt))}${flags ? ` · <span class="text-amber">${flags} flag(s)</span>` : ''}</span>
+        </div>
+        <span class="badge ${badgeClass}">${esc(s.status)}</span>
+      </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('[data-vid]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.vid;
+      const sub = vsubs.find(s => s.subId === id);
+      if (sub) renderSubmissionDetail(sub);
+    });
+  });
+}
+
+function renderSubmissionDetail(sub) {
+  vSelected = sub;
+  const detailEl = $('#v-submission-detail');
+  const contentEl = $('#v-detail-content');
+  const noteEl = $('#v-decision-note');
+  const msgEl = $('#v-decision-msg');
+  if (!detailEl || !contentEl) return;
+  if (noteEl) noteEl.value = '';
+  if (msgEl) msgEl.textContent = '';
+
+  const flags = [...(sub.flags || []), ...(sub.hard || [])];
+  const badgeClass = sub.status === 'approved' ? 'good' : sub.status === 'pending' ? 'ok' : 'bad';
+
+  contentEl.innerHTML = `
+    <div class="row between" style="margin-bottom:var(--s2)">
+      <h3 style="font-size:16px">${esc(sub.farmName || 'Plot')} <span class="badge ${badgeClass}">${esc(sub.status)}</span></h3>
+      <span class="muted small">${esc(fmtTime(sub.receivedAt))}</span>
+    </div>
+    <div class="muted small" style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-bottom:var(--s3)">
+      <span>ID:</span><code class="mono">${esc(sub.subId)}</code>
+      <span>Farmer:</span><code class="mono">${esc(short(sub.farmerKey, 16))}</code>
+      <span>Trees:</span><span>${sub.treesPlanted ?? '—'} (alive: ${sub.treesAlive ?? '—'} / ${sub.sampleSize ?? '—'})</span>
+      <span>Area:</span><span>${sub.areaHa ? sub.areaHa.toFixed(3) + ' ha' : '—'}</span>
+      <span>Units:</span><span>${sub.units ?? 0} tCO₂e</span>
+    </div>
+    ${flags.length ? `<div class="alert-box amber text-sm" style="margin-bottom:var(--s3)"><b>${flags.length} flag(s):</b><br>${flags.map(f => `· ${esc(f)}`).join('<br>')}</div>` : ''}
+    ${sub.decision ? `<div class="alert-box ${sub.decision.decision === 'approve' ? 'green' : 'red'} text-sm" style="margin-bottom:var(--s3)"><b>Decided: ${esc(sub.decision.decision)}</b> by ${esc(sub.decision.verifier || sub.decision.verifierId || 'verifier')} · ${esc(fmtTime(sub.decision.decidedAt))}${sub.decision.reason ? `<br>"${esc(sub.decision.reason)}"` : ''}</div>` : ''}
+  `;
+
+  const isPending = sub.status === 'pending';
+  const approveBtn = $('#v-approve-btn');
+  const rejectBtn = $('#v-reject-btn');
+  if (approveBtn) approveBtn.disabled = !isPending;
+  if (rejectBtn) rejectBtn.disabled = !isPending;
+
+  detailEl.hidden = false;
+  detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function handleDecision(action) {
+  if (!vSelected) return;
+  if (!currentSession || currentSession.role !== 'verifier') {
+    toast('Verifier session required');
+    return;
+  }
+  const note = $('#v-decision-note')?.value.trim() || '';
+  const msgEl = $('#v-decision-msg');
+  const approveBtn = $('#v-approve-btn');
+  const rejectBtn = $('#v-reject-btn');
+  if (approveBtn) approveBtn.disabled = true;
+  if (rejectBtn) rejectBtn.disabled = true;
+  if (msgEl) msgEl.textContent = 'Submitting decision…';
+
+  try {
+    const vk = await ensureVerifierKey();
+    const verifierId = currentSession.username;
+    const nowTs = new Date().toISOString();
+    const payload = {
+      subId: vSelected.subId,
+      verifierId,
+      verifier: vk.fp,
+      decision: action,
+      note,
+      ts: nowTs,
+    };
+    const bodyToSign = {
+      subId: vSelected.subId,
+      decision: action,
+      note: String(note).slice(0, 500),
+      verifierId,
+      ts: nowTs,
+    };
+    // core.js has no C.sign — signature is over the canonical body the
+    // registry rebuilds server-side (server/registry.mjs decide()).
+    const { sig } = await C.signBody(bodyToSign, vk.keys.priv);
+    const res = await fetch('api/registry/decide', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...payload, sig, pub: vk.keys.pub }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) {
+      toast(`Submission ${action}d successfully`);
+      if (msgEl) msgEl.textContent = `Decision recorded (${action}).`;
+      await loadSubmissionsQueue();
+      const updated = vsubs.find(s => s.subId === vSelected.subId);
+      if (updated) renderSubmissionDetail(updated);
+    } else {
+      const err = json.error || `Decision failed (${res.status})`;
+      if (msgEl) msgEl.textContent = err;
+      toast(err);
+    }
+  } catch (err) {
+    if (msgEl) msgEl.textContent = err.message;
+    toast('Decision error: ' + err.message);
+  } finally {
+    if (approveBtn && vSelected?.status === 'pending') approveBtn.disabled = false;
+    if (rejectBtn && vSelected?.status === 'pending') rejectBtn.disabled = false;
+  }
+}
+
 // ---------- tabs & init ----------
 // Four bottom tabs. Heat map is part of Scout and the input calculator part of Farm.
 const PARENT = { inputs: 'farm', heat: 'scout' };
@@ -706,6 +1272,11 @@ function renderAll() {
   if ($('#tab-heat').classList.contains('active')) renderHeat();
 }
 function showTab(name) {
+  // Verifier route guard: standard users cannot see verifier routes
+  if (name === 'submissions' && (!currentSession || currentSession.role !== 'verifier')) {
+    toast('Verifier access required.');
+    name = 'farm';
+  }
   $$('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
   const parent = PARENT[name] || name;
   $$('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === parent));
@@ -715,6 +1286,7 @@ function showTab(name) {
   if (name === 'inputs') calcInputs();
   if (name === 'records') renderRecords();
   if (name === 'trees') refreshTrees();
+  if (name === 'submissions') loadSubmissionsQueue();
   window.scrollTo(0, 0);
 }
 $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -745,14 +1317,120 @@ function netChip() {
 window.addEventListener('online', () => { netChip(); publishBatches(); flushOutbox(); });
 window.addEventListener('offline', netChip);
 
+// init() is invoked at the very end of this module, after LOCK_STORAGE and the
+// other consts below are defined (the gateway reads the device PIN at boot).
 async function init() {
   load();
+  wireGateway(); // the split-screen signup / login gate
+  const registered = !!(S.keys && S.keys.priv && S.fp);
+  showGateway(registered ? 'login' : 'signup');
+}
+
+// ── Identity gateway (split-screen signup / login) ───────────────────────────
+// The farmer's identity is the key on this phone, not a server account:
+//   "signup"    = generate the device identity (no network, nothing leaves the phone)
+//   "login"     = unlock the identity already on this phone (PIN when set)
+function showGateway(mode) {
+  $('#auth-gateway').style.display = '';
+  $('#app-shell').style.display = 'none';
+  setGatewayMode(mode);
+}
+function setGatewayMode(mode) {
+  const up = mode === 'signup';
+  $('#gw-tab-signup')?.classList.toggle('active', up);
+  $('#gw-tab-signin')?.classList.toggle('active', !up);
+  const upPanel = $('#gw-panel-signup'), inPanel = $('#gw-panel-signin');
+  if (upPanel) upPanel.hidden = !up;
+  if (inPanel) inPanel.hidden = up;
+  if (!up) {
+    $('#gw-id-name').textContent = S.name || 'Field identity';
+    $('#gw-id-fp').textContent = fmtFingerprint(S.fp);
+    const nf = (S.farms || []).length, nr = (S.records || []).length, nb = (S.batches || []).length;
+    $('#gw-id-stats').textContent = `${nf} farm${nf === 1 ? '' : 's'} · ${nr} record${nr === 1 ? '' : 's'} · ${nb} batch${nb === 1 ? '' : 'es'}`;
+    $('#gw-login-pin-row').hidden = !getLock();
+    const errBox = $('#gw-login-err'); if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
+  } else {
+    const errBox = $('#gw-signup-err'); if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
+  }
+}
+function fmtFingerprint(fp) {
+  if (!fp) return '—';
+  return (fp.match(/.{1,4}/g) || [fp]).slice(0, 4).join('·').toUpperCase() + '…';
+}
+function wireGateway() {
+  $('#gw-tab-signup')?.addEventListener('click', () => setGatewayMode('signup'));
+  $('#gw-tab-signin')?.addEventListener('click', () => setGatewayMode('login'));
+  $('#gw-go-signin')?.addEventListener('click', (e) => { e.preventDefault(); setGatewayMode('login'); });
+  $('#gw-go-signup')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!(S.keys && S.keys.priv && S.fp)) return setGatewayMode('signup');
+    if (!confirm('This clears this phone\'s identity — all farms, records and the signing key. Continue?')) return;
+    try { localStorage.removeItem(KEY); localStorage.removeItem(LOCK_STORAGE); } catch { /* ignore */ }
+    location.reload();
+  });
+  $('#gw-signup-pin')?.addEventListener('input', (e) => { const row = $('#gw-signup-pin2-row'); if (row) row.hidden = !e.target.value; });
+  $('#gw-signup-form')?.addEventListener('submit', onGatewaySignup);
+  $('#gw-login-form')?.addEventListener('submit', onGatewayLogin);
+  $('#gw-verifier-link')?.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('signin'); });
+}
+async function onGatewaySignup(e) {
+  e.preventDefault();
+  const errBox = $('#gw-signup-err');
+  const fail = (msg) => { if (errBox) { errBox.textContent = msg; errBox.hidden = false; } };
+  const name = $('#gw-signup-name').value.trim();
+  if (!name) return fail('Please enter your name');
+  const pin = $('#gw-signup-pin').value;
+  const pin2 = $('#gw-signup-pin2').value;
+  if (pin && pin.length < 4) return fail('The PIN needs at least 4 characters');
+  if (pin && pin !== pin2) return fail('The two PIN entries differ');
+  const btn = $('#gw-signup-btn');
+  btn.disabled = true; btn.textContent = 'Generating your key…';
+  try {
+    S.name = name;
+    S.msisdn = $('#gw-signup-msisdn').value.trim();
+    S.keys = await C.generateKeys();
+    S.fp = await C.fingerprint(S.keys.pub);
+    save();
+    if (pin) {
+      try { localStorage.setItem(LOCK_STORAGE, JSON.stringify(await makeLock(pin))); }
+      catch { toast('Could not create the PIN lock on this device'); }
+    }
+    toast('Identity created — it lives on this phone only');
+    await continueInit();
+  } catch (err) {
+    fail('Could not create the identity on this device: ' + (err.message || err));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create my identity →'; }
+  }
+}
+async function onGatewayLogin(e) {
+  e.preventDefault();
+  const errBox = $('#gw-login-err');
+  const fail = (msg) => { if (errBox) { errBox.textContent = msg; errBox.hidden = false; } };
+  const lock = getLock();
+  if (lock) {
+    const pin = $('#gw-login-pin').value;
+    if (!pin) return fail('Enter your PIN to unlock');
+    const btn = $('#gw-login-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+    try {
+      if (!(await lockOk(pin, lock))) return fail('Wrong PIN. Try again.');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Unlock & continue →'; }
+    }
+  }
+  continueInit();
+}
+// Everything that used to run at boot now runs once the device identity is created or unlocked.
+async function continueInit() {
+  $('#auth-gateway').style.display = 'none';
+  $('#app-shell').style.display = '';
   await ensureKeys();
   $('#farm-crop').innerHTML = Object.entries(C.CROPS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
   $('#in-crop').innerHTML = $('#farm-crop').innerHTML;
   $('#tr-species').innerHTML = SPECIES.map((x) => `<option>${x}</option>`).join('');
   $('#scout-type').innerHTML = Object.entries(TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
-  $('#heat-type').innerHTML = '<option value="all">All problems</option>' + Object.entries(TYPES).filter(([k]) => k !== 'healthy').map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  $('#heat-type').innerHTML = '<option value="all">All problems</option>' + Object.entries(TYPES).filter(([k]) => k !== 'healthy').map(([k, v]) => `<option>${v}</option>`).join('');
   $('#heat-type').addEventListener('change', renderHeat);
 
   farmMap = makeMap($('#map-farm'));
@@ -762,10 +1440,425 @@ async function init() {
 
   const f = activeFarm();
   if (f && farmMap) farmMap.fitBounds(latlngs(f.polygon), { padding: [30, 30] });
-  drawFarmMap(); walkStats(); walkButtons(); renderAll(); netChip();
+  drawFarmMap(); walkStats(); walkButtons(); renderAll(); netChip(); updateHud();
   maybeOnboarding();
   publishBatches(); flushOutbox();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  await initAuth();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDIUM-2: Key backup and encrypted export/import
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The ECDSA P-256 private key lives in localStorage. Clearing site data loses it
+// permanently. This section lets the farmer export an encrypted backup (AES-GCM,
+// 256-bit key derived from a passphrase via PBKDF2) and import it on the same or
+// another device.
+//
+// Security properties:
+//   • The private key is wrapped with a 256-bit AES-GCM key.
+//   • The wrapping key is derived with PBKDF2-SHA-256, 310 000 iterations (NIST SP 800-132).
+//   • A fresh random salt and IV are generated for every export.
+//   • The export file contains: { version, salt (hex), iv (hex), ciphertext (base64) }.
+//   • The plaintext is the full key pair JWK object.
+//
+// To test in the browser console:
+//   const backup = await exportEncryptedKey('mypassphrase');
+//   const restored = await importEncryptedKey(backup, 'mypassphrase');
+//   console.log(restored.pub.x === S.keys.pub.x); // true
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+const KEY_BACKUP_VERSION = 1;
+const PBKDF2_ITERATIONS = 310_000;
+
+/**
+ * Derive a 256-bit AES-GCM key from a passphrase + salt using PBKDF2-SHA-256.
+ * @param {string} passphrase
+ * @param {Uint8Array} salt
+ * @returns {Promise<CryptoKey>}
+ */
+async function deriveWrapKey(passphrase, salt) {
+  const raw = new TextEncoder().encode(passphrase);
+  const base = await crypto.subtle.importKey('raw', raw, 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+const toHex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const fromHex = (h) => Uint8Array.from(h.match(/.{2}/g).map((b) => parseInt(b, 16)));
+const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+/**
+ * Export the current key pair as an encrypted JSON backup object.
+ *
+ * @param {string} passphrase - user-chosen passphrase (min 8 chars recommended)
+ * @returns {Promise<object>} - JSON-serialisable backup object
+ */
+async function exportEncryptedKey(passphrase) {
+  if (!S.keys) throw new Error('No key pair to export');
+  if (!passphrase || passphrase.length < 1) throw new Error('Passphrase must not be empty');
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const wrapKey = await deriveWrapKey(passphrase, salt);
+  const plaintext = new TextEncoder().encode(JSON.stringify(S.keys));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrapKey, plaintext);
+  return {
+    version: KEY_BACKUP_VERSION,
+    fp: S.fp,
+    salt: toHex(salt),
+    iv: toHex(iv),
+    ciphertext: toB64(ciphertext),
+  };
+}
+
+/**
+ * Import and decrypt a key backup.
+ *
+ * @param {object} backup - the backup object from exportEncryptedKey
+ * @param {string} passphrase
+ * @returns {Promise<{ pub: object, priv: object }>} - decrypted key pair
+ */
+async function importEncryptedKey(backup, passphrase) {
+  if (!backup || backup.version !== KEY_BACKUP_VERSION) throw new Error('Unrecognised backup format');
+  const salt = fromHex(backup.salt);
+  const iv = fromHex(backup.iv);
+  const wrapKey = await deriveWrapKey(passphrase, salt);
+  let plaintext;
+  try {
+    plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, wrapKey, fromB64(backup.ciphertext));
+  } catch {
+    throw new Error('Wrong passphrase or corrupted backup');
+  }
+  const keys = JSON.parse(new TextDecoder().decode(plaintext));
+  if (!keys?.pub?.x || !keys?.priv?.d) throw new Error('Backup does not contain a valid key pair');
+  return keys;
+}
+
+// ── UI wiring for key backup ─────────────────────────────────────────────────
+
+// The optional ledger key is a device-level setting, never synced in a bundle
+// and never part of any export, because it belongs to the operator.
+const ANCHOR_KEY_STORAGE = 'plotline.anchorKey';
+function stateAnchorKey() {
+  try { return localStorage.getItem(ANCHOR_KEY_STORAGE) || ''; } catch { return ''; }
+}
+
+document.addEventListener('click', async (e) => {
+  // Ledger key: id="anchor-key-btn"
+  if (e.target.id === 'anchor-key-btn') {
+    try {
+      const next = prompt(
+        'Ledger API key (only needed when the operator requires one to anchor batches). Leave empty to clear it:',
+        stateAnchorKey(),
+      );
+      if (next === null) return;
+      if (next.trim()) localStorage.setItem(ANCHOR_KEY_STORAGE, next.trim());
+      else localStorage.removeItem(ANCHOR_KEY_STORAGE);
+      toast(next.trim() ? 'Ledger key saved on this device' : 'Ledger key cleared');
+    } catch (err) { toast('Could not store the ledger key on this device'); }
+  }
+
+  // Export button: id="key-export-btn"
+  if (e.target.id === 'key-export-btn') {
+    const passphrase = prompt('Enter a passphrase to encrypt your key backup (keep this safe — you will need it to restore):\n\nMinimum 8 characters recommended.');
+    if (!passphrase) return;
+    if (passphrase.length < 8) {
+      if (!confirm('Passphrase is shorter than 8 characters. Continue anyway?')) return;
+    }
+    try {
+      const backup = await exportEncryptedKey(passphrase);
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `plotline-key-backup-${S.fp ?? 'unknown'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Key backup downloaded. Store it somewhere safe.');
+    } catch (err) { toast('Export failed: ' + err.message); }
+  }
+
+  // Import button: id="key-import-btn" (triggers hidden file input id="key-import-file")
+  if (e.target.id === 'key-import-btn') {
+    $('#key-import-file')?.click();
+  }
+});
+
+document.getElementById('key-import-file')?.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const passphrase = prompt('Enter the passphrase you used when creating this backup:');
+  if (passphrase === null) return;
+  try {
+    const text = await file.text();
+    const backup = JSON.parse(text);
+    const keys = await importEncryptedKey(backup, passphrase);
+    const { fingerprint: fp } = await import('./core.js').catch(() => C);
+    const newFp = await C.fingerprint(keys.pub);
+    if (S.fp && S.fp !== newFp) {
+      if (!confirm(`This backup belongs to a different key (${newFp}). Your current key is ${S.fp}.\n\nImporting will replace your current key. Continue?`)) {
+        e.target.value = '';
+        return;
+      }
+    }
+    S.keys = keys;
+    S.fp = newFp;
+    save();
+    toast(`Key restored for ${newFp}. Restart the app to use it.`);
+  } catch (err) { toast('Import failed: ' + err.message); }
+  e.target.value = '';
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDIUM-5: Multi-device sync bundle (export/import)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// There are no user accounts in Plotline. Each phone keeps its own state in
+// localStorage. This sync bundle lets a farmer move their pending records,
+// farm boundaries and payout number to a new or second device without a server
+// round-trip, and without exposing the private key.
+//
+// What the bundle contains (PUBLIC data only):
+//   • Public key + fingerprint (so the receiving device can verify signatures)
+//   • Farm records (boundaries, names)
+//   • Pending outbox items (unsigned or signed records not yet submitted)
+//   • Sent/submitted records
+//   • Active farm reference
+//   • Payout number preference (msisdn)
+//
+// What the bundle does NOT contain:
+//   • The private signing key (use the encrypted key backup above for that)
+//   • Batches that are already sealed and on the ledger (those are public)
+//
+// The bundle is signed with the current private key so the receiving device can
+// confirm it was not tampered with after export.
+//
+// To transfer to a new device:
+//   1. Export sync bundle on the old device → download JSON file.
+//   2. Export encrypted key backup on the old device → download JSON file.
+//   3. On the new device: import key backup first, then import sync bundle.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SYNC_BUNDLE_VERSION = 1;
+
+/**
+ * Build and sign a sync bundle from the current state.
+ * @returns {Promise<object>} - JSON-serialisable bundle
+ */
+async function exportSyncBundle() {
+  if (!S.keys) throw new Error('No key pair — generate keys first');
+  const payload = {
+    version: SYNC_BUNDLE_VERSION,
+    fp: S.fp,
+    pub: S.keys.pub,
+    exportedAt: new Date().toISOString(),
+    farms: S.farms ?? [],
+    outbox: S.outbox ?? [],
+    sent: S.sent ?? [],
+    activeFarm: S.activeFarm ?? null,
+    msisdn: S.msisdn ?? '',
+  };
+  // Sign the canonical JSON of the payload so the receiving device can verify it.
+  const { hash, sig } = await C.signBody(payload, S.keys.priv);
+  return { ...payload, hash, sig };
+}
+
+/**
+ * Verify and import a sync bundle.
+ * Does NOT overwrite keys — the user must import the key backup separately.
+ * @param {object} bundle
+ * @returns {Promise<{ farms: number, outbox: number, sent: number }>} counts of imported items
+ */
+async function importSyncBundle(bundle) {
+  if (!bundle || bundle.version !== SYNC_BUNDLE_VERSION) throw new Error('Unrecognised sync bundle format');
+  if (!bundle.pub?.x || !bundle.fp) throw new Error('Bundle missing public key');
+
+  // Verify signature.
+  const { sig, hash, ...payload } = bundle;
+  const computedHash = await C.hashBody(payload);
+  if (computedHash !== hash) throw new Error('Bundle hash mismatch — bundle may have been tampered with');
+  const valid = await C.verifySig(hash, sig, bundle.pub);
+  if (!valid) throw new Error('Bundle signature is invalid');
+
+  // Merge farms (add new ones, skip duplicates by id). Farms carry `id`, not `farmId`.
+  const existingFarmIds = new Set((S.farms ?? []).map((f) => f.id));
+  const newFarms = (bundle.farms ?? [])
+    .filter((f) => f && typeof f === 'object' && f.id && Array.isArray(f.polygon) && f.polygon.length >= 3 && !existingFarmIds.has(f.id));
+  S.farms = [...(S.farms ?? []), ...newFarms];
+
+  // Merge outbox (skip duplicates by submission key — an outbox item's identity is its `key`).
+  const existingKeys = new Set((S.outbox ?? []).map((x) => (x && typeof x === 'object' ? x.key : null)));
+  const newOutbox = (bundle.outbox ?? []).filter((x) => x && typeof x === 'object' && x.key && !existingKeys.has(x.key));
+  S.outbox = [...(S.outbox ?? []), ...newOutbox];
+
+  // Merge sent keys (they are plain strings of joined record hashes).
+  const sentKeys = new Set(S.sent ?? []);
+  const newSent = (bundle.sent ?? []).filter((k) => typeof k === 'string' && !sentKeys.has(k));
+  S.sent = [...(S.sent ?? []), ...newSent];
+
+  // Apply activeFarm and msisdn only if the device currently has none.
+  if (!S.activeFarm && bundle.activeFarm) S.activeFarm = bundle.activeFarm;
+  if (!S.msisdn && bundle.msisdn) S.msisdn = bundle.msisdn;
+
+  // If no key pair on this device, apply the public key reference (but NOT priv).
+  if (!S.keys) {
+    S.keys = { pub: bundle.pub, priv: null }; // priv is null until key backup is imported
+    S.fp = bundle.fp;
+  }
+
+  save();
+  return { farms: newFarms.length, outbox: newOutbox.length, sent: newSent.length };
+}
+
+// ── UI wiring for sync bundle ────────────────────────────────────────────────
+
+document.addEventListener('click', async (e) => {
+  // Export sync bundle: id="sync-export-btn"
+  if (e.target.id === 'sync-export-btn') {
+    try {
+      const bundle = await exportSyncBundle();
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `plotline-sync-${S.fp ?? 'unknown'}-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Sync bundle downloaded. Import it on your new device after restoring your key.');
+    } catch (err) { toast('Sync export failed: ' + err.message); }
+  }
+
+  // Import sync bundle: id="sync-import-btn"
+  if (e.target.id === 'sync-import-btn') {
+    $('#sync-import-file')?.click();
+  }
+});
+
+document.getElementById('sync-import-file')?.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const bundle = JSON.parse(text);
+    const result = await importSyncBundle(bundle);
+    renderAll();
+    toast(`Sync complete: ${result.farms} farm(s), ${result.outbox} outbox item(s), ${result.sent} sent record(s) imported.`);
+  } catch (err) { toast('Sync import failed: ' + err.message); }
+  e.target.value = '';
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Device lock: the farmer's sign in / sign out
+// ─────────────────────────────────────────────────────────────────────────────
+// Farmers deliberately have no server accounts: their identity is the ECDSA key on
+// the phone and offline-first access must never depend on a connection. This optional
+// PIN lock is their device-local equivalent of signing in — nothing outside the lock
+// screen renders until the PIN is entered, every time the app is reopened.
+//
+// The PIN is checked by decrypting a marked value with an AES-GCM key derived via
+// PBKDF2 (the same primitives as the key backup). Wrong PIN = wrong key = failure,
+// with no plaintext stored. Removing the lock requires the current PIN; a forgotten
+// PIN can only end in an app reset (losing local data), which we surface honestly.
+const LOCK_STORAGE = 'plotline.lock';
+const LOCK_MARKER = 'plotline-lock-v1';
+
+function getLock() {
+  try { return JSON.parse(localStorage.getItem(LOCK_STORAGE) || 'null'); } catch { return null; }
+}
+
+async function makeLock(pin) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const wrapKey = await deriveWrapKey(pin, salt);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrapKey, new TextEncoder().encode(LOCK_MARKER));
+  return { version: 1, salt: toHex(salt), iv: toHex(iv), ct: toB64(ciphertext) };
+}
+
+async function lockOk(pin, lock = getLock()) {
+  if (!lock) return true; // no lock set
+  if (typeof pin !== 'string' || !pin.length) return false;
+  try {
+    const wrapKey = await deriveWrapKey(pin, fromHex(lock.salt));
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromHex(lock.iv) }, wrapKey, fromB64(lock.ct));
+    return new TextDecoder().decode(plain) === LOCK_MARKER;
+  } catch { return false; }
+}
+
+// Read the lock from anywhere (init calls this before anything else happens on screen).
+async function showLockIfNeeded() {
+  if (!getLock()) return;
+  document.body.classList.add('locked');
+  const overlay = $('#lock-overlay');
+  if (overlay) overlay.hidden = false;
+}
+
+$('#lock-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const pin = $('#lock-pin').value;
+  $('#lock-err').textContent = 'Checking…';
+  if (await lockOk(pin)) {
+    $('#lock-pin').value = '';
+    $('#lock-err').textContent = '';
+    document.body.classList.remove('locked');
+    $('#lock-overlay').hidden = true;
+    toast('Unlocked');
+  } else {
+    $('#lock-err').textContent = 'Wrong PIN. Try again.';
+  }
+});
+$('#lock-reset')?.addEventListener('click', async () => {
+  if (!confirm('This clears all farms, records and the signing key on this phone, and the PIN lock. Continue?')) return;
+  try {
+    localStorage.removeItem(LOCK_STORAGE);
+    localStorage.removeItem(KEY);
+  } catch { /* ignore */ }
+  location.reload();
+});
+
+document.addEventListener('click', async (e) => {
+  if (e.target.id === 'lock-set') {
+    try {
+      if (getLock()) return toast('The app already has a PIN lock');
+      const pin = prompt('Choose a PIN of at least 4 characters.\n\nIt will be required every time this app opens on this phone.');
+      if (pin === null) return;
+      if (pin.length < 4) return toast('The PIN needs at least 4 characters');
+      const again = prompt('Enter the same PIN once more to confirm:');
+      if (again !== pin) return toast('The two entries differ — nothing was changed');
+      localStorage.setItem(LOCK_STORAGE, JSON.stringify(await makeLock(pin)));
+      toast('PIN lock set. It applies from the next time this app opens.');
+    } catch (err) { toast('Could not set the PIN lock on this device'); }
+  }
+  if (e.target.id === 'lock-remove') {
+    try {
+      const lock = getLock();
+      if (!lock) return toast('This app has no PIN lock');
+      const pin = prompt('Enter the current PIN to remove the lock:');
+      if (pin === null) return;
+      if (!(await lockOk(pin, lock))) return toast('Wrong PIN — the lock is kept');
+      localStorage.removeItem(LOCK_STORAGE);
+      toast('PIN lock removed');
+    } catch (err) { toast('Could not remove the PIN lock on this device'); }
+  }
+});
+
+// Expose helpers for use in app.html and for testing in the console.
+window._plotline = {
+  exportEncryptedKey,
+  importEncryptedKey,
+  exportSyncBundle,
+  importSyncBundle,
+};
+
+// Boot last so every const below is defined before the gateway reads device state.
 init().catch((err) => { console.error(err); toast('Startup problem: ' + err.message); });
