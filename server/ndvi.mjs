@@ -49,13 +49,25 @@
 //   SENTINELHUB_TOKEN                bearer token (fastest; expires fast)
 //   SENTINELHUB_CLIENT_ID + SECRET   or OAuth client credentials (recommended)
 //   SENTINELHUB_BASE_URL             default https://services.sentinel-hub.com
+// Copernicus Data Space (free, same API): COPERNICUS_CLIENT_ID + SECRET (or
+// COPERNICUS_TOKEN) resolve to sh.dataspace.copernicus.eu + CDSE realm.
+// Google Earth Engine (service account): GEE_PROJECT_ID + GEE_CLIENT_EMAIL +
+// GEE_PRIVATE_KEY (or inline GEE_SERVICE_ACCOUNT_JSON) use the Value API.
+//   NDVI_PROVIDER=sentinel-hub|gee   force one; default SH/Copernicus, then GEE.
 // Everything unset → the honest stub result, no network calls.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { createSign } from 'node:crypto';
+
 export const NDVI_SOURCE = 'stub (no provider configured)';
 export const NDVI_SH_SOURCE = 'sentinel-hub statistical api';
+export const NDVI_GEE_SOURCE = 'gee value api';
 export const NDVI_DEFAULTS = Object.freeze({ bufferKm: 0.5, cloudMaxPct: 30, periodDays: 90 });
 const TOKEN_GRACE_MS = 30_000;
+const GEE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GEE_SCOPE = 'https://www.googleapis.com/auth/earthengine.readonly';
+const GEE_TOKEN_CACHE_MS = 300_000; // EE access tokens live 1 h; refresh 5 min early
+const GEE_OAUTH2_ARG = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 
 // Sentinel-2 L2A: B04 = red, B08 = NIR, 10 m pixels, DN units (0 = no data).
 const NDVI_EVALSCRIPT = `//VERSION=3
@@ -76,7 +88,7 @@ function evaluatePixel(s) {
 }`;
 
 export function ndviConfigured(env = process.env) {
-  return credsFor(env).mode !== 'none';
+  return !!ndviProvider(env);
 }
 
 // Which service is actually being addressed. Two providers speak the same
@@ -107,6 +119,134 @@ export function credsFor(env = {}) {
     return { mode: 'oauth', clientId: env.COPERNICUS_CLIENT_ID, clientSecret: env.COPERNICUS_CLIENT_SECRET };
   }
   return { mode: 'none' };
+}
+
+// ---------- Google Earth Engine provider ----------
+// GEE speaks a different protocol: its Value API takes a JSON expression tree
+// (an EE computation DAG) and returns the computed value. Auth is a service
+// account signing a JWT with RS256 — pure node:crypto, no dependency. Because
+// the expression tree is hand-built here rather than compiled by an EE client
+// library, treat this provider as the fallback; the Sentinel Hub providers are
+// the well-trodden path. NDVI_PROVIDER=gee forces it regardless.
+
+export function ndviProvider(env = {}) {
+  const forced = env.NDVI_PROVIDER;
+  if (forced === 'gee' || forced === 'sentinel-hub') return forced;
+  if (credsFor(env).mode !== 'none') return 'sentinel-hub';
+  if (geeServiceAccount(env)) return 'gee';
+  return null;
+}
+
+export function geeServiceAccount(env = {}) {
+  if (env.GEE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const j = JSON.parse(env.GEE_SERVICE_ACCOUNT_JSON);
+      if (!j?.client_email || !j?.private_key) return null;
+      return {
+        clientEmail: j.client_email,
+        privateKey: String(j.private_key).replace(/\\n/g, '\n'),
+        projectId: j.project_id || env.GEE_PROJECT_ID || 'earthengine-legacy',
+      };
+    } catch {
+      return null; // malformed inline JSON counts as "not configured"
+    }
+  }
+  if (env.GEE_CLIENT_EMAIL && env.GEE_PRIVATE_KEY) {
+    return {
+      clientEmail: env.GEE_CLIENT_EMAIL,
+      // .env files are line-based, so the PEM travels with literal \n escapes.
+      privateKey: env.GEE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      projectId: env.GEE_PROJECT_ID || 'earthengine-legacy',
+    };
+  }
+  return null;
+}
+
+let geeTokenCache = null;
+const b64urlJson = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+
+export async function geeToken({ env = {}, fetchImpl = fetch, now = new Date() } = {}) {
+  const sa = geeServiceAccount(env);
+  if (!sa) throw Object.assign(new Error('gee: no service account'), { code: 'auth_failed' });
+  if (geeTokenCache && geeTokenCache.key === sa.clientEmail && Date.now() < geeTokenCache.expiresAt) {
+    return geeTokenCache.token;
+  }
+  const iat = Math.floor(now.getTime() / 1000);
+  const claims = { iss: sa.clientEmail, scope: GEE_SCOPE, aud: GEE_TOKEN_URL, iat, exp: iat + 3600 };
+  const input = `${b64urlJson({ alg: 'RS256', typ: 'JWT' })}.${b64urlJson(claims)}`;
+  const signature = createSign('RSA-SHA256').update(input).sign(sa.privateKey);
+  const assertion = `${input}.${Buffer.from(signature).toString('base64url')}`;
+  const res = await fetchImpl(GEE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: GEE_OAUTH2_ARG, assertion }).toString(),
+  });
+  if (!res.ok) throw Object.assign(new Error(`gee auth ${res.status}`), { code: 'auth_failed' });
+  const tok = await res.json().catch(() => null);
+  if (!tok?.access_token) throw Object.assign(new Error('gee auth: no token'), { code: 'auth_failed' });
+  // Cache hard by clock here (unlike the Sentinel Hub cache) so injected `now`
+  // values in tests can't trick it into serving a token twice beyond its TTL.
+  const ttlMs = Math.min((Number(tok.expires_in) || 3600) * 1000, 3_600_000) - GEE_TOKEN_CACHE_MS;
+  geeTokenCache = { key: sa.clientEmail, token: tok.access_token, expiresAt: Date.now() + Math.max(60_000, ttlMs) };
+  return geeTokenCache.token;
+}
+
+// Sentinel-2 Surface Reflectance, harmonized to old band naming (B4 red, B8 NIR).
+// Cloud filter uses the scene-level CLOUDY_PIXEL_OVER_LAND_COVER property, which
+// exists on every S2 SR image; the mean composite then gets NDVI computed once,
+// and one reduceRegion sums up mean/min/max/stdDev over the buffered point.
+export function geeNdviExpression({ lat, lon, bufferKm, cloudMaxPct, from, to }) {
+  const P = (value) => ({ value });
+  const F = (functionName, args) => ({ functionName, arguments: args });
+  const region = F('Geometry.buffer', {
+    geometry: F('Geometry.Point', { coordinates: P([lon, lat]) }),
+    distance: P(bufferKm * 1000),
+  });
+  const collection = F('ImageCollection.load', { id: P('COPERNICUS/S2_SR_HARMONIZED') });
+  const dated = F('Collection.filterDate', { collection, start: P(from.slice(0, 10)), end: P(to.slice(0, 10)) });
+  const cloudFree = F('Collection.filterMetadata', {
+    collection: dated,
+    name: P('CLOUDY_PIXEL_OVER_LAND_COVER'),
+    operator: P('less_than'),
+    value: P(cloudMaxPct),
+  });
+  const composite = F('reduce.mean', { collection: cloudFree });
+  const ndvi = F('Image.normalizedDifference', { image: composite, bandNames: P(['B8', 'B4']) });
+  const reducer = F('Reducer.combine', {
+    reducer1: F('Reducer.mean', {}),
+    reducer2: F('Reducer.combine', {
+      reducer1: F('Reducer.stdDev', {}),
+      reducer2: F('Reducer.minMax', {}),
+      sharedInputs: P(true),
+    }),
+    sharedInputs: P(true),
+  });
+  const reduce = F('Image.reduceRegion', {
+    image: ndvi,
+    reducer,
+    geometry: region,
+    scale: P(10),
+    maxPixels: P(1e13),
+    bestEffort: P(true),
+  });
+  return { result: '0', values: { 0: reduce } };
+}
+
+export function parseGeeNdvi(result) {
+  const o = result && typeof result === 'object' ? result : null;
+  if (!o) return null;
+  const num = (k) => {
+    const v = Number(o[k]);
+    return Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
+  };
+  const mean = num('ndvi_mean') ?? num('mean');
+  if (mean === null) return null;
+  return {
+    ndvi: mean,
+    ndviMin: num('ndvi_min') ?? num('min'),
+    ndviMax: num('ndvi_max') ?? num('max'),
+    ndviStdDev: num('ndvi_stdDev') ?? num('standard_deviation') ?? num('stdDev'),
+  };
 }
 
 // ---------- degrees → bbox for a buffer around a point ----------
@@ -258,6 +398,7 @@ export async function ndviEvidence({
   const effectiveTo = validIso(dateTo) ? new Date(dateTo).toISOString() : checkedAt;
 
   try {
+    if (ndviProvider(env) === 'gee') return await geeEvidence({ lat, lon, bufferKm, cloudMaxPct, effectiveFrom, effectiveTo, env, fetchImpl, meta });
     const { base } = ndviEndpoints(env);
     const token = await sentinelHubToken({ env, fetchImpl });
     const res = await fetchImpl(`${base}/api/v1/statistical`, {
@@ -290,6 +431,47 @@ export async function ndviEvidence({
   } catch (err) {
     return { status: 'unavailable', error: err.code || 'provider_error', ...meta };
   }
+}
+
+// ---------- GEE flow (Value API) ----------
+async function geeEvidence({ lat, lon, bufferKm, cloudMaxPct, effectiveFrom, effectiveTo, env, fetchImpl, meta }) {
+  const token = await geeToken({ env, fetchImpl, now: new Date(meta.checkedAt) });
+  const sa = geeServiceAccount(env);
+  const url = `https://earthengine.googleapis.com/v1/projects/${encodeURIComponent(sa.projectId)}/value:compute`;
+  const res = await fetchImpl(url, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      expression: geeNdviExpression({ lat, lon, bufferKm, cloudMaxPct, from: effectiveFrom, to: effectiveTo }),
+      workloadTag: 'plotline-ndvi',
+    }),
+  });
+  if (!res.ok) {
+    // Surface the provider's own message: EE expression errors name the exact
+    // algorithm that refused, which is how this hand-built DAG gets debugged.
+    let detail = '';
+    try { detail = String(await res.text()).replace(/\s+/g, ' ').slice(0, 300); } catch { /* empty body */ }
+    const code = res.status >= 500 ? 'provider_error' : res.status === 401 || res.status === 403 ? 'auth_failed' : 'bad_request';
+    return { status: 'unavailable', error: code, detail, ...meta };
+  }
+  const json = await res.json().catch(() => null);
+  const stats = parseGeeNdvi(json?.result ?? json);
+  if (!stats) return { status: 'unavailable', error: 'no_valid_pixels', ...meta };
+  return {
+    status: 'ok',
+    source: NDVI_GEE_SOURCE,
+    bufferKm,
+    dateFrom: effectiveFrom,
+    dateTo: effectiveTo,
+    cloudMaxPct,
+    checkedAt: meta.checkedAt,
+    ndvi: stats.ndvi,
+    ndviMin: stats.ndviMin,
+    ndviMax: stats.ndviMax,
+    ndviStdDev: stats.ndviStdDev,
+    pixelCount: null, // the Value API returns one reduced blob, not per-bucket counts
+    periods: null,
+  };
 }
 
 function validIso(v) {

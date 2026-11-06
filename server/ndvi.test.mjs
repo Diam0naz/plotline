@@ -287,3 +287,125 @@ test('ndvi: the CDSE OAuth flow authenticates against the CDSE realm', async () 
   assert.equal(statsCall.opts.headers.authorization, 'Bearer cdse-tok');
   assert.equal(out.status, 'ok');
 });
+
+// ---------- Google Earth Engine provider (service account, Value API) ----------
+
+import { generateKeyPairSync, createVerify } from 'node:crypto';
+import { geeServiceAccount, geeNdviExpression, parseGeeNdvi, ndviProvider } from './ndvi.mjs';
+
+const RSA = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const PEM = RSA.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const GEE_ENV = {
+  GEE_PROJECT_ID: 'plotline-sat',
+  // .env files are line-based; prove the literal \n escape path works.
+  GEE_CLIENT_EMAIL: 'ndvi-bot@plotline-sat.iam.gserviceaccount.com',
+  GEE_PRIVATE_KEY: PEM.replace(/\n/g, '\\n'),
+};
+const GEE_TOKEN = { ok: true, status: 200, json: async () => ({ access_token: 'gee-tok', expires_in: 3600 }) };
+const GEE_OK = (stats) => ({
+  ok: true, status: 200,
+  json: async () => ({ result: { ...stats, ...(stats || {}) } }),
+});
+const GEE_STATS = { ndvi_mean: 0.5, ndvi_min: 0.2, ndvi_max: 0.8, ndvi_stdDev: 0.1 };
+
+test('ndvi: the GEE service account parses from both env shapes; provider precedence holds', () => {
+  const sa = geeServiceAccount(GEE_ENV);
+  assert.match(sa.privateKey, /BEGIN PRIVATE KEY/);
+  assert.match(sa.privateKey, /\n/);
+  assert.equal(sa.projectId, 'plotline-sat');
+  const inline = geeServiceAccount({ GEE_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: 'a@b.c', private_key: PEM, project_id: 'p1' }) });
+  assert.equal(inline.clientEmail, 'a@b.c');
+  assert.equal(geeServiceAccount({ GEE_SERVICE_ACCOUNT_JSON: '{nope' }), null);
+  assert.equal(geeServiceAccount({ GEE_CLIENT_EMAIL: 'a@b.c' }), null);
+
+  assert.equal(ndviProvider({}), null);
+  assert.equal(ndviProvider({ COPERNICUS_CLIENT_ID: 'i', COPERNICUS_CLIENT_SECRET: 's' }), 'sentinel-hub');
+  assert.equal(ndviProvider(GEE_ENV), 'gee');
+  assert.equal(ndviProvider({ ...GEE_ENV, COPERNICUS_CLIENT_ID: 'i', COPERNICUS_CLIENT_SECRET: 's' }), 'sentinel-hub', 'SH wins ties; NDVI_PROVIDER=gee overrides');
+  assert.equal(ndviProvider({ ...GEE_ENV, NDVI_PROVIDER: 'gee' }), 'gee');
+});
+
+test('ndvi: the GEE token request carries a genuinely signed RS256 JWT', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts = {}) => {
+    calls.push({ url: String(url), body: opts.body });
+    return GEE_TOKEN;
+  };
+  const token = await (await import('./ndvi.mjs')).geeToken({ env: GEE_ENV, fetchImpl, now: new Date('2026-11-15T12:00:00.000Z') });
+  assert.equal(token, 'gee-tok');
+
+  const call = calls.find((c) => c.url === 'https://oauth2.googleapis.com/token');
+  assert.ok(call);
+  const body = new URLSearchParams(call.body);
+  assert.equal(body.get('grant_type'), 'urn:ietf:params:oauth:grant-type:jwt-bearer');
+  const [h, p] = body.get('assertion').split('.');
+  assert.deepEqual(JSON.parse(Buffer.from(h, 'base64url').toString()), { alg: 'RS256', typ: 'JWT' });
+  const claims = JSON.parse(Buffer.from(p, 'base64url').toString());
+  assert.equal(claims.iss, 'ndvi-bot@plotline-sat.iam.gserviceaccount.com');
+  assert.equal(claims.scope, 'https://www.googleapis.com/auth/earthengine.readonly');
+  assert.equal(claims.aud, 'https://oauth2.googleapis.com/token');
+  // The signature must actually verify against our injected key — a malformed
+  // JWT would fail at Google with a confusing 401, so check the signing here.
+  // Reconstruct the signed input from the assertion itself.
+  const assertion = body.get('assertion');
+  const signed = assertion.slice(0, assertion.lastIndexOf('.'));
+  const sig = Buffer.from(assertion.slice(assertion.lastIndexOf('.') + 1), 'base64url');
+  assert.equal(createVerify('RSA-SHA256').update(signed).verify(RSA.publicKey, sig), true);
+});
+
+test('ndvi: GEE is asked for a region NDVI reduce; the result maps into the evidence', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts = {}) => {
+    calls.push({ url: String(url), body: opts.body });
+    return String(url).includes('oauth2') ? GEE_TOKEN : GEE_OK(GEE_STATS);
+  };
+  const out = await ndviEvidence({ lat: 9.5, lon: 8.4, bufferKm: 1, dateFrom: '2026-06-01', dateTo: '2026-10-01', env: GEE_ENV, fetchImpl, now: NOW });
+
+  const stats = calls.find((c) => c.url.includes('earthengine.googleapis.com'));
+  assert.match(stats.url, /\/v1\/projects\/plotline-sat\/value:compute/);
+  const body = JSON.parse(stats.body);
+  assert.equal(body.workloadTag, 'plotline-ndvi');
+  const dag = body.expression;
+  assert.equal(dag.result, '0');
+  const walk = (node) => [node, ...Object.values(node.arguments || {}).flatMap((a) => walk(a))];
+  const nodes = walk(dag.values['0']);
+  assert.ok(nodes.some((n) => n.functionName === 'Image.reduceRegion'));
+  const ndviNode = nodes.find((n) => n.functionName === 'Image.normalizedDifference');
+  assert.deepEqual(ndviNode.arguments.bandNames, { value: ['B8', 'B4'] }, 'NIR minus red: B8 first');
+  const buffer = nodes.find((n) => n.functionName === 'Geometry.buffer');
+  assert.equal(buffer.arguments.distance.value, 1000, '1 km buffer in metres');
+  const cloud = nodes.find((n) => n.functionName === 'Collection.filterMetadata');
+  assert.deepEqual(cloud.arguments.value, { value: 30 });
+  const statsCall2 = nodes.find((n) => n.functionName?.startsWith('Collection.filterDate'));
+  assert.equal(statsCall2.arguments.start.value, '2026-06-01');
+
+  assert.equal(out.status, 'ok');
+  assert.equal(out.source, 'gee value api');
+  assert.equal(out.ndvi, 0.5);
+  assert.equal(out.ndviMin, 0.2);
+  assert.equal(out.ndviMax, 0.8);
+  assert.equal(out.ndviStdDev, 0.1);
+  assert.equal(out.dateFrom, '2026-06-01T00:00:00.000Z');
+});
+
+test('ndvi: GEE failures surface the exact reason, with the provider detail attached', async () => {
+  const refuse = (status, body) => async (url) => (String(url).includes('oauth2') ? GEE_TOKEN : { ok: false, status, text: async () => body });
+  let out = await ndviEvidence({ lat: 9, lon: 9, env: GEE_ENV, fetchImpl: refuse(403, '{"error":"PERMISSION_DENIED: caller has no earthengine scope"}'), now: NOW });
+  assert.equal(out.status, 'unavailable');
+  assert.equal(out.error, 'auth_failed');
+  assert.match(out.detail, /PERMISSION_DENIED/);
+
+  out = await ndviEvidence({ lat: 9, lon: 9, env: GEE_ENV, fetchImpl: refuse(400, '{"error":"Image.reduceRegion: unknown function name"}'), now: NOW });
+  assert.equal(out.error, 'bad_request');
+  assert.match(out.detail, /unknown function name/);
+
+  // An empty compute result is an explicit no-data answer, never a fabricated value.
+  out = await ndviEvidence({ lat: 9, lon: 9, env: GEE_ENV, fetchImpl: async (url) => (String(url).includes('oauth2') ? GEE_TOKEN : { ok: true, status: 200, json: async () => ({ result: {} }) }), now: NOW });
+  assert.equal(out.status, 'unavailable');
+  assert.equal(out.error, 'no_valid_pixels');
+
+  assert.equal(parseGeeNdvi(null), null);
+  assert.equal(parseGeeNdvi({ mean: 0.4 }).ndvi, 0.4, 'fallback key without the ndvi_ prefix');
+  assert.equal(parseGeeNdvi({}), null);
+  assert.equal(parseGeeNdvi({ ndvi_mean: Number.NaN }), null);
+});
