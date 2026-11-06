@@ -161,9 +161,21 @@ The baseline in v2 is a **label and a factor, not a sampled baseline**. A real d
 
 Public routes: market, reconcile, log, project list, serial lookup, retirement ledger, certificates and a farmer's own view by key. Operator routes (project registration, submissions queue, orders, retirement, releases, adding verifiers) need the operator token. Verifier decisions need no token because they must carry a valid signature from an approved key. Orders are operator-only in this build because a real buyer flow would need confirmed payment.
 
+## Satellite NDVI check (Sentinel Hub Statistical API)
+
+`GET /api/registry/ndvi?lat=…&lon=…[&bufferKm=0.5&dateFrom=…&dateTo=…]` (operator/verifier, cached 5 min) returns one of:
+
+- **`status: "ok"`** — NDVI mean / min / max / stDev over the buffer, valid-pixel count, and per-month `periods` buckets so the verifier sees the trend, not just the average (e.g. a canopy that was healthy in the growing season and dropped just before the claim).
+- **`status: "stub"`** — no provider configured; the honest placeholder, no network call.
+- **`status: "unavailable"`** — with an `error` of `bad_arguments`, `auth_failed`, `bad_request`, `provider_error` or `no_valid_pixels` (e.g. full cloud cover in the window says so, it does not invent a number).
+
+Provider: the Sentinel Hub **Statistical API** (`sentinel-2-l2a`, monthly buckets, cloud cover ≤ 30% by default). It computes NDVI statistics server-side and returns plain JSON — no raster pipeline, no Python sidecar, one authenticated POST, matching the zero-dependency Node backend and the fire-check result shape so verifiers sign both checks uniformly. Config in `.env.example`: `SENTINELHUB_TOKEN` (raw bearer) or `SENTINELHUB_CLIENT_ID` + `SENTINELHUB_CLIENT_SECRET` (OAuth client-credentials, token cached until shortly before expiry). Alternatives considered and documented in `server/ndvi.mjs`: Microsoft Planetary Computer (Python-native pixel pipeline, better suited to a future heatmap sidecar), carbonplan.org tools (data-architecture reference only, no NDVI computation).
+
+Interpretation guardrails: NDVI is **evidence, not proof** — the same caveats as the fire check apply (cloud, seasonality, sensor noise, and mixed-pixel effects near small plots), and the verifier's signed decision is still what counts.
+
 ## Limits to be honest about
 
-- **Self-reported survival counts are sampled, not measured.** The registry catches inconsistent or implausible counts and double registration, but an honest-looking false count still needs the verifier's judgment or a site visit. Satellite checks (NDVI or canopy change) and random re-inspection would be the next controls.
+- **Self-reported survival counts are sampled, not measured.** The registry catches inconsistent or implausible counts and double registration, but an honest-looking false count still needs the verifier's judgment or a site visit. Random re-inspection would be a further control.
 - **Overlap detection compares registered plots by grid sampling.** It will not catch land registered under a slightly different boundary beyond the thresholds, or boundaries drawn wrongly on purpose.
 - **GNSS from a browser is a plausibility check, not proof.** Browsers expose position and accuracy only, not raw satellite data or a mock-location flag. The quality score checks accuracy, impossible jumps, clock drift, round coordinates and the farm boundary. A determined spoofer can defeat it. A native Android build with raw GNSS measurements would be stronger.
 - **The ledger is tamper-evident, and becomes immutable only when its head is published somewhere the operator cannot edit** (a blockchain memo, a public post). That step is not built. Anchoring the head on Solana is the natural next one.
@@ -173,9 +185,10 @@ Public routes: market, reconcile, log, project list, serial lookup, retirement l
 - **The tonne conversion is a placeholder.** 18 kg CO₂e per verified tree-year is a demo factor, not measured biomass. A real project needs allometric equations, wood density and root:shoot defaults (IPCC, Chave 2014), a sampled baseline and periodic re-measurement.
 - **Article 6 fields are records, not authorisations.** They state what an operator entered; they do not constitute host-country authorisation or a corresponding adjustment. Confirm the NCCC process before relying on them.
 - **The fire check is evidence, not proof.** VIIRS detects a 375 m pixel; cloud, small fires and night-time timing can hide or invent activity, and a detection near a plot does not say whose land burned. No detection is not proof that nothing burned. It informs the verifier; it does not gate approval.
+- **The NDVI check is evidence, not proof, and only runs when it is configured.** Without `SENTINELHUB_*` keys the endpoint returns the stub status; cloud cover, seasonality and mixed pixels (a 0.5 ha plot inside a 10 m Sentinel-2 pixel) can all distort a value, and a healthy NDVI does not prove the specific claimed trees are alive. It informs the verifier; it does not gate approval.
 - Map tiles come from OpenStreetMap, fine for a demo; production use needs your own tile provider. Tiles you have viewed are cached for offline use.
 - The Redis cache holds public registry views for a few seconds. It is never a source of truth: writes invalidate it, and the server runs uncached when Redis is absent.
-- Not built: NDVI or other satellite vegetation data, multi-device sync, user accounts, real mobile-money integration.
+- Not built: multi-device sync, real mobile-money integration.
 
 ## Next steps
 
