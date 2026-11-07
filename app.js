@@ -1685,6 +1685,7 @@ function clearJoinParam() {
 async function init() {
   load();
   wireGateway(); // the split-screen signup / login gate
+  wirePasswordReveal(); // eye toggles on every password / PIN field
   // A set PIN lock is the privacy screen: nothing renders (not even the gateway)
   // until the correct PIN unlocks this phone.
   if (getLock()) { showLockOverlay(); return; }
@@ -1756,6 +1757,28 @@ function fmtFingerprint(fp) {
   if (!fp) return '—';
   return (fp.match(/.{1,4}/g) || [fp]).slice(0, 4).join('·').toUpperCase() + '…';
 }
+// Password reveal: the eye toggle flips the input between password/text.
+// Rule 13 — the eye / eye-off icons crossfade with a slight blur mid-swap.
+function wirePasswordReveal() {
+  $$('.pw-toggle').forEach((btn) => {
+    const input = document.getElementById(btn.dataset.pwFor);
+    if (!input) return;
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', String(show));
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.title = btn.getAttribute('aria-label');
+      const eye = btn.querySelector('.pw-eye');
+      const off = btn.querySelector('.pw-eye-off');
+      eye.hidden = show;
+      off.hidden = !show;
+      GN_MOTION.swapIcon(btn);
+      input.focus({ preventScroll: true });
+    });
+  });
+}
+
 function wireGateway() {
   $('#gw-tab-signup')?.addEventListener('click', () => setGatewayMode('signup'));
   $('#gw-tab-signin')?.addEventListener('click', () => setGatewayMode('login'));

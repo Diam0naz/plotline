@@ -292,10 +292,22 @@
               <input id="gw-signup-msisdn" type="tel" maxlength="20" placeholder="+234 800 000 0000" autocomplete="tel">
             </label>
             <label>PIN lock <span class="hint">optional — locks this app each time it opens</span>
-              <input id="gw-signup-pin" type="password" inputmode="numeric" minlength="4" maxlength="12" placeholder="At least 4 characters" autocomplete="new-password">
+              <span class="pw-field">
+                <input id="gw-signup-pin" type="password" inputmode="numeric" minlength="4" maxlength="12" placeholder="At least 4 characters" autocomplete="new-password">
+                <button type="button" class="pw-toggle" data-pw-for="gw-signup-pin" aria-pressed="false" aria-label="Show PIN" title="Show PIN">
+                  <svg class="pw-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="pw-eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M2 12s3.5-6 10-6c1.9 0 3.5.5 5 1.3L21 2M2 22 22 2M9 19.7c.95.2 1.95.3 3 .3 6.5 0 10-6 10-6a17 17 0 0 0-3-3.6"/></svg>
+                </button>
+              </span>
             </label>
             <label id="gw-signup-pin2-row" hidden>Confirm PIN
-              <input id="gw-signup-pin2" type="password" inputmode="numeric" maxlength="12" autocomplete="new-password">
+              <span class="pw-field">
+                <input id="gw-signup-pin2" type="password" inputmode="numeric" maxlength="12" autocomplete="new-password">
+                <button type="button" class="pw-toggle" data-pw-for="gw-signup-pin2" aria-pressed="false" aria-label="Show PIN" title="Show PIN">
+                  <svg class="pw-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="pw-eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M2 12s3.5-6 10-6c1.9 0 3.5.5 5 1.3L21 2M2 22 22 2M9 19.7c.95.2 1.95.3 3 .3 6.5 0 10-6 10-6a17 17 0 0 0-3-3.6"/></svg>
+                </button>
+              </span>
             </label>
             <div id="gw-signup-fp" class="gw-fingerprint" hidden>
               <span class="gw-fp-label">Signing key fingerprint</span>
@@ -320,7 +332,13 @@
           </div>
           <form id="gw-login-form" class="stack">
             <div id="gw-login-pin-row" hidden><label>PIN
-              <input id="gw-login-pin" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="Your PIN lock">
+              <span class="pw-field">
+                <input id="gw-login-pin" type="password" inputmode="numeric" maxlength="12" autocomplete="current-password" placeholder="Your PIN lock">
+                <button type="button" class="pw-toggle" data-pw-for="gw-login-pin" aria-pressed="false" aria-label="Show PIN" title="Show PIN">
+                  <svg class="pw-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="pw-eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M2 12s3.5-6 10-6c1.9 0 3.5.5 5 1.3L21 2M2 22 22 2M9 19.7c.95.2 1.95.3 3 .3 6.5 0 10-6 10-6a17 17 0 0 0-3-3.6"/></svg>
+                </button>
+              </span>
             </label></div>
             <div id="gw-login-err" class="alert-box red text-sm" hidden></div>
             <button id="gw-login-btn" class="primary wide lg" type="submit">Unlock &amp; continue →</button>
@@ -345,7 +363,13 @@
               <input id="gw-srv-login-user" autocomplete="username" placeholder="Email or username" required>
             </label>
             <label>Password
-              <input id="gw-srv-login-pass" type="password" autocomplete="current-password" placeholder="Your password" required>
+              <span class="pw-field">
+                <input id="gw-srv-login-pass" type="password" autocomplete="current-password" placeholder="Your password" required>
+                <button type="button" class="pw-toggle" data-pw-for="gw-srv-login-pass" aria-pressed="false" aria-label="Show password" title="Show password">
+                  <svg class="pw-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="pw-eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M2 12s3.5-6 10-6c1.9 0 3.5.5 5 1.3L21 2M2 22 22 2M9 19.7c.95.2 1.95.3 3 .3 6.5 0 10-6 10-6a17 17 0 0 0-3-3.6"/></svg>
+                </button>
+              </span>
             </label>
             <div id="gw-srv-login-err" class="alert-box red text-sm" hidden></div>
             <button id="gw-srv-login-btn" class="primary wide lg" type="submit">Sign in →</button>
@@ -371,7 +395,13 @@
               <span class="hint">2–32 characters: a–z, 0–9, dash</span>
             </label>
             <label>Password
-              <input id="gw-srv-signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+              <span class="pw-field">
+                <input id="gw-srv-signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+                <button type="button" class="pw-toggle" data-pw-for="gw-srv-signup-pass" aria-pressed="false" aria-label="Show password" title="Show password">
+                  <svg class="pw-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="pw-eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M2 12s3.5-6 10-6c1.9 0 3.5.5 5 1.3L21 2M2 22 22 2M9 19.7c.95.2 1.95.3 3 .3 6.5 0 10-6 10-6a17 17 0 0 0-3-3.6"/></svg>
+                </button>
+              </span>
             </label>
             <div id="gw-srv-signup-err" class="alert-box red text-sm" hidden></div>
             <button id="gw-srv-signup-btn" class="primary wide lg" type="submit">Create account →</button>

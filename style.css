@@ -132,6 +132,23 @@ body:not(.site):not(.console):not(.auth-page) {
 .brand span { color: var(--green); }
 .brand-sm { font-size: 16px; }
 
+/* Flush logo: icon and wordmark sit on one horizontal line */
+.brand-with-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1;
+}
+.brand-logo {
+  display: block;
+  width: 1.2em;
+  height: 1.2em;
+  flex: none;
+  border-radius: 50%;
+}
+.brand-industrial .brand-logo { width: 28px; height: 28px; }
+.site-nav .brand-logo { width: 24px; height: 24px; }
+
 /* ---------- Top nav ---------- */
 .top {
   position: sticky;
@@ -1679,3 +1696,49 @@ body:not(.site):not(.console) textarea:focus {
   vertical-align: -2px;
   margin-right: 4px;
 }
+
+/* ── Password reveal toggle (auth gateway) ── */
+.pw-field { position: relative; display: block; }
+.pw-field input { width: 100%; padding-right: 44px; }
+.pw-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--grey-500);
+  border-radius: var(--r1);
+  cursor: pointer;
+}
+.pw-toggle:hover { color: var(--grey-700); background: var(--grey-100); }
+.pw-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.auth-gateway .pw-toggle { color: rgba(255,255,255,0.45); }
+.auth-gateway .pw-toggle:hover { color: #fff; background: rgba(255,255,255,0.08); }
+
+/* ── Leaf scatter across the dark gateway too ── */
+.auth-gateway::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url('assets/leaf-pattern.svg');
+  background-repeat: repeat;
+  opacity: 0.07;
+  mix-blend-mode: screen;
+}
+.auth-gateway-inner { position: relative; z-index: 1; }
