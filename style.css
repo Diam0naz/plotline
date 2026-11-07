@@ -132,11 +132,12 @@ body:not(.site):not(.console):not(.auth-page) {
 .brand span { color: var(--green); }
 .brand-sm { font-size: 16px; }
 
-/* Flush logo: icon and wordmark sit on one horizontal line */
+/* Flush logo: icon and wordmark sit on one horizontal line.
+   Spacing rides on the img, not flex gap — gap would also split the
+   text node "Plot" from the colored span "line". */
 .brand-with-logo {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
   line-height: 1;
 }
 .brand-logo {
@@ -144,6 +145,7 @@ body:not(.site):not(.console):not(.auth-page) {
   width: 1.2em;
   height: 1.2em;
   flex: none;
+  margin-right: 8px;
   border-radius: 50%;
 }
 .brand-industrial .brand-logo { width: 28px; height: 28px; }
@@ -904,6 +906,8 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 .gw-brand span {
   color: var(--green);
 }
+
+.gw-brand .brand-logo { width: 26px; height: 26px; }
 
 .gw-pill {
   font-family: var(--font-mono);
