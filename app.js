@@ -1708,6 +1708,10 @@ async function unlockFromLockScreen() {
 //   "signup"    = generate the device identity (no network, nothing leaves the phone)
 //   "login"     = unlock the identity already on this phone (PIN when set)
 function showGateway(mode) {
+  // The gateway is fullscreen: suspend the app shell's bottom-bar padding so
+  // it doesn't extend the document past the viewport (leaving a white band
+  // under the panels).
+  document.body.classList.add('auth-page');
   $('#auth-gateway').style.display = '';
   $('#app-shell').style.display = 'none';
   setGatewayMode(mode);
@@ -1852,6 +1856,8 @@ async function onGatewayLogin(e) {
 // Everything that used to run at boot now runs once the device identity is created or unlocked.
 async function continueInit() {
   $('#auth-gateway').style.display = 'none';
+  // Back into the app shell: restore the bottom-tab-bar padding.
+  document.body.classList.remove('auth-page');
   $('#app-shell').style.display = '';
   await ensureKeys();
   $('#farm-crop').innerHTML = Object.entries(C.CROPS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
