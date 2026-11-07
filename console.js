@@ -330,6 +330,8 @@ function initMap(mapId) {
     maxZoom: 19,
     attribution: C.TILE_ATTRIBUTION,
     crossOrigin: true, // see makeMap in app.js: CORS responses are status-readable
+    keepBuffer: 4,
+    updateWhenIdle: false,
   }).addTo(m);
   const l = L.layerGroup().addTo(m);
   if (mapId === 'cmap') { map = m; mapLayer = l; }

@@ -227,6 +227,10 @@ function makeMap(el) {
     // the service worker silently failed to cache any tile. With it, explicit
     // 403s still never enter the cache, and res.ok==200 tiles do.
     crossOrigin: true,
+    // Tab-switch smoothing: keep neighbours around so returning to a tab
+    // shows the map already drawn instead of blank squares fading in.
+    keepBuffer: 4,
+    updateWhenIdle: false,
   }).addTo(m);
   return m;
 }
@@ -1618,9 +1622,17 @@ function showTab(name) {
   };
   // Rules 15/18: old and new tab states overlap in a crossfade, old leaves
   // 20% shorter — the View Transitions API handles the pairing.
-  GN_MOTION.transition(applySwitch);
-  if (name === 'farm' && farmMap) setTimeout(() => farmMap.invalidateSize(), 50);
-  if (name === 'heat') { setTimeout(() => { if (heatMap) heatMap.invalidateSize(); renderHeat(); }, 50); }
+  // Map tabs hold the transition open until the freshly revealed map has
+  // been resized and re-laid out: its container was display:none while
+  // hidden, so Leaflet's cached size went stale, and a mid-fade resize is
+  // what flickers. The new-state snapshot is only taken once the awaited
+  // promise resolves, so it captures the corrected, drawn map.
+  const resizeMap = (m) => new Promise((resolve) => requestAnimationFrame(() => { m.invalidateSize(); resolve(); }));
+  GN_MOTION.transition(() => {
+    applySwitch();
+    if (name === 'farm' && farmMap) return resizeMap(farmMap);
+    if (name === 'heat' && heatMap) return resizeMap(heatMap).then(() => renderHeat());
+  });
   if (name === 'inputs') calcInputs();
   if (name === 'records') renderRecords();
   if (name === 'trees') refreshTrees();
