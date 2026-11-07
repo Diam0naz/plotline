@@ -1442,3 +1442,240 @@ body:not(.site):not(.console) textarea:focus {
 }
 .shoot-thumb:hover { border-color: var(--red-border); }
 .shoot-thumb:hover .shoot-x { background: var(--red); }
+
+/* ════════════════════════════════════════════════════════════
+   GLOBAL MOTION SYSTEM — the 20 UI animation rules
+   ════════════════════════════════════════════════════════════ */
+
+/* ── Motion tokens ── */
+:root {
+  /* Entrances use ease-out; moves use ease-in-out. Never anything bouncy. */
+  --ease-out:   cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out:cubic-bezier(0.45, 0, 0.15, 1);
+  /* Arcs read as organic when the middle is eased, not linear. */
+  --ease-arc:   cubic-bezier(0.4, 0, 0.2, 1);
+
+  --dur-fast:   150ms;  /* dropdowns, chips */
+  --dur-base:   220ms;  /* entrances within the 150–250ms window */
+  --dur-move:   260ms;  /* told-you-so moves, slightly looser */
+  /* Exits run 20% shorter than their entrances. */
+  --dur-exit:   calc(var(--dur-base) * 0.8);
+
+  --stagger:    30ms;   /* list rows settle one after another */
+  --press-scale: 0.97;  /* pressed elements shrink, never grow */
+}
+
+/* ── 1 · Entrances: ease-out, subtle rise ── */
+@keyframes gn-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes gn-rise-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(8px); }
+}
+.gn-enter { animation: gn-rise var(--dur-base) var(--ease-out) both; }
+
+/* ── 2 · Dropdowns & popovers: 150–250ms, born at 0.95 scale,
+      growing out of their trigger corner ── */
+@keyframes gn-pop {
+  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.gn-pop {
+  transform-origin: var(--gn-origin, top right);
+  animation: gn-pop var(--dur-fast) var(--ease-out) both;
+}
+.user-dropdown { transform-origin: top right; animation: gn-pop var(--dur-fast) var(--ease-out) both; }
+
+/* ── 3 · Stagger: 30ms per row via --i set by the renderers ── */
+@keyframes gn-row {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.gn-stagger > * {
+  animation: gn-row var(--dur-base) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+/* ── 4 · Press: scale to 0.97, static while held (no tween during drag) ── */
+.gn-press, .tabs button, button, .item, .cta, .nav-cta {
+  transition: transform 80ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.gn-press:active, button:active, .item:active, .cta:active, .nav-cta:active {
+  transform: scale(var(--press-scale));
+}
+
+/* ── 8 · Success pulse: one quick breath to confirm, no bounce ── */
+@keyframes gn-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(107, 148, 84, 0.45); transform: scale(1); }
+  35%  { box-shadow: 0 0 0 6px rgba(107, 148, 84, 0.18); transform: scale(1.025); }
+  100% { box-shadow: 0 0 0 0 rgba(107, 148, 84, 0); transform: scale(1); }
+}
+.gn-pulse { animation: gn-pulse 480ms var(--ease-in-out) 1; }
+
+/* ── 7 · Arcs: elements travel on a curved path, not a straight line ── */
+@keyframes gn-arc {
+  from { opacity: 0; transform: translate(var(--arc-x, -18px), 0) translateY(0); }
+  55%  { transform: translate(calc(var(--arc-x, -18px) * 0.5), calc(var(--arc-y, -14px) * -.6)); }
+  to   { opacity: 1; transform: translate(0, 0); }
+}
+.gn-arc {
+  animation: gn-arc var(--dur-move) var(--ease-arc) both;
+}
+
+/* ── 10 · Moves: ease-in-out start to stop ── */
+.gn-move { transition: transform var(--dur-move) var(--ease-in-out), opacity var(--dur-base) var(--ease-out); }
+
+/* ── 13 · Crossfade icons with a slight blur mid-swap ── */
+@keyframes gn-icon-swap {
+  0%   { opacity: 1; filter: blur(0); }
+  45%  { opacity: 0; filter: blur(2px); }
+  50%  { opacity: 0; filter: blur(2px); }
+  100% { opacity: 1; filter: blur(0); }
+}
+.gn-icon-swap { animation: gn-icon-swap 200ms var(--ease-in-out) both; }
+
+/* ── View transitions (rules 15 & 18): old and new states overlap,
+      and the old state leaves 20% faster than the new one enters ── */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-out);
+}
+::view-transition-old(root) {
+  animation-name: gn-rise-out;
+  animation-duration: var(--dur-exit);
+}
+::view-transition-old(root) { z-index: 1; }
+
+/* Shared element: the Plotline brand morphs between the two shells
+   instead of being torn down and rebuilt (rule 20, layoutId-style). */
+.brand { view-transition-name: plotline-brand; }
+
+::view-transition-old(plotline-brand),
+::view-transition-new(plotline-brand) {
+  height: 100%;
+  overflow: hidden;
+  animation-duration: var(--dur-base);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gn-enter, .gn-pop, .gn-stagger > *, .gn-arc, .gn-pulse,
+  .user-dropdown, .gn-icon-swap {
+    animation: none !important;
+  }
+  .gn-press, .tabs button, button, .item, .cta, .nav-cta, .gn-move {
+    transition: none !important;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════
+   LEAF PATTERN — scattered organic accents behind the app
+   ════════════════════════════════════════════════════════════ */
+#app-shell { position: relative; }
+#app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url('assets/leaf-pattern.svg');
+  background-repeat: repeat;
+  opacity: 0.10;
+  mix-blend-mode: multiply;
+}
+
+/* ════════════════════════════════════════════════════════════
+   SCROLLBARS — modern overlay-style with smooth hover states
+   (no overscroll-behavior clamps; rubber-band stays native)
+   ════════════════════════════════════════════════════════════ */* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--grey-400) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--grey-300);
+  border-radius: var(--r-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--grey-400);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:active {
+  background: var(--grey-500);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Dark surfaces keep the same thumb shape but lighter for contrast */
+.auth-gateway ::-webkit-scrollbar-thumb,
+.auth-gateway *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: var(--r-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.auth-gateway ::-webkit-scrollbar-thumb:hover,
+.auth-gateway *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.auth-gateway,
+.auth-gateway * {
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-width: thin;
+}
+
+/* ── Generic hide utility used by the gateway mode switcher ── */
+.hidden { display: none !important; }
+
+/* ── Scout: photo & AI check block ── */
+.scout-photo-check {
+  border: 1px solid var(--green-200);
+  background: var(--green-50);
+  border-radius: var(--r2);
+  padding: var(--s3) var(--s3) var(--s4);
+  display: grid;
+  gap: var(--s2);
+}
+.spc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+.spc-head b { color: var(--green-700); font-size: 14px; }
+.spc-head .hint { font-size: 12px; }
+.photo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+.photo-row svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  vertical-align: -2px;
+  margin-right: 4px;
+}

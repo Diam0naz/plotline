@@ -27,14 +27,15 @@ GNSS and the service worker need a secure origin: `localhost` works for testing;
 
 ## Roles and sign-in
 
-Plotline uses a strict unified authentication interface. All roles — Standard Users, Verifiers, and Admins — sign in through the same single login form (Email/Username and Password). There are no separate "Admin Login" or "Verifier Login" tabs, buttons, or links anywhere in the public-facing UI. A user looking at the login or signup interface cannot tell that privileged roles exist in the system.
+Plotline uses a strict unified authentication interface. All roles — Standard Users, Verifiers, and Admins — sign in through the same single login form (Email/Username and Password). Signature: there is exactly one auth surface in the app — the full-page dark gateway. Auth is never a popup or floating modal; every sign-in / create-account button routes to that gateway (from the site, `app.html?join=signup` opens it directly on the sign-up panel). A user looking at the login or signup interface cannot tell that privileged roles exist in the system.
 
-- **Unified Sign-In**: A single login form is used by all roles.
+- **Gateway modes**: two "device identity" tabs (create the key that lives on the phone / welcome back) and two "Server account" tabs (sign in / create account). Switching between them stays inside the same page.
+- **Unified Sign-In**: A single server login form is used by all roles.
 - **Restricted Sign-Up**: Public account creation ("Sign Up") only allows standard users to self-register with their full name, email, username, and password. There is no Admin or Verifier sign-up.
 - **Role-Based Redirection**: Upon successful authentication through the unified form, the frontend inspects the user's role payload:
   - `admin` is routed to the console / admin dashboard (`/console.html` overview).
   - `verifier` is routed directly to the submissions queue (`/app.html` Submissions tab or `/console.html` review queue).
-  - Standard users (`user`) are routed to the standard app view (`/app.html`).
+  - Standard users (`user`) are routed to the standard app view (`/app.html`) — or straight back to the "Apply to be a verifier" form when their click before sign-in signalled that intent.
 
 ### Admin access
 

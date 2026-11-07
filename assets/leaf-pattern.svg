@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+  <!-- Plotline leaf scatter: one leaf motif, repeated at pseudo-random
+       rotations/scales so the tiling never reads as a visible grid. -->
+  <defs>
+    <g id="leaf">
+      <path d="M24 44 C 10 32, 8 14, 24 4 C 40 14, 38 32, 24 44 Z" fill="currentColor"/>
+      <path d="M24 9 V 41" stroke="var(--leaf-vein, rgba(255,255,255,0.55))" stroke-width="1" stroke-linecap="round" fill="none"/>
+      <path d="M24 16 L 19 21 M24 23 L 29 28 M24 30 L 19 34" stroke="var(--leaf-vein, rgba(255,255,255,0.55))" stroke-width="1" stroke-linecap="round" fill="none"/>
+    </g>
+  </defs>
+  <g color="#7dd396">
+    <use href="#leaf" transform="translate(18 26) rotate(-24) scale(0.9)"  opacity="0.5"/>
+    <use href="#leaf" transform="translate(132 64) rotate(38) scale(1.15)" opacity="0.34"/>
+    <use href="#leaf" transform="translate(196 12) rotate(112) scale(0.7)" opacity="0.45"/>
+    <use href="#leaf" transform="translate(64 128) rotate(88)  scale(0.8)" opacity="0.3"/>
+    <use href="#leaf" transform="translate(168 156) rotate(-64) scale(1.0)" opacity="0.26"/>
+    <use href="#leaf" transform="translate(30 196) rotate(152) scale(0.65)" opacity="0.42"/>
+    <use href="#leaf" transform="translate(110 216) rotate(24) scale(0.85)" opacity="0.3"/>
+    <use href="#leaf" transform="translate(210 214) rotate(-108) scale(0.75)" opacity="0.4"/>
+  </g>
+</svg>
