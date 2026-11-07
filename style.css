@@ -132,20 +132,24 @@ body:not(.site):not(.console):not(.auth-page) {
 .brand span { color: var(--green); }
 .brand-sm { font-size: 16px; }
 
-/* Flush logo: icon and wordmark sit on one horizontal line.
-   Spacing rides on the img, not flex gap — gap would also split the
-   text node "Plot" from the colored span "line". */
+/* Flush logo lockup: the leaf icon sits level beside the wordmark on one
+   line. Row-reverse as requested — the wordmark is wrapped in one span so
+   reversing the row can't split "Plot" from "line" (bare text nodes become
+   separate flex items and would read "line Plot"). */
 .brand-with-logo {
   display: flex;
+  flex-direction: row-reverse;
   align-items: center;
+  gap: 8px;
   line-height: 1;
+  width: fit-content;
 }
+.brand-with-logo > .brand-word { color: inherit; }
 .brand-logo {
   display: block;
   width: 1.2em;
   height: 1.2em;
   flex: none;
-  margin-right: 8px;
   border-radius: 50%;
 }
 .brand-industrial .brand-logo { width: 28px; height: 28px; }
@@ -878,6 +882,31 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   justify-content: center;
   padding: clamp(24px, 4vw, 56px);
   position: relative;
+  overflow: hidden;
+}
+/* Mist-soft leaf resting in the bottom corner of the light panel */
+.auth-card-half::after {
+  content: '';
+  position: absolute;
+  bottom: -44px;
+  right: -40px;
+  width: 170px;
+  height: 178px;
+  background-image: url('assets/monstera/leaf-mist.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.85;
+  transform: rotate(18deg);
+  --leaf-rot: 18deg;
+  pointer-events: none;
+  animation: leaf-sway 10s var(--ease-in-out) infinite;
+}
+@keyframes leaf-sway {
+  0%, 100% { transform: translateY(0) rotate(var(--leaf-rot, 18deg)); }
+  50%      { transform: translateY(-7px) rotate(calc(var(--leaf-rot, 18deg) + 2.5deg)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-card-half::after, .scout-photo-check::after, .apply-section::before, .dash-greeting::after { animation: none; }
 }
 
 .auth-gateway-card {
@@ -1322,7 +1351,24 @@ body:not(.site):not(.console) textarea:focus {
 .user-dropdown-sep { height: 1px; background: var(--border-2); margin: 6px 4px; }
 
 /* ---------- Dashboard ---------- */
-.dash-greeting { padding: var(--s5) var(--s4) var(--s3); }
+.dash-greeting { padding: var(--s5) var(--s4) var(--s3); position: relative; overflow: hidden; }
+/* Mist leaf drifting behind the dashboard greeting */
+.dash-greeting::after {
+  content: '';
+  position: absolute;
+  right: -14px;
+  top: -18px;
+  width: 96px;
+  height: 100px;
+  background-image: url('assets/monstera/leaf-mist.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.6;
+  transform: rotate(140deg);
+  --leaf-rot: 140deg;
+  pointer-events: none;
+  animation: leaf-sway 10s var(--ease-in-out) infinite;
+}
 .dash-greeting h1 { font-size: 26px; margin-bottom: 2px; letter-spacing: -0.02em; }
 .dash-greeting p { margin: 0; }
 
@@ -1402,6 +1448,27 @@ body:not(.site):not(.console) textarea:focus {
 
 /* ---------- Verifier badge alignment ---------- */
 .apply-section { gap: var(--s3); }
+.apply-section {
+  position: relative;
+  overflow: hidden;
+}
+/* Full-colour leaf crest behind the verifier application panel */
+.apply-section::before {
+  content: '';
+  position: absolute;
+  top: -36px;
+  right: -32px;
+  width: 128px;
+  height: 134px;
+  background-image: url('assets/monstera/leaf.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.14;
+  transform: rotate(28deg);
+  --leaf-rot: 28deg;
+  pointer-events: none;
+  animation: leaf-sway 9s var(--ease-in-out) infinite;
+}
 
 /* ---------- PIN lock overlay (device privacy screen) ---------- */
 .lock-overlay {
@@ -1689,6 +1756,25 @@ body:not(.site):not(.console) textarea:focus {
   padding: var(--s3) var(--s3) var(--s4);
   display: grid;
   gap: var(--s2);
+  position: relative;
+  overflow: hidden;
+}
+/* Small misted leaf tucked behind the AI-check header */
+.scout-photo-check::after {
+  content: '';
+  position: absolute;
+  top: -22px;
+  right: -20px;
+  width: 84px;
+  height: 88px;
+  background-image: url('assets/monstera/leaf-mist.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.75;
+  transform: rotate(-12deg);
+  --leaf-rot: -12deg;
+  pointer-events: none;
+  animation: leaf-sway 9s var(--ease-in-out) infinite;
 }
 .spc-head {
   display: flex;

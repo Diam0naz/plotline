@@ -82,7 +82,9 @@ body.site {
   background-repeat: no-repeat;
   opacity: 0.18;
   transform: rotate(-14deg);
+  --leaf-rot: -14deg;
   pointer-events: none;
+  animation: leaf-sway 9s var(--ease-in-out) infinite;
 }
 @media (max-width: 800px) {
   .hero { grid-template-columns: 1fr; padding: var(--s10) var(--s4); gap: var(--s8); }
@@ -127,6 +129,23 @@ body.site {
   box-shadow: var(--shadow-xl);
   position: relative;
   overflow: hidden;
+}
+/* Dark leaf crest tucked into the top-right of the dark proof card */
+.proof::after {
+  content: '';
+  position: absolute;
+  top: -34px;
+  right: -34px;
+  width: 132px;
+  height: 138px;
+  background-image: url('assets/monstera/leaf-dark.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.5;
+  transform: rotate(16deg);
+  --leaf-rot: 16deg;
+  pointer-events: none;
+  animation: leaf-sway 9s var(--ease-in-out) infinite;
 }
 .proof::before {
   content: '';
@@ -273,6 +292,31 @@ body.site {
   flex-direction: column;
   gap: var(--s3);
   box-shadow: var(--shadow-xs);
+  position: relative;
+  overflow: hidden;
+}
+/* Full-colour leaf crest anchored to each role card corner */
+.role-card::after {
+  content: '';
+  position: absolute;
+  bottom: -30px;
+  right: -26px;
+  width: 110px;
+  height: 116px;
+  background-image: url('assets/monstera/leaf.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.16;
+  transform: rotate(24deg);
+  pointer-events: none;
+  animation: leaf-sway 9s var(--ease-in-out) infinite;
+}
+@keyframes leaf-sway {
+  0%, 100% { transform: translateY(0) rotate(var(--leaf-rot, 24deg)); }
+  50%      { transform: translateY(-7px) rotate(calc(var(--leaf-rot, 24deg) + 2deg)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-copy::after, .proof::after, .role-card::after { animation: none; }
 }
 .role-card .role-icon {
   width: 44px; height: 44px;

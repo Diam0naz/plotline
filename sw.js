@@ -1,6 +1,6 @@
 // Service worker: the app shell is cached on install so Plotline opens with no network.
 // Map tiles are cached as they are viewed, so areas you have already looked at stay visible offline.
-const VERSION = 'plotline-v10'; // bump on shell changes: the fetch handler is cache-first, so a stale version keeps serving the old app forever
+const VERSION = 'plotline-v11'; // bump on shell changes: the fetch handler is cache-first, so a stale version keeps serving the old app forever
 const SHELL = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const SHELL = [
   './style.css',
   './app.js',
   './core.js',
+  './sw-update.js',
   './manifest.webmanifest',
   './icon.svg',
   './assets/leaf-pattern.svg',
@@ -35,6 +36,12 @@ self.addEventListener('activate', (e) => {
       .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== TILES).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+// sw-update.js asks the waiting worker to take over immediately, so new
+// shells upgrade automatically instead of waiting for every tab to close.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 async function trimTiles(cache) {

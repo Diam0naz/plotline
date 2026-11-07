@@ -1872,7 +1872,8 @@ async function continueInit() {
   maybeOnboarding();
   publishBatches(); flushOutbox();
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  // Auto-upgrade of the service worker moved to sw-update.js (shared with the
+  // landing page and console): it checks, activates and reloads automatically.
   await initAuth();
 }
 
