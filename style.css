@@ -663,6 +663,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
    ════════════════════════════════════════════════════════════ */
 .auth-gateway {
   min-height: 100vh;
+  min-height: 100dvh; /* keeps up with dynamic mobile toolbars */
   width: 100%;
   display: flex;
   background: var(--industrial-black);
@@ -677,7 +678,9 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   width: 100%;
+  /* stretch is the default: both halves grow to the full row height */
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 @media (max-width: 960px) {
@@ -685,6 +688,12 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
     grid-template-columns: 1fr;
     display: flex;
     flex-direction: column;
+  }
+  /* Stacked: the art panel still owns the first full screen, so the dark
+     half never stops mid-viewport with the white card underneath it. */
+  .climate-art-half {
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 }
 
@@ -699,7 +708,6 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   position: relative;
   overflow: hidden;
 }
-
 .climate-art-half::before {
   content: '';
   position: absolute;
@@ -778,6 +786,8 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 .climate-doodle-stage {
   position: relative;
   z-index: 2;
+  flex: 1 1 auto;   /* absorbs spare height so the ticker stays at the bottom */
+  min-height: 220px;
   margin: var(--s5) auto;
   width: 100%;
   max-width: 580px;
@@ -828,6 +838,9 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 .climate-telemetry-strip {
   position: relative;
   z-index: 2;
+  /* anchors the terminal strip to the bottom of the panel no matter how
+     tall the panel or its siblings are */
+  margin-top: auto;
   display: flex;
   align-items: center;
   gap: var(--s4);
