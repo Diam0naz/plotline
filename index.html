@@ -20,6 +20,7 @@
   <nav aria-label="Site">
     <a href="#how">How it works</a>
     <a href="#features">Features</a>
+    <a href="#accounts">Accounts</a>
     <a href="#roles">Get started</a>
     <a class="nav-cta" href="app.html?join=signup">Sign up</a>
   </nav>
@@ -83,27 +84,311 @@
   </section>
 
   <!-- Features -->
-  <section id="features" class="band">
-    <h2>What is inside</h2>
-    <div class="cards4">
-      <article>
-        <h3>Boundary &amp; inputs</h3>
-        <p>Area, perimeter, plant counts and seed or fertiliser quantities from the plot you walked.</p>
+  <section id="features" class="band features-band">
+    <div class="features-intro">
+      <p class="eyebrow-sm">Verified pipeline</p>
+      <h2>From a walk round the farm to a retired credit</h2>
+      <p class="band-lede">The complete carbon-monitoring chain — map, record, submit, verify, issue, and retire — runs today, offline, on a midrange Android phone.</p>
+    </div>
+
+    <!-- Stat strip: 4 big numbers with one-line captions -->
+    <dl class="feat-stats" aria-label="Key verification and platform metrics">
+      <div class="feat-stat">
+        <dt class="feat-stat-val">40–60%</dt>
+        <dd class="feat-stat-cap">of a small project's credit value is usually lost to MRV</dd>
+      </div>
+      <div class="feat-stat">
+        <dt class="feat-stat-val">74</dt>
+        <dd class="feat-stat-cap">automated tests across crypto, ledger chain, registry lifecycle and access control</dd>
+      </div>
+      <div class="feat-stat">
+        <dt class="feat-stat-val">0</dt>
+        <dd class="feat-stat-cap">dependencies in the codebase</dd>
+      </div>
+      <div class="feat-stat">
+        <dt class="feat-stat-val">10%</dt>
+        <dd class="feat-stat-cap">issuance fee only on credits that pass verification</dd>
+      </div>
+    </dl>
+
+    <!-- 5-step journey rail -->
+    <div class="journey-rail-wrap">
+      <p class="journey-rail-label">The 5-step MRV &amp; registry pipeline</p>
+      <ol class="journey-rail" aria-label="5-step carbon monitoring journey">
+        <li class="journey-step">
+          <span class="journey-num" aria-hidden="true">1</span>
+          <div class="journey-step-body">
+            <strong class="journey-step-title">Map</strong>
+            <span class="journey-step-sub">Walk plot boundary offline</span>
+          </div>
+        </li>
+        <li class="journey-step">
+          <span class="journey-num" aria-hidden="true">2</span>
+          <div class="journey-step-body">
+            <strong class="journey-step-title">Record</strong>
+            <span class="journey-step-sub">Signed field observations</span>
+          </div>
+        </li>
+        <li class="journey-step">
+          <span class="journey-num" aria-hidden="true">3</span>
+          <div class="journey-step-body">
+            <strong class="journey-step-title">Submit</strong>
+            <span class="journey-step-sub">Satellite &amp; PAN checks</span>
+          </div>
+        </li>
+        <li class="journey-step">
+          <span class="journey-num" aria-hidden="true">4</span>
+          <div class="journey-step-body">
+            <strong class="journey-step-title">Verify</strong>
+            <span class="journey-step-sub">Accredited verifier keys</span>
+          </div>
+        </li>
+        <li class="journey-step">
+          <span class="journey-num" aria-hidden="true">5</span>
+          <div class="journey-step-body">
+            <strong class="journey-step-title">Issue &amp; retire</strong>
+            <span class="journey-step-sub">Serials &amp; certificates</span>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <!-- Eight feature cards -->
+    <div class="features-grid">
+
+      <article class="feat-card">
+        <div class="feat-card-top">
+          <span class="feat-step-pill">Step 1 · Map</span>
+        </div>
+        <h3>Walk your boundary</h3>
+        <p>The phone logs GNSS points into a polygon: area, perimeter, plant counts, seed and fertiliser quantities. Maps are cached while you have signal, so it works with none.</p>
+        <div class="feat-chip-wrap">
+          <span class="feat-proof-chip">Works offline</span>
+        </div>
       </article>
-      <article>
-        <h3>Field scouting</h3>
-        <p>Pest, disease, water stress, weeds or nutrient deficiency, pinned to where you saw it and signed on the phone.</p>
+
+      <article class="feat-card">
+        <div class="feat-card-top">
+          <span class="feat-step-pill">Step 2 · Record</span>
+        </div>
+        <h3>Records signed at birth</h3>
+        <p>Scouting for pests, disease, water stress, weeds and nutrient deficiency, plus planting and harvest notes, pinned to location and signed on the phone the moment they are created. PIN-locked local keys mean no account or password in a cloud.</p>
+        <div class="feat-chip-wrap">
+          <span class="feat-proof-chip">ES256 / ECDSA P-256</span>
+        </div>
       </article>
-      <article>
+
+      <article class="feat-card">
+        <div class="feat-card-top">
+          <span class="feat-step-pill">Step 2 · Record</span>
+        </div>
         <h3>Outbreak watch</h3>
-        <p>Heat map and alerts when three or more reports of the same problem land within 1 km over 14 days.</p>
+        <p>When three or more reports of the same problem land within 1 km over 14 days, a heat map and alert fire for the area.</p>
+        <div class="feat-chip-wrap">
+          <span class="feat-proof-chip">3 reports / 1 km / 14 days</span>
+        </div>
       </article>
-      <article>
-        <h3>Verified carbon credits</h3>
-        <p>Planting and survival checks go to an independent verifier. Approval issues unique serial numbers — one tonne, one serial.</p>
+
+      <article class="feat-card">
+        <div class="feat-card-top">
+          <span class="feat-step-pill">Step 3 · Submit</span>
+        </div>
+        <h3>Satellite evidence</h3>
+        <p>Each submission carries a farm snapshot and automated checks for fire overlap and PAN. NDVI trajectory (integrating) adds historical context without claiming live satellite feeds.</p>
+        <div class="feat-chip-wrap">
+          <span class="feat-proof-chip">Fire + PAN checks</span>
+        </div>
       </article>
+
+      <article class="feat-card">
+        <div class="feat-card-top">
+          <span class="feat-step-pill">Step 4 · Verify</span>
+        </div>
+        <h3>Verifiers who put their name on it</h3>
+        <p>Accredited verifiers review the queue and sign approve or reject decisions with their own keys. A credit score gates what they can sign, and accreditation expiry rules are enforced.</p>
+        <div class="feat-chip-wrap">
+          <span class="feat-proof-chip">Signed decisions</span>
+        </div>
+      </article>
+
+      <article class="feat-card">
+        <div class="feat-card-top">
+          <span class="feat-step-pill">Step 5 · Issue &amp; retire</span>
+        </div>
+        <h3>A registry you can audit without trusting us</h3>
+        <p>Every event goes into an append-only, hash-chained ledger whose head is anchored externally to Solana, so nobody, including us, can rewrite history. Farmer records stay private; only aggregated carbon claims go public.</p>
+        <div class="feat-chip-wrap">
+          <span class="feat-proof-chip">Hash-chained + anchored</span>
+        </div>
+      </article>
+
+      <article class="feat-card">
+        <div class="feat-card-top">
+          <span class="feat-step-pill">Step 5 · Issue &amp; retire</span>
+        </div>
+        <h3>One tonne, one serial</h3>
+        <p>Approved lots get unique serials (PL-NG########), buyers place orders, and each retirement produces a certificate anyone can verify.</p>
+        <div class="feat-chip-wrap">
+          <span class="feat-proof-chip">₦2,000 per retired tonne</span>
+        </div>
+      </article>
+
+      <article class="feat-card">
+        <div class="feat-card-top">
+          <span class="feat-step-pill">Step 5 · Operator</span>
+        </div>
+        <h3>Operator console</h3>
+        <p>Market data, orders, reconciliation and verifier management in one place, with methodology registry support (MS-1, MS-2).</p>
+        <div class="feat-chip-wrap">
+          <span class="feat-proof-chip">MS-1 / MS-2</span>
+        </div>
+      </article>
+
+    </div>
+
+    <!-- Unit economics footer strip linking to pitch deck -->
+    <div class="feat-unit-strip">
+      <div class="feat-unit-text">
+        <span class="feat-unit-tag">Unit economics</span>
+        <p>5,000 farms &times; ~0.5 ha &times; ~2 t CO<sub>2</sub>e/ha/yr is about 5,000 t. At ~$20/t nature-based removal pricing, that is a pilot built on real tonnes.</p>
+      </div>
+      <a href="pitch-deck.html" class="cta feat-deck-link">
+        Read pitch deck <span aria-hidden="true">&rarr;</span>
+      </a>
+    </div>
+
+  </section>
+
+  <!-- How accounts work -->
+  <section id="accounts" class="band accounts-band">
+    <div class="accounts-intro">
+      <p class="eyebrow-sm">Two layers of identity</p>
+      <h2>How accounts work</h2>
+      <p class="band-lede">Plotline separates two things that are usually tangled together: <em>who you are on this device</em> and <em>your server account</em>. You can use the full farmer app with neither — but understanding both unlocks the whole system.</p>
+    </div>
+
+    <!-- Two identity types side by side -->
+    <div class="accounts-two-col">
+      <div class="acc-type acc-type--device">
+        <div class="acc-type-icon">🔑</div>
+        <h3>Device identity</h3>
+        <p>A cryptographic key generated on your phone the first time you open the app. It signs every record you create — farm boundaries, scout reports, tree plantings — so each one is traceable to you, even offline.</p>
+        <ul class="acc-bullets">
+          <li>Lives on your phone, never leaves it</li>
+          <li>Works with zero network access</li>
+          <li>No email, no password</li>
+        </ul>
+        <span class="acc-badge acc-badge--device">Created at first launch</span>
+      </div>
+
+      <div class="acc-divider" aria-hidden="true">
+        <span class="acc-divider-line"></span>
+        <span class="acc-divider-plus">+</span>
+        <span class="acc-divider-line"></span>
+      </div>
+
+      <div class="acc-type acc-type--server">
+        <div class="acc-type-icon">🌐</div>
+        <h3>Server account</h3>
+        <p>An optional username and password that lets the server know who you are across devices. Required to submit trees for carbon credit verification and to receive payouts.</p>
+        <ul class="acc-bullets">
+          <li>Enables cross-device sync</li>
+          <li>Required for verifier workflow</li>
+          <li>Email, username and password</li>
+        </ul>
+        <span class="acc-badge acc-badge--server">Sign up at any time</span>
+      </div>
+    </div>
+
+    <!-- One auth surface callout -->
+    <div class="accounts-surface-note">
+      <span class="accounts-surface-icon" aria-hidden="true">🔒</span>
+      <p><strong>One sign-in surface.</strong> All roles — farmers, verifiers, and admins — use the same login form. You can't tell from the login screen that privileged roles exist. Role-based redirection happens after you authenticate.</p>
+    </div>
+
+    <!-- Role map flow diagram -->
+    <div class="role-flow" aria-label="Role and access pathway diagram">
+      <p class="role-flow-label">How roles are assigned and what they unlock</p>
+
+      <div class="role-flow-grid">
+
+        <!-- Standard user -->
+        <div class="rf-node rf-node--farmer">
+          <div class="rf-icon">🌱</div>
+          <div class="rf-body">
+            <strong>Standard user</strong>
+            <span>Signs up with email + password</span>
+            <div class="rf-unlocks">
+              <span>Farm mapping</span>
+              <span>Scout reports</span>
+              <span>Tree submission</span>
+              <span>Records &amp; ledger</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="rf-arrow rf-arrow--right" aria-hidden="true">
+          <span class="rf-arrow-label">Apply in Profile tab</span>
+          <svg viewBox="0 0 48 12" width="48" height="12" aria-hidden="true"><path d="M0 6 h40 M36 2 l6 4 -6 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <!-- Verifier -->
+        <div class="rf-node rf-node--verifier">
+          <div class="rf-icon">🔍</div>
+          <div class="rf-body">
+            <strong>Verifier</strong>
+            <span>Admin approves application, sends activation code</span>
+            <div class="rf-unlocks">
+              <span>All farmer access</span>
+              <span>Submissions queue</span>
+              <span>Sign decisions with key</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="rf-arrow rf-arrow--right rf-arrow--admin" aria-hidden="true">
+          <span class="rf-arrow-label">Pre-provisioned at boot</span>
+          <svg viewBox="0 0 48 12" width="48" height="12" aria-hidden="true"><path d="M0 6 h40 M36 2 l6 4 -6 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <!-- Admin -->
+        <div class="rf-node rf-node--admin">
+          <div class="rf-icon">⚙️</div>
+          <div class="rf-body">
+            <strong>Admin / Operator</strong>
+            <span>Username <code>admin</code> · password set by env var or operator token</span>
+            <div class="rf-unlocks">
+              <span>Project registration</span>
+              <span>Credit issuance</span>
+              <span>Payout management</span>
+              <span>Full audit log</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Verifier activation callout below the flow -->
+      <div class="rf-activation">
+        <div class="rf-activation-step">
+          <span class="rf-activation-n">1</span>
+          <p>Logged-in standard user submits verifier application in the <strong>Profile</strong> tab — name, organisation, qualification reason.</p>
+        </div>
+        <div class="rf-activation-arrow" aria-hidden="true">→</div>
+        <div class="rf-activation-step">
+          <span class="rf-activation-n">2</span>
+          <p>Admin reviews in the console and approves. A unique code like <code>VACT-XXXX-XXXX</code> is generated and sent off-band.</p>
+        </div>
+        <div class="rf-activation-arrow" aria-hidden="true">→</div>
+        <div class="rf-activation-step">
+          <span class="rf-activation-n">3</span>
+          <p>User enters the code in the <strong>Activate verifier role</strong> field. Their account upgrades immediately — new tabs appear on the spot.</p>
+        </div>
+      </div>
     </div>
   </section>
+
+  <div class="leaf-band leaf-band--alt" aria-hidden="true"></div>
 
   <!-- Role CTAs -->
   <section id="roles" class="band role-band">
