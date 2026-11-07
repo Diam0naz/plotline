@@ -326,7 +326,11 @@ function initMap(mapId) {
   if (!el || typeof L === 'undefined') return;
   if (mapId === 'cmap' && map) { map.invalidateSize(); return; }
   const m = L.map(mapId).setView([9.9, 8.9], 12);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(m);
+  L.tileLayer(C.TILE_URL, {
+    maxZoom: 19,
+    attribution: C.TILE_ATTRIBUTION,
+    crossOrigin: true, // see makeMap in app.js: CORS responses are status-readable
+  }).addTo(m);
   const l = L.layerGroup().addTo(m);
   if (mapId === 'cmap') { map = m; mapLayer = l; }
   return { map: m, layer: l };

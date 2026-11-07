@@ -219,9 +219,14 @@ function makeMap(el) {
     return null;
   }
   const m = L.map(el).setView([9.8965, 8.8583], 15);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  L.tileLayer(C.TILE_URL, {
     maxZoom: 19,
-    attribution: '© OpenStreetMap contributors',
+    attribution: C.TILE_ATTRIBUTION,
+    // CORS mode makes tile responses status-readable: without it the browser
+    // answers with opaque responses (status 0), res.ok is false for those, and
+    // the service worker silently failed to cache any tile. With it, explicit
+    // 403s still never enter the cache, and res.ok==200 tiles do.
+    crossOrigin: true,
   }).addTo(m);
   return m;
 }

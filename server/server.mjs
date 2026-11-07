@@ -168,7 +168,10 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
   const SEC_HEADERS = {
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
-    'referrer-policy': 'no-referrer',
+    // strict-origin-when-cross-origin (the browser default) rather than
+    // 'no-referrer': OSM's tile policy requires a valid Referer on requests
+    // to tile.openstreetmap.org, which 'no-referrer' stripped everywhere.
+    'referrer-policy': 'strict-origin-when-cross-origin',
     'content-security-policy':
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
       "font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; " +

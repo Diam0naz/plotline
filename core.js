@@ -4,6 +4,15 @@
 const R = 6371008.8; // mean Earth radius, metres
 const toRad = (d) => (d * Math.PI) / 180;
 
+// ---------- map tiles ----------
+// Single source of truth for the basemap raster URL (OSM policy §1: exactly
+// this HTTPS URL; §"You should": avoid hard-coding it in many places, so a
+// provider switch needs no app update). sw.js matches tile requests by
+// hostname so it keeps working for any URL on the same host.
+export const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+export const TILE_ATTRIBUTION = '© OpenStreetMap contributors';
+
+
 // ---------- geometry ----------
 
 export function haversine(a, b) {
