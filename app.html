@@ -269,11 +269,11 @@
       <div class="auth-gateway-card">
         <div class="gw-brand-row">
           <div class="gw-brand">Plot<span>line</span></div>
-          <span class="gw-pill">Device identity</span>
+          <span class="gw-pill" id="gw-pill-mode">Device identity</span>
         </div>
 
         <!-- Segmented Mode Switcher -->
-        <div class="gw-mode-switch">
+        <div class="gw-mode-switch" id="gw-mode-switch">
           <button id="gw-tab-signup" class="gw-tab active" type="button">Create identity</button>
           <button id="gw-tab-signin" class="gw-tab" type="button">Welcome back</button>
         </div>
@@ -328,8 +328,58 @@
           <p class="gw-switch-link">Not you? <a href="#" id="gw-go-signup" class="text-red">Start a new identity</a> <span class="text-faint text-xs">(clears this phone's records)</span></p>
         </div>
 
-        <!-- Verifier / operator route (server session, separate from the device identity) -->
-        <p class="gw-switch-link" style="border-top:1px solid var(--border-2); padding-top:var(--s3); margin-top:var(--s2)"><a href="#" id="gw-verifier-link">Verifier or operator? Sign in →</a></p>
+        <!-- Verifier / operator / standard-user route (server session, separate from the device identity) -->
+        <div class="gw-mode-switch" id="gw-srv-switch" hidden>
+          <button id="gw-srv-tab-in" class="gw-tab active" type="button">Sign in</button>
+          <button id="gw-srv-tab-up" class="gw-tab" type="button">Create account</button>
+        </div>
+
+        <!-- Server Sign in — verifiers, operators and standard accounts -->
+        <div id="gw-panel-server-in" hidden>
+          <div class="gw-panel-head">
+            <h2>Sign in to your account</h2>
+            <p>For verifiers, operators and app accounts. Farmers can just create a field identity above — it never needs a password.</p>
+          </div>
+          <form id="gw-srv-login-form" class="stack">
+            <label>Email or username
+              <input id="gw-srv-login-user" autocomplete="username" placeholder="Email or username" required>
+            </label>
+            <label>Password
+              <input id="gw-srv-login-pass" type="password" autocomplete="current-password" placeholder="Your password" required>
+            </label>
+            <div id="gw-srv-login-err" class="alert-box red text-sm" hidden></div>
+            <button id="gw-srv-login-btn" class="primary wide lg" type="submit">Sign in →</button>
+          </form>
+          <p class="gw-switch-link"><a href="#" id="gw-back-device">Back to field identity</a> · No account? <a href="#" id="gw-go-srv-up">Create one</a></p>
+        </div>
+
+        <!-- Server Sign up — standard accounts (application-based verifiers upgrade later) -->
+        <div id="gw-panel-server-up" hidden>
+          <div class="gw-panel-head">
+            <h2>Create your account</h2>
+            <p>A standard account can apply to become a verifier once approved off-band by the registry.</p>
+          </div>
+          <form id="gw-srv-signup-form" class="stack">
+            <label>Full name
+              <input id="gw-srv-signup-name" required maxlength="80" placeholder="Your full name">
+            </label>
+            <label>Email address
+              <input id="gw-srv-signup-email" type="email" required maxlength="120" placeholder="you@example.com">
+            </label>
+            <label>Username
+              <input id="gw-srv-signup-user" required maxlength="32" placeholder="lowercase letters, numbers, dashes" autocomplete="username">
+              <span class="hint">2–32 characters: a–z, 0–9, dash</span>
+            </label>
+            <label>Password
+              <input id="gw-srv-signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+            </label>
+            <div id="gw-srv-signup-err" class="alert-box red text-sm" hidden></div>
+            <button id="gw-srv-signup-btn" class="primary wide lg" type="submit">Create account →</button>
+          </form>
+          <p class="gw-switch-link"><a href="#" id="gw-back-device-up">Back to field identity</a> · Already registered? <a href="#" id="gw-go-srv-in">Sign in</a></p>
+        </div>
+
+        <p class="gw-switch-link" style="border-top:1px solid var(--border-2); padding-top:var(--s3); margin-top:var(--s2)"><a href="#" id="gw-verifier-link">Verifier or operator? Use a server account →</a></p>
       </div>
     </div>
 
@@ -359,8 +409,7 @@
 <!-- ── Mission Control Telemetry Top bar ── -->
 <header class="top industrial-top">
   <div class="brand-industrial">
-    <a href="./" class="brand brand-sm">Plot<span>line</span></a>
-    <span class="telemetry-beacon"><span class="beacon-dot"></span><span class="beacon-label">AGRI-GNSS</span></span>
+    <a href="./" class="brand brand-sm brand-with-logo"><img src="icon.svg" alt="" class="brand-logo" width="28" height="28" aria-hidden="true">Plot<span>line</span></a>
   </div>
   <div class="chips">
     <span id="gps-chip" class="chip chip-radar" hidden><span class="radar-ping"></span><span id="gps-text">GPS</span></span>
@@ -534,17 +583,24 @@
       <label>Note (optional)
         <textarea id="scout-note" rows="2" maxlength="200" placeholder="e.g. holes in leaves, near the north edge"></textarea>
       </label>
-      <div class="photo-row">
-        <input id="scout-photos" type="file" accept="image/jpeg,image/png" capture="environment" multiple hidden>
-        <button id="scout-photo-btn" type="button" class="sm">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
-          Add photos
-        </button>
-        <button id="scout-ai-btn" type="button" class="sm secondary" disabled>Check with AI</button>
-        <span id="scout-ai-chip" class="chip soft" hidden></span>
+      <div class="scout-photo-check">
+        <div class="spc-head">
+          <b>Photo &amp; AI check</b>
+          <span class="hint">optional, needs a signal</span>
+        </div>
+        <div class="photo-row">
+          <input id="scout-photos" type="file" accept="image/jpeg,image/png" capture="environment" multiple hidden>
+          <button id="scout-photo-btn" type="button" class="sm">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+            Add photos
+          </button>
+          <button id="scout-ai-btn" type="button" class="sm secondary" disabled>Check with AI</button>
+          <span id="scout-ai-chip" class="chip soft" hidden></span>
+        </div>
+        <div id="scout-thumbs" class="photo-strip"></div>
+        <div id="scout-ai-verdict" class="result" hidden></div>
+        <p class="hint">Up to 3 photos are hashed on this phone for provenance — the images never leave it except for the AI check.</p>
       </div>
-      <div id="scout-thumbs" class="photo-strip"></div>
-      <div id="scout-ai-verdict" class="result" hidden></div>
       <button id="scout-btn" class="primary wide">Save report</button>
       <div id="scout-result"></div>
     </div>
@@ -775,8 +831,8 @@
       <!-- State 1: Unauthenticated -->
       <div id="verifier-logged-out" class="stack">
         <h3>Become a verifier</h3>
-        <p>Independent verifiers review submissions and earn 5% of each credit sale. Sign in or create an account to apply or activate your verifier access.</p>
-        <button id="verifier-signin-btn" class="primary wide" type="button">Sign in / Register</button>
+        <p>Independent verifiers review submissions and earn 5% of each credit sale. Applying takes a minute — sign in or create the account needed for the application along the way.</p>
+        <button id="verifier-apply-btn" class="primary wide" type="button">Apply to be a verifier</button>
       </div>
 
       <!-- State 2: Logged in as Standard User -->
@@ -943,62 +999,6 @@
 </nav>
 </div><!-- /app-shell -->
 
-<!-- ── Unified Authentication Modal (Role-Agnostic) ── -->
-<dialog id="auth-dialog">
-  <div class="auth-card" style="margin:0 auto;border:0;box-shadow:none">
-    <div class="auth-card-head">
-      <div class="brand">Plot<span>line</span></div>
-      <!-- Mode tabs: Sign in / Create account -->
-      <div style="display:flex;gap:0;margin:var(--s4) 0 0;border-bottom:1px solid var(--border-2)">
-        <button id="modal-tab-signin" class="auth-mode-tab active" type="button"
-          style="flex:1;padding:10px;border:0;border-bottom:2px solid var(--green);background:none;font-weight:600;font-size:14px;color:var(--green);cursor:pointer">Sign in</button>
-        <button id="modal-tab-signup" class="auth-mode-tab" type="button"
-          style="flex:1;padding:10px;border:0;border-bottom:2px solid transparent;background:none;font-weight:500;font-size:14px;color:var(--text-2);cursor:pointer">Create account</button>
-      </div>
-    </div>
-
-    <!-- Unified Sign in form -->
-    <div id="modal-panel-signin" class="auth-card-body">
-      <form id="modal-login-form" class="stack">
-        <label>Email or Username
-          <input id="modal-login-user" autocomplete="username" placeholder="Email or username" required>
-        </label>
-        <label>Password
-          <input id="modal-login-pass" type="password" autocomplete="current-password" placeholder="Your password" required>
-        </label>
-        <div id="modal-login-err" class="alert-box red text-sm" hidden></div>
-        <button id="modal-login-btn" class="primary wide" type="submit">Sign in →</button>
-      </form>
-    </div>
-
-    <!-- Restricted Sign up form (standard users only) -->
-    <div id="modal-panel-signup" class="auth-card-body" hidden>
-      <form id="modal-signup-form" class="stack">
-        <label>Full name
-          <input id="modal-signup-name" required maxlength="80" placeholder="Your full name">
-        </label>
-        <label>Email address
-          <input id="modal-signup-email" type="email" required maxlength="120" placeholder="you@example.com">
-        </label>
-        <label>Username
-          <input id="modal-signup-user" required maxlength="32" placeholder="lowercase letters, numbers, dashes" autocomplete="username">
-          <span class="hint">2–32 characters: a–z, 0–9, dash</span>
-        </label>
-        <label>Password
-          <input id="modal-signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
-        </label>
-        <div id="modal-signup-err" class="alert-box red text-sm" hidden></div>
-        <button id="modal-signup-btn" class="primary wide" type="submit">Create account →</button>
-      </form>
-    </div>
-
-    <div class="auth-card-foot">
-      <span id="modal-foot-signin">Don't have an account? <a href="#" id="modal-go-signup">Create one</a></span>
-      <span id="modal-foot-signup" hidden>Already have an account? <a href="#" id="modal-go-signin">Sign in</a></span>
-      <div style="margin-top:var(--s2)"><button id="modal-auth-close" class="quiet sm" type="button">Cancel</button></div>
-    </div>
-  </div>
-</dialog>
 
 <div id="toast" role="status" aria-live="polite"></div>
 

@@ -51,6 +51,64 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
 }
 
+// ── Global motion utilities (the 20 UI animation rules) ─────────────────────
+// Small helpers above CSS tokens + the View Transitions API — no framework.
+const GN_MOTION = (() => {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const vtOkay = typeof document.startViewTransition === 'function';
+  return {
+    reduced,
+    // Rules 1 & 15/18 inside a wrapped View Transition (overlap + crossfade).
+    async transition(fn) {
+      if (reduced || !vtOkay) return fn();
+      return document.startViewTransition(fn).finished;
+    },
+    // Rule 1: ease-out entrance with an opt-out at 30ms-per-row stagger.
+    enter(el, i = null) {
+      if (!el) return;
+      el.classList.remove('gn-enter');
+      if (i !== null && !reduced) {
+        el.style.setProperty('--i', i);
+        el.classList.add('gn-stagger'); // applied to the container
+      } else {
+        el.classList.add('gn-enter');
+      }
+    },
+    // Rule 4: press stays static — only the CSS :active scale, no tween on hold.
+    press(el) { el?.classList.add('gn-press'); },
+    // Rule 8: success state gets a single pulse.
+    pulse(el) {
+      if (reduced) return;
+      el?.classList.remove('gn-pulse');
+      void el?.offsetWidth; // restart the animation
+      el?.classList.add('gn-pulse');
+      el?.addEventListener('animationend', () => el.classList.remove('gn-pulse'), { once: true });
+    },
+    // Rule 13: crossfade an icon's content with a slight blur mid-swap.
+    swapIcon(el, apply) {
+      if (!el || reduced) return apply?.();
+      apply?.();
+      el.classList.remove('gn-icon-swap');
+      void el.offsetWidth;
+      el.classList.add('gn-icon-swap');
+      el.addEventListener('animationend', () => el.classList.remove('gn-icon-swap'), { once: true });
+    },
+  };
+})();
+
+// Stagger any freshly rendered list: rows settle one after another at 30ms.
+function gnStag(el) {
+  if (!el) return;
+  if (GN_MOTION.reduced) return;
+  el.classList.remove('gn-stagger');
+  [...el.children].forEach((child, i) => child.style.setProperty('--i', i));
+  void el.offsetWidth; // reflow so the keyframes restart on re-render
+  el.classList.add('gn-stagger');
+}
+
+// Success toasts pulse their chip — the visual handshake for rule 8.
+const gnToastPulse = toast;
+
 async function ensureKeys() {
   if (!S.keys) {
     S.keys = await C.generateKeys();
@@ -322,6 +380,7 @@ function renderFarmList() {
       ${on ? '<span class="badge good">active</span>' : ''}
     </button>`;
   }).join('');
+  gnStag(el);
   $$('#farm-list [data-farm]').forEach((b) => b.addEventListener('click', () => {
     S.activeFarm = b.dataset.farm; save();
     const f = farmById(S.activeFarm);
@@ -528,6 +587,7 @@ function renderHeat() {
     ? clusters.map((c) => `<div class="item alert"><span>${c.count} reports of ${esc((TYPES[c.type] || c.type).toLowerCase())} within 1 km<br><span class="sub">Highest severity ${c.maxSeverity}/3 · needs expert verification</span></span></div>`).join('')
     : '<div class="muted">No outbreak clusters right now.</div>';
   if (excluded) al.innerHTML += `<div class="muted small">${excluded} report${excluded > 1 ? 's' : ''} with a weak or suspicious GNSS fix (quality under 50) ${excluded > 1 ? 'are' : 'is'} left out of the map and alerts.</div>`;
+  gnStag(al);
 }
 
 // ---------- inputs calculator ----------
@@ -635,6 +695,7 @@ function renderTrees() {
   $('#tr-pay').innerHTML = v && v.payouts.length
     ? v.payouts.map((p) => `<div class="item"><span>${naira(p.amountKobo)} · ${esc(p.orderId)}<br><span class="sub">${p.status === 'paid' ? `Sent to ${esc(p.to)} · ref ${esc(p.ref)} (sandbox)` : esc(PAY_REASON[p.reason] || 'Held')}</span></span><span class="badge ${p.status === 'paid' ? 'good' : 'ok'}">${p.status}</span></div>`).join('')
     : '<div class="muted">No payouts yet. They appear after a buyer purchases units from verified plots.</div>';
+  gnStag($('#tr-list')); gnStag($('#tr-pay'));
 }
 
 async function refreshTrees() {
@@ -718,6 +779,7 @@ function renderRecords() {
   $('#batch-list').innerHTML = S.batches.length
     ? [...S.batches].reverse().map((b) => `<div class="item"><span>Batch ${esc(b.id)} · ${b.count} record${b.count === 1 ? '' : 's'}<br><span class="sub">root <code>${esc(short(b.root, 16))}</code> · ${esc(fmtTime(b.ts))}</span></span>${b.anchor ? `<span class="badge good">ledger #${b.anchor.seq}</span>` : '<span class="badge ok">not anchored</span>'}</div>`).join('')
     : '<div class="muted">No batches yet. Sealing groups pending records under one fingerprint (a Merkle root).</div>';
+  gnStag($('#batch-list'));
   $('#record-list').innerHTML = S.records.length
     ? [...S.records].reverse().slice(0, 100).map((r) => {
         const b = r.body, q = b.quality.score;
@@ -725,6 +787,7 @@ function renderRecords() {
         return `<button class="item" data-rec="${esc(b.id)}"><span>${esc(label)}<br><span class="sub">${esc(fmtTime(b.ts))} · ${r.batchId ? 'sealed' : 'pending'}</span></span><span class="badge ${q >= 80 ? 'good' : q >= 50 ? 'ok' : 'bad'}">${q}</span></button>`;
       }).join('')
     : '<div class="muted">No records yet.</div>';
+  gnStag($('#record-list'));
   $$('#record-list [data-rec]').forEach((b) => b.addEventListener('click', () => openVerify(b.dataset.rec)));
 }
 
@@ -992,47 +1055,22 @@ function handleRoleRedirection(s) {
     ensureVerifierKey();
     showTab('submissions');
   } else {
-    // Route standard users to their dashboard
+    // Standard user: land on the dashboard — unless they came here to apply
+    // as a verifier, then land straight on the application.
     updateAuthUI();
-    showTab('dashboard');
+    if (takeVerifierIntent()) {
+      showTab('profile');
+      setTimeout(() => {
+        const box = $('#apply-box') || $('#verifier-flow-section');
+        box?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 350);
+      toast('Account ready — submit your verifier application below.');
+    } else if (currentSession) {
+      showTab('profile');
+    } else {
+      showTab('dashboard');
+    }
   }
-}
-
-function setModalAuthMode(mode) {
-  const isSignin = mode === 'signin';
-  const panelSignin = $('#modal-panel-signin');
-  const panelSignup = $('#modal-panel-signup');
-  const footSignin = $('#modal-foot-signin');
-  const footSignup = $('#modal-foot-signup');
-
-  if (panelSignin) panelSignin.hidden = !isSignin;
-  if (panelSignup) panelSignup.hidden = isSignin;
-  if (footSignin) footSignin.hidden = !isSignin;
-  if (footSignup) footSignup.hidden = isSignin;
-
-  const tabIn = $('#modal-tab-signin');
-  const tabUp = $('#modal-tab-signup');
-  const activeStyle = 'border-bottom:2px solid var(--green);color:var(--green);font-weight:600';
-  const idleStyle = 'border-bottom:2px solid transparent;color:var(--text-2);font-weight:500';
-
-  if (tabIn) tabIn.style.cssText = tabIn.style.cssText.replace(/border-bottom:[^;]+;color:[^;]+;font-weight:[^;]+/, isSignin ? activeStyle : idleStyle);
-  if (tabUp) tabUp.style.cssText = tabUp.style.cssText.replace(/border-bottom:[^;]+;color:[^;]+;font-weight:[^;]+/, !isSignin ? activeStyle : idleStyle);
-
-  const loginErr = $('#modal-login-err');
-  const signupErr = $('#modal-signup-err');
-  if (loginErr) { loginErr.hidden = true; loginErr.textContent = ''; }
-  if (signupErr) { signupErr.hidden = true; signupErr.textContent = ''; }
-}
-
-function openAuthModal(mode = 'signin') {
-  setModalAuthMode(mode);
-  const d = $('#auth-dialog');
-  if (d && !d.open) d.showModal();
-}
-
-function closeAuthModal() {
-  const d = $('#auth-dialog');
-  if (d && d.open) d.close();
 }
 
 function wireAuthEvents() {
@@ -1043,20 +1081,31 @@ function wireAuthEvents() {
     closeUserMenu();
     showTab(target);
   }));
-  $('#app-auth-btn')?.addEventListener('click', () => openAuthModal('signin'));
-  $('#profile-signin-btn')?.addEventListener('click', () => openAuthModal('signin'));
-  $('#verifier-signin-btn')?.addEventListener('click', () => openAuthModal('signin'));
-  $('#modal-auth-close')?.addEventListener('click', closeAuthModal);
-  $('#modal-tab-signin')?.addEventListener('click', () => setModalAuthMode('signin'));
-  $('#modal-tab-signup')?.addEventListener('click', () => setModalAuthMode('signup'));
-  $('#modal-go-signup')?.addEventListener('click', (e) => { e.preventDefault(); setModalAuthMode('signup'); });
-  $('#modal-go-signin')?.addEventListener('click', (e) => { e.preventDefault(); setModalAuthMode('signin'); });
+  // Auth is never a popup: every route lands on the full-page dark gateway.
+  $('#app-auth-btn')?.addEventListener('click', () => showGateway('server-in'));
+  $('#profile-signin-btn')?.addEventListener('click', () => showGateway('server-in'));
 
-  // Single Login Form (Email/Username and Password) used by everyone
-  $('#modal-login-form')?.addEventListener('submit', async (e) => {
+  // "Apply to be a verifier": with a session it opens the application form;
+  // without one it routes through the auth gateway and comes back after.
+  $('#verifier-apply-btn')?.addEventListener('click', () => {
+    if (!currentSession) {
+      rememberVerifierIntent();
+      showGateway('server-in');
+      return;
+    }
+    updateAuthUI();
+    showTab('profile');
+    setTimeout(() => {
+      const box = $('#apply-box') || $('#verifier-flow-section');
+      box?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 350);
+  });
+
+  // Server-account sign in (verifiers, operators, standard users)
+  $('#gw-srv-login-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = $('#modal-login-btn');
-    const errBox = $('#modal-login-err');
+    const btn = $('#gw-srv-login-btn');
+    const errBox = $('#gw-srv-login-err');
     btn.disabled = true;
     btn.textContent = 'Signing in…';
     if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
@@ -1067,8 +1116,8 @@ function wireAuthEvents() {
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          username: $('#modal-login-user').value.trim(),
-          password: $('#modal-login-pass').value,
+          username: $('#gw-srv-login-user').value.trim(),
+          password: $('#gw-srv-login-pass').value,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -1079,12 +1128,13 @@ function wireAuthEvents() {
         }
         return;
       }
-      $('#modal-login-pass').value = '';
+      $('#gw-srv-login-pass').value = '';
       currentSession = json.session;
-      closeAuthModal();
-
-      // Role-Based Redirection upon successful login
+      // Server sessions ride on the unlocked app shell, so the device identity
+      // flow runs first when this phone has not created one yet.
+      await continueInit();
       handleRoleRedirection(currentSession);
+      toast(`Signed in as ${currentSession?.username}.`);
     } catch (err) {
       if (errBox) {
         errBox.textContent = err.message || 'Network error.';
@@ -1096,11 +1146,11 @@ function wireAuthEvents() {
     }
   });
 
-  // Restricted Sign-Up (only standard users can register)
-  $('#modal-signup-form')?.addEventListener('submit', async (e) => {
+  // Server-account sign up (standard users; verifiers upgrade via application)
+  $('#gw-srv-signup-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = $('#modal-signup-btn');
-    const errBox = $('#modal-signup-err');
+    const btn = $('#gw-srv-signup-btn');
+    const errBox = $('#gw-srv-signup-err');
     btn.disabled = true;
     btn.textContent = 'Creating account…';
     if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
@@ -1111,10 +1161,10 @@ function wireAuthEvents() {
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          name: $('#modal-signup-name').value.trim(),
-          email: $('#modal-signup-email').value.trim(),
-          username: $('#modal-signup-user').value.trim(),
-          password: $('#modal-signup-pass').value,
+          name: $('#gw-srv-signup-name').value.trim(),
+          email: $('#gw-srv-signup-email').value.trim(),
+          username: $('#gw-srv-signup-user').value.trim(),
+          password: $('#gw-srv-signup-pass').value,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -1125,9 +1175,9 @@ function wireAuthEvents() {
         }
         return;
       }
-      $('#modal-signup-pass').value = '';
+      $('#gw-srv-signup-pass').value = '';
       currentSession = json.session; // standard user role
-      closeAuthModal();
+      await continueInit();
       handleRoleRedirection(currentSession);
       toast(`Account created. Welcome, ${currentSession?.username}!`);
     } catch (err) {
@@ -1149,7 +1199,9 @@ function wireAuthEvents() {
   $('#apply-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!currentSession) {
-      openAuthModal('signin');
+      // Applications need a server account: route to the full-page auth gateway.
+      rememberVerifierIntent();
+      showGateway('server-in');
       return;
     }
     const btn = $('#apply-btn');
@@ -1180,6 +1232,7 @@ function wireAuthEvents() {
       }
       if (resultBox) {
         resultBox.innerHTML = `<div class="alert-box green text-sm" style="margin-top:var(--s2)">Application submitted successfully! Reference: <code>${esc(json.id || '')}</code>. Once approved by the administrator, you will receive an activation code off-band.</div>`;
+        GN_MOTION.pulse(resultBox.firstElementChild);
       }
       $('#apply-reason').value = '';
       toast('Application submitted.');
@@ -1197,7 +1250,8 @@ function wireAuthEvents() {
   $('#activation-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!currentSession) {
-      openAuthModal('signin');
+      rememberVerifierIntent();
+      showGateway('server-in');
       return;
     }
     const codeInput = $('#activation-code');
@@ -1321,6 +1375,7 @@ function renderSubmissionsQueue() {
       </div>`;
   }).join('');
 
+  gnStag(listEl);
   listEl.querySelectorAll('[data-vid]').forEach((el) => {
     el.addEventListener('click', () => {
       const id = el.dataset.vid;
@@ -1550,10 +1605,15 @@ function showTab(name) {
     toast('Verifier access required.');
     name = 'farm';
   }
-  $$('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
-  const parent = PARENT[name] || name;
-  $$('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === parent));
-  $$('[data-sub]').forEach((b) => b.classList.toggle('on', b.dataset.sub === name));
+  const applySwitch = () => {
+    $$('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
+    const parent = PARENT[name] || name;
+    $$('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === parent));
+    $$('[data-sub]').forEach((b) => b.classList.toggle('on', b.dataset.sub === name));
+  };
+  // Rules 15/18: old and new tab states overlap in a crossfade, old leaves
+  // 20% shorter — the View Transitions API handles the pairing.
+  GN_MOTION.transition(applySwitch);
   if (name === 'farm' && farmMap) setTimeout(() => farmMap.invalidateSize(), 50);
   if (name === 'heat') { setTimeout(() => { if (heatMap) heatMap.invalidateSize(); renderHeat(); }, 50); }
   if (name === 'inputs') calcInputs();
@@ -1609,22 +1669,37 @@ window.addEventListener('offline', netChip);
 
 // init() is invoked at the very end of this module, after LOCK_STORAGE and the
 // other consts below are defined (the gateway reads the device PIN at boot).
+// "Sign up" on the landing page routes straight here — never a popup. Honor
+// the intent on boot: a fresh phone opens the device-identity panel, a phone
+// that already has a field identity opens the server sign-up instead.
+function joinParamMode() {
+  const join = new URLSearchParams(location.search).get('join');
+  if (join !== 'signup') return null;
+  const registered = !!(S.keys && S.keys.priv && S.fp);
+  return registered ? 'server-up' : 'signup';
+}
+function clearJoinParam() {
+  if (location.search) history.replaceState(null, '', location.pathname);
+}
+
 async function init() {
   load();
   wireGateway(); // the split-screen signup / login gate
   // A set PIN lock is the privacy screen: nothing renders (not even the gateway)
   // until the correct PIN unlocks this phone.
   if (getLock()) { showLockOverlay(); return; }
+  const join = joinParamMode();
   const registered = !!(S.keys && S.keys.priv && S.fp);
-  showGateway(registered ? 'login' : 'signup');
+  showGateway(join || (registered ? 'login' : 'signup'));
 }
 
 async function unlockFromLockScreen() {
   $('#lock-overlay').hidden = true;
   document.body.classList.remove('locked');
+  const join = joinParamMode();
   const registered = !!(S.keys && S.keys.priv && S.fp);
-  if (registered) return continueInit();
-  showGateway('signup');
+  if (!join && registered) return continueInit();
+  showGateway(join || 'signup');
 }
 
 // ── Identity gateway (split-screen signup / login) ───────────────────────────
@@ -1637,22 +1712,45 @@ function showGateway(mode) {
   setGatewayMode(mode);
 }
 function setGatewayMode(mode) {
+  // "signup"/"login" = the device identity (key on this phone);
+  // "server-in"/"server-up" = a server account (verifier/operator/standard),
+  // never a popup — always the same full-page dark card.
+  const server = mode === 'server-in' || mode === 'server-up';
   const up = mode === 'signup';
   $('#gw-tab-signup')?.classList.toggle('active', up);
-  $('#gw-tab-signin')?.classList.toggle('active', !up);
-  const upPanel = $('#gw-panel-signup'), inPanel = $('#gw-panel-signin');
-  if (upPanel) upPanel.hidden = !up;
-  if (inPanel) inPanel.hidden = up;
-  if (!up) {
+  $('#gw-tab-signin')?.classList.toggle('active', mode === 'login');
+  $('#gw-srv-tab-in')?.classList.toggle('active', mode === 'server-in');
+  $('#gw-srv-tab-up')?.classList.toggle('active', mode === 'server-up');
+  $('#gw-mode-switch')?.classList.toggle('hidden', server);
+  $('#gw-srv-switch')?.classList.toggle('hidden', !server);
+  const pill = $('#gw-pill-mode'); if (pill) pill.textContent = server ? 'Server account' : 'Device identity';
+  $('#gw-panel-signup')?.toggleAttribute('hidden', mode !== 'signup');
+  $('#gw-panel-signin')?.toggleAttribute('hidden', mode !== 'login');
+  $('#gw-panel-server-in')?.toggleAttribute('hidden', mode !== 'server-in');
+  $('#gw-panel-server-up')?.toggleAttribute('hidden', mode !== 'server-up');
+  if (mode === 'login') {
     $('#gw-id-name').textContent = S.name || 'Field identity';
     $('#gw-id-fp').textContent = fmtFingerprint(S.fp);
     const nf = (S.farms || []).length, nr = (S.records || []).length, nb = (S.batches || []).length;
     $('#gw-id-stats').textContent = `${nf} farm${nf === 1 ? '' : 's'} · ${nr} record${nr === 1 ? '' : 's'} · ${nb} batch${nb === 1 ? '' : 'es'}`;
     $('#gw-login-pin-row').hidden = !getLock();
     const errBox = $('#gw-login-err'); if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
-  } else {
+  } else if (mode === 'signup') {
     const errBox = $('#gw-signup-err'); if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
+  } else if (server) {
+    for (const id of ['gw-srv-login-err', 'gw-srv-signup-err']) {
+      const box = $('#' + id); if (box) { box.hidden = true; box.textContent = ''; }
+    }
   }
+}
+
+// The "Apply" intent survives the detour through the auth gateway: after the
+// account is created or signed in, the user lands straight on the application.
+const VERIFIER_INTENT = 'plotline-apply-verifier';
+function rememberVerifierIntent() { try { sessionStorage.setItem(VERIFIER_INTENT, '1'); } catch { /* in-memory only */ } }
+function takeVerifierIntent() {
+  try { return sessionStorage.getItem(VERIFIER_INTENT) === '1' && (sessionStorage.removeItem(VERIFIER_INTENT), true); }
+  catch { return false; }
 }
 function fmtFingerprint(fp) {
   if (!fp) return '—';
@@ -1672,7 +1770,13 @@ function wireGateway() {
   $('#gw-signup-pin')?.addEventListener('input', (e) => { const row = $('#gw-signup-pin2-row'); if (row) row.hidden = !e.target.value; });
   $('#gw-signup-form')?.addEventListener('submit', onGatewaySignup);
   $('#gw-login-form')?.addEventListener('submit', onGatewayLogin);
-  $('#gw-verifier-link')?.addEventListener('click', (e) => { e.preventDefault(); openAuthModal('signin'); });
+  $('#gw-verifier-link')?.addEventListener('click', (e) => { e.preventDefault(); rememberVerifierIntent(); showGateway('server-in'); });
+  $('#gw-srv-tab-in')?.addEventListener('click', () => setGatewayMode('server-in'));
+  $('#gw-srv-tab-up')?.addEventListener('click', () => setGatewayMode('server-up'));
+  $('#gw-go-srv-in')?.addEventListener('click', (e) => { e.preventDefault(); setGatewayMode('server-in'); });
+  $('#gw-go-srv-up')?.addEventListener('click', (e) => { e.preventDefault(); setGatewayMode('server-up'); });
+  $('#gw-back-device')?.addEventListener('click', (e) => { e.preventDefault(); setGatewayMode(S.keys?.priv ? 'login' : 'signup'); });
+  $('#gw-back-device-up')?.addEventListener('click', (e) => { e.preventDefault(); setGatewayMode(S.keys?.priv ? 'login' : 'signup'); });
 }
 async function onGatewaySignup(e) {
   e.preventDefault();
