@@ -172,7 +172,8 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     'content-security-policy':
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
       "font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; " +
-      "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://tile.openstreetmap.org https://*.tile.openstreetmap.org; " +
+      "base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
   };
 
   const send = (res, code, body, headers = {}) => {
