@@ -521,12 +521,50 @@ code   { font-family: var(--font-mono); font-size: 12px; word-break: break-all; 
 .tabs button.on { color: #fff; }
 .tabs button.on .tab-icon { color: var(--green-400); }
 .tabs button + button { border-left: 1px solid var(--grey-800); }
+/* Faint leaf linework inside the dark bottom bar, beneath the labels.
+   The SVG tile paints currentColor leaves, which resolve to black inside a
+   background image — inverted here so the linework is white and the screen
+   blend lifts it out of the graphite bar. */
+.tabs::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('assets/leaf-pattern.svg');
+  background-size: 110px 110px;
+  background-repeat: repeat;
+  opacity: 0.08;
+  mix-blend-mode: screen;
+  filter: invert(1);
+  pointer-events: none;
+}
+.tabs button { position: relative; z-index: 1; }
 .tab-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .tab-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- App tab / section ---------- */
 .tab { display: none; }
+.tab { position: relative; }
 .tab.active { display: block; }
+/* Monstera crest resting at each revealed panel's top-left, behind the
+   content — a per-tab echo of the dashboard/verifier crests (which sit on
+   the right) so no panel stacks two leaves in the same corner. */
+.tab.active::after {
+  content: '';
+  position: absolute;
+  top: -28px;
+  left: -34px;
+  width: 118px;
+  height: 124px;
+  background-image: url('assets/monstera/leaf-mist.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.38;
+  transform: rotate(-104deg);
+  --leaf-rot: -104deg;
+  pointer-events: none;
+  z-index: -1;
+}
+.tab.active { z-index: 0; } /* keeps the -1 crest behind the panel's text */
 /* Maps closely match the OSM carto land tone, so a tile that has not yet
    painted (fresh tab reveal, slow link) shows earth-beige, not white
    squares. Applies to every Leaflet instance (app farm/heat, console). */
@@ -744,6 +782,24 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   z-index: 1;
 }
 
+/* Mint monstera crest peeking from the art half's top corner, gently swaying */
+.climate-leaf {
+  position: absolute;
+  top: -30px;
+  right: -26px;
+  width: 112px;
+  height: 118px;
+  background-image: url('assets/monstera/leaf-mist.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.4;
+  transform: rotate(-14deg);
+  --leaf-rot: -14deg;
+  pointer-events: none;
+  z-index: 2;
+  animation: leaf-sway 9s var(--ease-in-out) infinite;
+}
+
 .climate-header-block {
   position: relative;
   z-index: 2;
@@ -910,7 +966,8 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   50%      { transform: translateY(-7px) rotate(calc(var(--leaf-rot, 18deg) + 2.5deg)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .auth-card-half::after, .scout-photo-check::after, .apply-section::before, .dash-greeting::after { animation: none; }
+  .auth-card-half::after, .scout-photo-check::after, .apply-section::before, .dash-greeting::after,
+  .climate-leaf, .tab.active::after { animation: none; }
 }
 
 .auth-gateway-card {
