@@ -545,26 +545,54 @@ code   { font-family: var(--font-mono); font-size: 12px; word-break: break-all; 
 .tab { display: none; }
 .tab { position: relative; }
 .tab.active { display: block; }
-/* Monstera crest resting at each revealed panel's top-left, behind the
-   content — a per-tab echo of the dashboard/verifier crests (which sit on
-   the right) so no panel stacks two leaves in the same corner. */
+/* Monstera scatter per tab: the top-left crest echoes the right-side crests
+   used elsewhere (dash-greeting, scout check, verifier apply), and the layer
+   stack below adds leaves drifting down the panel at varied sizes. The leaf
+   SVG band supplies the silhouettes (its currentColor leaves render black in
+   a background image — correct here, since panels are light and the
+   multiply blend keeps them soft). */
 .tab.active::after {
   content: '';
   position: absolute;
-  top: -28px;
-  left: -34px;
-  width: 118px;
-  height: 124px;
-  background-image: url('assets/monstera/leaf-mist.png');
-  background-size: contain;
+  inset: 0;
+  background-image:
+    url('assets/monstera/leaf-mist.png'),
+    url('assets/monstera/leaf-mist.png'),
+    url('assets/monstera/leaf-mist.png'),
+    url('assets/monstera/leaf-mist.png'),
+    url('assets/monstera/leaf-mist.png'),
+    url('assets/monstera/leaf-mist.png');
+  background-position:
+    top -28px left -34px,
+    top 26px right -16px,
+    top 150px left -14px,
+    top 270px right -24px,
+    top 420px left -18px,
+    top 560px right -26px;
+  background-size: 118px 124px, 84px 88px, 100px 106px, 92px 96px, 112px 118px, 88px 92px;
   background-repeat: no-repeat;
-  opacity: 0.38;
-  transform: rotate(-104deg);
-  --leaf-rot: -104deg;
+  opacity: 0.36;
   pointer-events: none;
   z-index: -1;
 }
 .tab.active { z-index: 0; } /* keeps the -1 crest behind the panel's text */
+.tab.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 320px;
+  background-image: url('assets/leaf-pattern.svg');
+  background-size: 180px 180px;
+  background-repeat: repeat;
+  mix-blend-mode: multiply;
+  opacity: 0.06;
+  mask-image: linear-gradient(#000, transparent);
+  -webkit-mask-image: linear-gradient(#000, transparent);
+  pointer-events: none;
+  z-index: -1;
+}
 /* Maps closely match the OSM carto land tone, so a tile that has not yet
    painted (fresh tab reveal, slow link) shows earth-beige, not white
    squares. Applies to every Leaflet instance (app farm/heat, console). */
@@ -1512,6 +1540,9 @@ body:not(.site):not(.console) textarea:focus {
 .apply-section {
   position: relative;
   overflow: hidden;
+  /* Clear of the preceding card (profile sign-out card) — a bare .card +
+     .apply-section stack had the two panels touching. */
+  margin-top: var(--s4);
 }
 /* Full-colour leaf crest behind the verifier application panel */
 .apply-section::before {

@@ -106,6 +106,22 @@ function gnStag(el) {
   el.classList.add('gn-stagger');
 }
 
+// Tab-render skip: rebuilding lists and replaying the stagger on EVERY tab
+// visit is the per-tab flash — the crossfade reveals a view that then
+// re-animates from scratch. Views are pure functions of stored data, so a
+// signature over that data drops repeat visits entirely (the "render once,
+// leave the DOM alone" pattern). Data mutations produce a new signature and
+// re-render naturally.
+const lastRenderSig = new Map();
+function renderSeen(key, sig) {
+  const seen = lastRenderSig.get(key) === sig;
+  if (!seen) lastRenderSig.set(key, sig);
+  return seen;
+}
+function renderOnce(key, sig, fn) {
+  if (!renderSeen(key, sig)) fn();
+}
+
 // Success toasts pulse their chip — the visual handshake for rule 8.
 const gnToastPulse = toast;
 
@@ -653,6 +669,9 @@ function treeEvidence(farm) {
 }
 
 function renderTrees() {
+  // Skip the rebuild when nothing the view draws has changed — repeat tab
+  // visits replaying stat/step/list markup and the stagger is the flash.
+  if (renderSeen('trees', JSON.stringify([S.records, S.farms, S.outbox, S.msisdn, treeView, navigator.onLine]))) return;
   const f = activeFarm();
   $('#tr-farm').textContent = f ? `Farm: ${f.name} · ${C.m2ToHa(f.areaM2).toFixed(2)} ha` : 'Save a farm first (Farm tab).';
   const ev = treeEvidence(f);
@@ -782,22 +801,24 @@ $('#tr-refresh').addEventListener('click', refreshTrees);
 
 // ---------- records, batches, verification ----------
 function renderRecords() {
-  const pending = S.records.filter((r) => !r.batchId).length;
-  $('#rec-summary').textContent = `${S.records.length} records · ${pending} waiting to be sealed · ${S.batches.length} batches`;
-  $('#seal-btn').disabled = pending === 0;
-  $('#batch-list').innerHTML = S.batches.length
-    ? [...S.batches].reverse().map((b) => `<div class="item"><span>Batch ${esc(b.id)} · ${b.count} record${b.count === 1 ? '' : 's'}<br><span class="sub">root <code>${esc(short(b.root, 16))}</code> · ${esc(fmtTime(b.ts))}</span></span>${b.anchor ? `<span class="badge good">ledger #${b.anchor.seq}</span>` : '<span class="badge ok">not anchored</span>'}</div>`).join('')
-    : '<div class="muted">No batches yet. Sealing groups pending records under one fingerprint (a Merkle root).</div>';
-  gnStag($('#batch-list'));
-  $('#record-list').innerHTML = S.records.length
-    ? [...S.records].reverse().slice(0, 100).map((r) => {
-        const b = r.body, q = b.quality.score;
-        const label = b.kind === 'farm' ? `Farm: ${b.data.name}` : b.kind === 'planting' ? `Planted ${b.data.count} trees` : b.kind === 'survival' ? `Survival: ${b.data.alive} of ${b.data.sampleSize} alive` : TYPES[b.data.type] || b.data.type;
-        return `<button class="item" data-rec="${esc(b.id)}"><span>${esc(label)}<br><span class="sub">${esc(fmtTime(b.ts))} · ${r.batchId ? 'sealed' : 'pending'}</span></span><span class="badge ${q >= 80 ? 'good' : q >= 50 ? 'ok' : 'bad'}">${q}</span></button>`;
-      }).join('')
-    : '<div class="muted">No records yet.</div>';
-  gnStag($('#record-list'));
-  $$('#record-list [data-rec]').forEach((b) => b.addEventListener('click', () => openVerify(b.dataset.rec)));
+  renderOnce('records', JSON.stringify([S.records, S.batches]), () => {
+    const pending = S.records.filter((r) => !r.batchId).length;
+    $('#rec-summary').textContent = `${S.records.length} records · ${pending} waiting to be sealed · ${S.batches.length} batches`;
+    $('#seal-btn').disabled = pending === 0;
+    $('#batch-list').innerHTML = S.batches.length
+      ? [...S.batches].reverse().map((b) => `<div class="item"><span>Batch ${esc(b.id)} · ${b.count} record${b.count === 1 ? '' : 's'}<br><span class="sub">root <code>${esc(short(b.root, 16))}</code> · ${esc(fmtTime(b.ts))}</span></span>${b.anchor ? `<span class="badge good">ledger #${b.anchor.seq}</span>` : '<span class="badge ok">not anchored</span>'}</div>`).join('')
+      : '<div class="muted">No batches yet. Sealing groups pending records under one fingerprint (a Merkle root).</div>';
+    gnStag($('#batch-list'));
+    $('#record-list').innerHTML = S.records.length
+      ? [...S.records].reverse().slice(0, 100).map((r) => {
+          const b = r.body, q = b.quality.score;
+          const label = b.kind === 'farm' ? `Farm: ${b.data.name}` : b.kind === 'planting' ? `Planted ${b.data.count} trees` : b.kind === 'survival' ? `Survival: ${b.data.alive} of ${b.data.sampleSize} alive` : TYPES[b.data.type] || b.data.type;
+          return `<button class="item" data-rec="${esc(b.id)}"><span>${esc(label)}<br><span class="sub">${esc(fmtTime(b.ts))} · ${r.batchId ? 'sealed' : 'pending'}</span></span><span class="badge ${q >= 80 ? 'good' : q >= 50 ? 'ok' : 'bad'}">${q}</span></button>`;
+        }).join('')
+      : '<div class="muted">No records yet.</div>';
+    gnStag($('#record-list'));
+    $$('#record-list [data-rec]').forEach((b) => b.addEventListener('click', () => openVerify(b.dataset.rec)));
+  });
 }
 
 async function sealPending() {
@@ -1519,45 +1540,47 @@ function dashLabel(rec) {
 function renderDashboard() {
   const dash = $('#dash-hello');
   if (!dash) return;
+  // hour bucket too: the greeting text picks morning/afternoon/evening
+  renderOnce('dashboard', JSON.stringify([S.farms, S.records, S.name, currentSession?.username, Date.now() / 360e5 | 0]), () => {
+    const nf = S.farms.length;
+    const areaHa = S.farms.reduce((a, f) => a + (f.areaM2 ? C.m2ToHa(f.areaM2) : 0), 0);
+    const nScout = S.records.filter((r) => r.body.kind === 'scout').length;
+    const nTrees = S.records.filter((r) => r.body.kind === 'planting' || r.body.kind === 'survival').length;
+    const nSealed = S.records.filter((r) => r.batchId != null).length;
 
-  const nf = S.farms.length;
-  const areaHa = S.farms.reduce((a, f) => a + (f.areaM2 ? C.m2ToHa(f.areaM2) : 0), 0);
-  const nScout = S.records.filter((r) => r.body.kind === 'scout').length;
-  const nTrees = S.records.filter((r) => r.body.kind === 'planting' || r.body.kind === 'survival').length;
-  const nSealed = S.records.filter((r) => r.batchId != null).length;
+    $('#dash-farms').textContent = nf;
+    $('#dash-area').textContent = `${areaHa.toFixed(2)} ha`;
+    $('#dash-reports').textContent = nScout;
+    $('#dash-records').textContent = S.records.length;
+    $('#dash-sealed').textContent = `${nSealed} sealed`;
+    $('#dash-trees').textContent = nTrees;
 
-  $('#dash-farms').textContent = nf;
-  $('#dash-area').textContent = `${areaHa.toFixed(2)} ha`;
-  $('#dash-reports').textContent = nScout;
-  $('#dash-records').textContent = S.records.length;
-  $('#dash-sealed').textContent = `${nSealed} sealed`;
-  $('#dash-trees').textContent = nTrees;
+    const hour = new Date().getHours();
+    const dayPart = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    const who = S.name || (currentSession?.username) || 'there';
+    dash.textContent = `${dayPart}, ${who}`;
+    $('#dash-sub').textContent = nf
+      ? `${nf} farm${nf === 1 ? '' : 's'} · ${areaHa.toFixed(2)} ha · ${S.records.length} signed record${S.records.length === 1 ? '' : 's'} on this phone`
+      : 'Everything below is signed on this phone. Start by walking your boundary.';
 
-  const hour = new Date().getHours();
-  const dayPart = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-  const who = S.name || (currentSession?.username) || 'there';
-  dash.textContent = `${dayPart}, ${who}`;
-  $('#dash-sub').textContent = nf
-    ? `${nf} farm${nf === 1 ? '' : 's'} · ${areaHa.toFixed(2)} ha · ${S.records.length} signed record${S.records.length === 1 ? '' : 's'} on this phone`
-    : 'Everything below is signed on this phone. Start by walking your boundary.';
-
-  const recent = [...S.records].slice(-5).reverse();
-  const list = $('#dash-recent');
-  const empty = $('#dash-recent-empty');
-  if (!recent.length) {
-    if (list) list.innerHTML = '';
-    if (empty) empty.hidden = false;
-  } else {
-    if (empty) empty.hidden = true;
-    if (list) list.innerHTML = recent.map((r) => `
-      <div class="item">
-        <div class="lead">
-          <strong>${esc(dashLabel(r))}</strong>
-          <span class="sub">${esc(farmById(r.body.farmId)?.name || 'No farm')} · ${esc(fmtTime(r.body.ts))}</span>
-        </div>
-        <span class="badge ${r.batchId != null ? 'good' : 'ok'}">${r.batchId != null ? 'sealed' : 'pending'}</span>
-      </div>`).join('');
-  }
+    const recent = [...S.records].slice(-5).reverse();
+    const list = $('#dash-recent');
+    const empty = $('#dash-recent-empty');
+    if (!recent.length) {
+      if (list) list.innerHTML = '';
+      if (empty) empty.hidden = false;
+    } else {
+      if (empty) empty.hidden = true;
+      if (list) list.innerHTML = recent.map((r) => `
+        <div class="item">
+          <div class="lead">
+            <strong>${esc(dashLabel(r))}</strong>
+            <span class="sub">${esc(farmById(r.body.farmId)?.name || 'No farm')} · ${esc(fmtTime(r.body.ts))}</span>
+          </div>
+          <span class="badge ${r.batchId != null ? 'good' : 'ok'}">${r.batchId != null ? 'sealed' : 'pending'}</span>
+        </div>`).join('');
+    }
+  });
 }
 
 function renderProfileIdentity() {
@@ -1628,16 +1651,19 @@ function showTab(name) {
   // what flickers. The new-state snapshot is only taken once the awaited
   // promise resolves, so it captures the corrected, drawn map.
   const resizeMap = (m) => new Promise((resolve) => requestAnimationFrame(() => { m.invalidateSize(); resolve(); }));
+  // Non-map tab content also renders inside the awaited update phase, so the
+  // new-state snapshot shows finished content instead of catching a
+  // mid-fade rebuild.
   GN_MOTION.transition(() => {
     applySwitch();
     if (name === 'farm' && farmMap) return resizeMap(farmMap);
     if (name === 'heat' && heatMap) return resizeMap(heatMap).then(() => renderHeat());
+    if (name === 'inputs') calcInputs();
+    if (name === 'records') renderRecords();
+    if (name === 'trees') refreshTrees();
+    if (name === 'dashboard' || name === 'profile') { renderDashboard(); renderProfileIdentity(); }
+    if (name === 'submissions') loadSubmissionsQueue();
   });
-  if (name === 'inputs') calcInputs();
-  if (name === 'records') renderRecords();
-  if (name === 'trees') refreshTrees();
-  if (name === 'dashboard' || name === 'profile') renderDashboard(), renderProfileIdentity();
-  if (name === 'submissions') loadSubmissionsQueue();
   window.scrollTo(0, 0);
 }
 $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
