@@ -771,6 +771,9 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
     min-height: 100vh;
     min-height: 100dvh;
   }
+  /* Stacked-gateway leaf + link clearance overrides live at the END of this
+     file — they must come after the base .auth-card-half rules to win the
+     cascade (equal specificity, later declaration). */
 }
 
 /* ── Left Half: Climate Action Doodle & Telemetry Art ── */
@@ -1937,3 +1940,24 @@ body:not(.site):not(.console) textarea:focus {
   mix-blend-mode: screen;
 }
 .auth-gateway-inner { position: relative; z-index: 1; }
+
+/* ── Stacked gateway: leaf tuck + link clearance (mobile only) ────────────
+   At ≤960px the gateway stacks, and the white card's footnote links
+   ("Already registered? Sign in" / "Verifier or operator?") run to the
+   card's right edge on narrow phones — the big resting mist leaf sat on
+   top of them. The leaf shrinks to a corner sliver and the card gains
+   downward clearance. This block must come after the base
+   .auth-card-half rules above to win the cascade. Desktop (>960px,
+   split-screen horizontal) keeps the full-size resting leaf untouched. */
+@media (max-width: 960px) {
+  .auth-card-half::after {
+    width: 96px;
+    height: 102px;
+    bottom: -62px;
+    right: -50px;
+    opacity: 0.62;
+  }
+  .auth-card-half {
+    padding-bottom: calc(clamp(24px, 4vw, 56px) + 44px);
+  }
+}
