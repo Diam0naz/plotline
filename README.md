@@ -174,6 +174,18 @@ Provider: the Sentinel Hub **Statistical API** (`sentinel-2-l2a`, monthly bucket
 
 Interpretation guardrails: NDVI is **evidence, not proof** — the same caveats as the fire check apply (cloud, seasonality, sensor noise, and mixed-pixel effects near small plots), and the verifier's signed decision is still what counts.
 
+## Rainfall per plot (CHIRPS daily via Google Earth Engine)
+
+`POST /api/registry/rain` `{"polygon": [{lat, lon}, …], "months": 6}` (farmer-facing — no operator token; the walked boundary is validated and capped at 20 ha, responses cached 6 h, rate-limited) returns one of:
+
+- **`status: "ok"`** — `series` (fixed-width 7-day buckets for the bar chart), `monthly` (calendar months), `totalMm`, `last30Mm`, `lastRainTs`, `longestDrySpellDays/EndedTs` (a day under 2 mm counts as dry), computed in server JS from one CHIRPS daily record per day.
+- **`status: "stub"`** — no GEE credentials configured; the honest placeholder, no network call.
+- **`status: "unavailable"`** — `auth_failed` / `bad_request` / `provider_error` with EE's own message in `detail`, or `no_valid_pixels` when the window sits past the product's coverage (gaps stay absent, never zeros — CHIRPS final lands with a lag of a few weeks).
+
+Provider: the **Google Earth Engine Value API** (`UCSB-CHG/CHIRPS/DAILY`, ~5 km pixels back to 1981 — every beachhead plot has a record without a rain gauge). One `value:compute` call: `ImageCollection.toBands()` turns each day into a band, `Reducer.mean` reduces every band independently, and the walked polygon is handed to `GeometryConstructors.Polygon` so a 0.5 ha plot is served by one request with no raster pipeline. The DAG is hand-built against the live serialization format (`server/ee.mjs`); the GEE path is the only provider pool CHIRPS lives in, so there is no Copernicus alternative here. Same env as the NDVI GEE fallback (`GEE_*`), so the deployed platform needs those env vars set before rainfall goes live.
+
+Interpretation guardrails: satellite rainfall is **not a gauge on the plot** — 5 km pixels cannot resolve the thunderstorm that hit one farm and skipped its neighbour. It is evidence for planting timing and dry-spell awareness (the farmer panel says so), never a forecast and never a verification gate.
+
 ## Deploying to Vercel
 
 The repo ships a `vercel.json` that keeps the single Node handler intact:
@@ -198,6 +210,7 @@ Setup: import the repo at `vercel.com/new`. No paths or framework questions — 
 - **Article 6 fields are records, not authorisations.** They state what an operator entered; they do not constitute host-country authorisation or a corresponding adjustment. Confirm the NCCC process before relying on them.
 - **The fire check is evidence, not proof.** VIIRS detects a 375 m pixel; cloud, small fires and night-time timing can hide or invent activity, and a detection near a plot does not say whose land burned. No detection is not proof that nothing burned. It informs the verifier; it does not gate approval.
 - **The NDVI check is evidence, not proof, and only runs when it is configured.** Without `SENTINELHUB_*` keys the endpoint returns the stub status; cloud cover, seasonality and mixed pixels (a 0.5 ha plot inside a 10 m Sentinel-2 pixel) can all distort a value, and a healthy NDVI does not prove the specific claimed trees are alive. It informs the verifier; it does not gate approval.
+- **The rainfall record is satellite-derived, gauge-free and gap-prone.** CHIRPS estimates precipitation on ~5 km grid pixels; the final product lands weeks late, so the newest days can be missing (they stay missing rather than reading as dry). Dry-spell counts treat any observed day under 2 mm as dry. It informs planting decisions; it doesn't verify anything.
 - Map tiles come from OpenStreetMap, fine for a demo; production use needs your own tile provider. Tiles you have viewed are cached for offline use.
 - The Redis cache holds public registry views for a few seconds. It is never a source of truth: writes invalidate it, and the server runs uncached when Redis is absent.
 - Not built: multi-device sync, real mobile-money integration.

@@ -58,7 +58,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createSign } from 'node:crypto';
-import { polygonAreaM2 } from '../core.js';
+import { eeGraph } from './ee.mjs';
 
 export const NDVI_SOURCE = 'stub (no provider configured)';
 export const NDVI_SH_SOURCE = 'sentinel-hub statistical api';
@@ -123,12 +123,14 @@ export function credsFor(env = {}) {
 }
 
 // ---------- Google Earth Engine provider ----------
-// GEE speaks a different protocol: its Value API takes a JSON expression tree
-// (an EE computation DAG) and returns the computed value. Auth is a service
-// account signing a JWT with RS256 — pure node:crypto, no dependency. Because
-// the expression tree is hand-built here rather than compiled by an EE client
-// library, treat this provider as the fallback; the Sentinel Hub providers are
-// the well-trodden path. NDVI_PROVIDER=gee forces it regardless.
+// GEE speaks a different protocol: its Value API takes a JSON expression DAG
+// (server/ee.mjs serializes it — the format is the client library's, kept by
+// hand because Plotline carries no EE dependency) and returns the computed
+// value. Auth is a service account signing a JWT with RS256 — pure
+// node:crypto, no dependency. Because the DAG is hand-built rather than
+// compiled by an EE client library, treat this provider as the fallback; the
+// Sentinel Hub providers are the well-trodden path. NDVI_PROVIDER=gee forces
+// it regardless.
 
 export function ndviProvider(env = {}) {
   const forced = env.NDVI_PROVIDER;
@@ -138,29 +140,38 @@ export function ndviProvider(env = {}) {
   return null;
 }
 
+// The service-account PEM may arrive wrapped in whatever the operator pasted —
+// a bare key, a `\\n`-escaped single line, or a fragment of the service-account
+// JSON like `"private_key": "-----BEGIN PRIVATE KEY-----\\n…". Whatever the
+// wrapper, the key material itself sits between the BEGIN/END markers; extract
+// it and leave everything around it behind.
+function extractPem(raw) {
+  const m = String(raw).match(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/);
+  if (!m) return null;
+  return m[0].replace(/\\n/g, '\n'); // .env line-based values carry \n escapes
+}
+
 export function geeServiceAccount(env = {}) {
+  let clientEmail = env.GEE_CLIENT_EMAIL || null;
+  let privateKeyRaw = env.GEE_PRIVATE_KEY || null;
   if (env.GEE_SERVICE_ACCOUNT_JSON) {
     try {
       const j = JSON.parse(env.GEE_SERVICE_ACCOUNT_JSON);
       if (!j?.client_email || !j?.private_key) return null;
-      return {
-        clientEmail: j.client_email,
-        privateKey: String(j.private_key).replace(/\\n/g, '\n'),
-        projectId: j.project_id || env.GEE_PROJECT_ID || 'earthengine-legacy',
-      };
+      clientEmail = j.client_email;
+      privateKeyRaw = j.private_key;
     } catch {
       return null; // malformed inline JSON counts as "not configured"
     }
   }
-  if (env.GEE_CLIENT_EMAIL && env.GEE_PRIVATE_KEY) {
-    return {
-      clientEmail: env.GEE_CLIENT_EMAIL,
-      // .env files are line-based, so the PEM travels with literal \n escapes.
-      privateKey: env.GEE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      projectId: env.GEE_PROJECT_ID || 'earthengine-legacy',
-    };
-  }
-  return null;
+  if (!clientEmail || !privateKeyRaw) return null;
+  const privateKey = extractPem(privateKeyRaw);
+  if (!privateKey) return null; // a key we cannot decode counts as "not configured"
+  return {
+    clientEmail,
+    privateKey,
+    projectId: env.GEE_PROJECT_ID || 'earthengine-legacy',
+  };
 }
 
 let geeTokenCache = null;
@@ -193,60 +204,100 @@ export async function geeToken({ env = {}, fetchImpl = fetch, now = new Date() }
 }
 
 // Sentinel-2 Surface Reflectance, harmonized to old band naming (B4 red, B8 NIR).
-// Cloud filter uses the scene-level CLOUDY_PIXEL_OVER_LAND_COVER property, which
-// exists on every S2 SR image; the mean composite then gets NDVI computed once,
-// and one reduceRegion sums up mean/min/max/stdDev over the buffered point.
+// NDVI is built as (B8 − B4) / (B8 + B4) from verified binary image ops (the
+// modern Value API has no usable normalizedDifference invocation). The shape
+// below was verified live against the Value API (2026-11-09):
+// GeometryConstructors.Point + Geometry.buffer for the region, stacked
+// Collection.filter calls with Filter.gte/lt (system:time_start compares
+// epoch milliseconds — string dates compare as text and match nothing; the
+// cloud property on this collection is CLOUDY_PIXEL_OVER_LAND_PERCENTAGE, not
+// the *_COVER name in the catalog docs), a reduce.mean composite, and one
+// reduceRegion over the buffered point carrying a combined
+// mean/stdDev/minMax reducer. No bounds filter: the reduceRegion geometry does
+// the spatial restriction.
 export function geeNdviExpression({ lat, lon, bufferKm, cloudMaxPct, from, to }) {
-  const P = (value) => ({ value });
-  const F = (functionName, args) => ({ functionName, arguments: args });
-  const region = F('Geometry.buffer', {
-    geometry: F('Geometry.Point', { coordinates: P([lon, lat]) }),
-    distance: P(bufferKm * 1000),
+  const ee = eeGraph();
+  const point = ee.invoke('GeometryConstructors.Point', { coordinates: ee.constant([lon, lat]) });
+  const region = ee.invoke('Geometry.buffer', {
+    geometry: ee.ref(point),
+    distance: ee.constant(bufferKm * 1000),
   });
-  const collection = F('ImageCollection.load', { id: P('COPERNICUS/S2_SR_HARMONIZED') });
-  const dated = F('Collection.filterDate', { collection, start: P(from.slice(0, 10)), end: P(to.slice(0, 10)) });
-  const cloudFree = F('Collection.filterMetadata', {
-    collection: dated,
-    name: P('CLOUDY_PIXEL_OVER_LAND_COVER'),
-    operator: P('less_than'),
-    value: P(cloudMaxPct),
+  const collection = ee.invoke('ImageCollection.load', { id: ee.constant('COPERNICUS/S2_SR_HARMONIZED') });
+  const fromDay = ee.invoke('Filter.gte', {
+    leftField: ee.constant('system:time_start'),
+    rightValue: ee.constant(Date.parse(from)),
   });
-  const composite = F('reduce.mean', { collection: cloudFree });
-  const ndvi = F('Image.normalizedDifference', { image: composite, bandNames: P(['B8', 'B4']) });
-  const reducer = F('Reducer.combine', {
-    reducer1: F('Reducer.mean', {}),
-    reducer2: F('Reducer.combine', {
-      reducer1: F('Reducer.stdDev', {}),
-      reducer2: F('Reducer.minMax', {}),
-      sharedInputs: P(true),
-    }),
-    sharedInputs: P(true),
+  const afterFrom = ee.invoke('Collection.filter', {
+    collection: ee.ref(collection),
+    filter: ee.ref(fromDay),
   });
-  const reduce = F('Image.reduceRegion', {
-    image: ndvi,
-    reducer,
-    geometry: region,
-    scale: P(10),
-    maxPixels: P(1e13),
-    bestEffort: P(true),
+  const untilDay = ee.invoke('Filter.lt', {
+    leftField: ee.constant('system:time_start'),
+    rightValue: ee.constant(Date.parse(to)),
   });
-  return { result: '0', values: { 0: reduce } };
+  const beforeTo = ee.invoke('Collection.filter', {
+    collection: ee.ref(afterFrom),
+    filter: ee.ref(untilDay),
+  });
+  const lightCloud = ee.invoke('Filter.lt', {
+    leftField: ee.constant('CLOUDY_PIXEL_OVER_LAND_PERCENTAGE'),
+    rightValue: ee.constant(cloudMaxPct),
+  });
+  const cloudFree = ee.invoke('Collection.filter', {
+    collection: ee.ref(beforeTo),
+    filter: ee.ref(lightCloud),
+  });
+  const composite = ee.invoke('reduce.mean', { collection: ee.ref(cloudFree) });
+  const nir = ee.invoke('Image.select', { input: ee.ref(composite), bandSelectors: ee.constant(['B8']) });
+  const red = ee.invoke('Image.select', { input: ee.ref(composite), bandSelectors: ee.constant(['B4']) });
+  // NDVI = (NIR − red) / (NIR + red). The modern Value API carries no
+  // normalizedDifference helper that our probing could satisfy, and the binary
+  // image ops are verified live (Image.subtract/add/divide with image1/image2).
+  const diff = ee.invoke('Image.subtract', { image1: ee.ref(nir), image2: ee.ref(red) });
+  const sum = ee.invoke('Image.add', { image1: ee.ref(nir), image2: ee.ref(red) });
+  const ndvi = ee.invoke('Image.divide', { image1: ee.ref(diff), image2: ee.ref(sum) });
+  const statMean = ee.invoke('Reducer.mean', {});
+  const statStdDev = ee.invoke('Reducer.stdDev', {});
+  const statMinMax = ee.invoke('Reducer.minMax', {});
+  const statsInner = ee.invoke('Reducer.combine', {
+    reducer1: ee.ref(statStdDev), reducer2: ee.ref(statMinMax), sharedInputs: ee.constant(true),
+  });
+  const reducer = ee.invoke('Reducer.combine', {
+    reducer1: ee.ref(statMean), reducer2: ee.ref(statsInner), sharedInputs: ee.constant(true),
+  });
+  const reduce = ee.invoke('Image.reduceRegion', {
+    image: ee.ref(ndvi),
+    reducer: ee.ref(reducer),
+    geometry: ee.ref(region),
+    scale: ee.constant(10),
+    maxPixels: ee.constant(1e13),
+    bestEffort: ee.constant(true),
+  });
+  return { result: reduce, values: ee.nodes };
 }
 
 export function parseGeeNdvi(result) {
   const o = result && typeof result === 'object' ? result : null;
   if (!o) return null;
+  const round = (v) => Math.round(v * 1000) / 1000;
+  // bin1: legacy keys (ndvi_mean / mean …); bin2: dynamic band keys — the
+  // verified arithmetic NDVI keeps its left operand's band id, so the stats
+  // arrive as e.g. B8_mean / B8_min / B8_max / B8_stdDev.
   const num = (k) => {
     const v = Number(o[k]);
-    return Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
+    return Number.isFinite(v) ? round(v) : null;
   };
-  const mean = num('ndvi_mean') ?? num('mean');
+  const bySuffix = (suffix) => {
+    const key = Object.keys(o).find((k) => k.endsWith(suffix));
+    return key ? num(key) : null;
+  };
+  const mean = num('ndvi_mean') ?? num('mean') ?? bySuffix('_mean');
   if (mean === null) return null;
   return {
     ndvi: mean,
-    ndviMin: num('ndvi_min') ?? num('min'),
-    ndviMax: num('ndvi_max') ?? num('max'),
-    ndviStdDev: num('ndvi_stdDev') ?? num('standard_deviation') ?? num('stdDev'),
+    ndviMin: num('ndvi_min') ?? num('min') ?? bySuffix('_min'),
+    ndviMax: num('ndvi_max') ?? num('max') ?? bySuffix('_max'),
+    ndviStdDev: num('ndvi_stdDev') ?? num('standard_deviation') ?? num('stdDev') ?? bySuffix('_stdDev'),
   };
 }
 
@@ -500,53 +551,22 @@ export const NDVI_SERIES_DEFAULTS = Object.freeze({
   dipThreshold: 0.05, // plot-own dip flag: last month ≤ median(previous) − 0.05
 });
 
-export function clampMonths(v, { min = NDVI_SERIES_DEFAULTS.minMonths, max = NDVI_SERIES_DEFAULTS.maxMonths } = {}) {
-  const n = Math.round(Number(v));
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : NDVI_SERIES_DEFAULTS.months;
-}
+// Polygon normalisation is shared with the rainfall module (server/geo.mjs);
+// the import keeps a local binding for this module's own callers and the
+// re-export keeps its public shape identical to what the NDVI tests and
+// callers already import. The months clamp stays NDVI-specific here
+// (3..24, default 12) because the rainfall module clamps its own window.
+import { normalizePolygon } from './geo.mjs';
+export { normalizePolygon };
 
-// Accepts [{lat, lon}] (the app shape), rounds to 7 dp, drops consecutive and
-// closing duplicates (walked boundaries usually end where they start), closes
-// the ring, and refuses implausible geometry. Returns
-// { ok, pts, areaM2, centroid, geojson } — geojson ring is [[lon, lat], ...] —
-// or { ok: false, error } with a message fit for the farmer's screen.
-export function normalizePolygon(
-  polygon,
-  { maxVertices = NDVI_SERIES_DEFAULTS.maxVertices, maxAreaM2 = NDVI_SERIES_DEFAULTS.maxHa * 10_000 } = {},
-) {
-  if (!Array.isArray(polygon)) return { ok: false, error: 'polygon must be an array of {lat, lon} points' };
-  const pts = [];
-  for (const p of polygon) {
-    if (!p || typeof p !== 'object' || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)
-      || Math.abs(p.lat) > 90 || Math.abs(p.lon) > 180) {
-      return { ok: false, error: 'polygon points must carry a valid lat and lon within range' };
-    }
-    const q = { lat: Math.round(p.lat * 1e7) / 1e7, lon: Math.round(p.lon * 1e7) / 1e7 };
-    const prev = pts[pts.length - 1];
-    if (prev && prev.lat === q.lat && prev.lon === q.lon) continue;
-    pts.push(q);
-  }
-  if (pts.length > 1 && pts[0].lat === pts[pts.length - 1].lat && pts[0].lon === pts[pts.length - 1].lon) pts.pop();
-  if (pts.length < 3) return { ok: false, error: 'polygon needs at least 3 distinct corners' };
-  if (pts.length > maxVertices) return { ok: false, error: 'polygon exceeds ' + maxVertices + ' corners — simplify the boundary' };
-  const areaM2 = polygonAreaM2(pts);
-  if (!(areaM2 > 0)) return { ok: false, error: 'polygon area is zero — the corners likely sit on one line' };
-  if (areaM2 > maxAreaM2) {
-    return { ok: false, error: 'polygon is too large (' + (areaM2 / 10_000).toFixed(1) + ' ha; NDVI series is capped at ' + NDVI_SERIES_DEFAULTS.maxHa + ' ha per plot)' };
-  }
-  const centroid = {
-    lat: Math.round((pts.reduce((s, p) => s + p.lat, 0) / pts.length) * 1e7) / 1e7,
-    lon: Math.round((pts.reduce((s, p) => s + p.lon, 0) / pts.length) * 1e7) / 1e7,
-  };
-  const ring = pts.map((p) => [p.lon, p.lat]);
-  return {
-    ok: true,
-    pts,
-    areaM2,
-    centroid,
-    geojson: { type: 'Polygon', coordinates: [[...ring, ring[0]]] },
-  };
-}
+const clampN = (v, min, max, fallback) => {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+};
+
+export const clampMonths = (v) =>
+  clampN(v, NDVI_SERIES_DEFAULTS.minMonths, NDVI_SERIES_DEFAULTS.maxMonths, NDVI_SERIES_DEFAULTS.months);
 
 // Sentinel Hub Statistical request over the exact boundary: bounds.geometry
 // clips every monthly bucket to the walked ring (no bbox, no buffer).

@@ -29,7 +29,7 @@ const FLAG_TEXT = {
 
 // ---------- storage ----------
 const KEY = 'plotline.v1';
-let S = { farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [], onboarded: false, ndvi: {} };
+let S = { farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [], onboarded: false, ndvi: {}, rain: {} };
 
 function load() {
   try {
@@ -412,6 +412,7 @@ function renderFarmList() {
     if (farmMap && f) farmMap.fitBounds(latlngs(f.polygon), { padding: [30, 30] });
     drawFarmMap(); renderFarmList(); renderScoutHeader(); prefillInputs();
     loadNdviPanel();
+    loadRainPanel();
   }));
 }
 
@@ -519,6 +520,104 @@ async function loadNdviPanel() {
       save();
     }
     renderNdvi(data.status === 'ok' ? S.ndvi[farm.id] : data);
+  } catch { /* offline mid-request: the cached render stands */ }
+}
+
+// ---------- Rainfall panel (CHIRPS via the server) ----------
+// Same discipline as the NDVI panel: the server holds the provider credential,
+// localStorage holds the offline copy, and stubs are never persisted. Weekly
+// buckets are fixed-width 7-day slices from the server, so the bars read
+// consistently regardless of when the check runs.
+
+const rainWeek = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+};
+
+function rainSvg(weekly) {
+  // Dynamic mm scale rounded to a clean grid so no bar hugs the ceiling.
+  const W = 320, H = 128, padL = 30, padR = 10, padT = 8, padB = 18;
+  const n = weekly.length;
+  const maxMm = Math.max(1, ...weekly.map((w) => w.mm));
+  const top = Math.ceil(maxMm / 10) * 10; // clean gridline, bars never touch it
+  const bw = Math.min(18, (W - padL - padR) / Math.max(1, n) * 0.6);
+  const x = (i) => padL + (i + 0.5) * ((W - padL - padR) / Math.max(1, n)) - bw / 2;
+  const y = (v) => padT + (1 - Math.min(1, Math.max(0, v / top))) * (H - padT - padB);
+  const grid = [0, top / 2, top].map((g) =>
+    `<line x1="${padL}" y1="${y(g).toFixed(1)}" x2="${W - padR}" y2="${y(g).toFixed(1)}" class="ndvi-grid"></line>`
+    + `<text x="${padL - 6}" y="${(y(g) + 3).toFixed(1)}" class="ndvi-label" text-anchor="end">${Math.round(g)}</text>`,
+  ).join('');
+  const bars = weekly.map((w, i) => {
+    const hpx = Math.max(1.5, y(0) - y(w.mm)); // a mizzle week still shows a sliver
+    return `<rect x="${x(i).toFixed(1)}" y="${(y(w.mm)).toFixed(1)}" width="${bw.toFixed(1)}" height="${hpx.toFixed(1)}" rx="1.5" class="rain-bar"><title>${rainWeek(w.from)} – ${rainWeek(w.to)}: ${w.mm} mm</title></rect>`;
+  }).join('');
+  const labels = n > 1
+    ? `<text x="${x(0).toFixed(1)}" y="${H - 4}" class="ndvi-label" text-anchor="middle">${rainWeek(weekly[0].from)}</text>`
+      + `<text x="${x(n - 1).toFixed(1)}" y="${H - 4}" class="ndvi-label" text-anchor="middle">${rainWeek(weekly[n - 1].to)}</text>`
+    : '';
+  const summary = 'Rainfall by week: ' + weekly.map((w) => rainWeek(w.from) + ' ' + w.mm + ' mm').join(', ');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${summary}">${grid}${bars}${labels}</svg>`;
+}
+
+function renderRain(entry, { stale = false } = {}) {
+  const src = $('#rain-src');
+  const chart = $('#rain-chart');
+  const note = $('#rain-note');
+  if (!src || !chart || !note) return;
+  const status = entry?.status;
+  const weekly = status === 'ok' ? (entry.series ?? []) : [];
+  chart.innerHTML = weekly.length ? rainSvg(weekly) : '';
+  if (status === 'ok') {
+    src.textContent = 'satellite · '
+      + (entry.fetchedTs ? 'checked ' + rainWeek(entry.fetchedTs) : 'just now');
+    src.className = 'ndvi-src good';
+    const dry = entry.longestDrySpellDays
+      ? ` Longest stretch without real rain: ${entry.longestDrySpellDays} day${entry.longestDrySpellDays === 1 ? '' : 's'}.`
+      : '';
+    note.textContent = 'Last 30 days: ' + (entry.last30Mm ?? 0) + ' mm of rain.' + dry
+      + ' Satellite rainfall on 5 km pixels — use it to time planting, not as a gauge on the plot.';
+    if (stale) note.textContent += ' (offline — showing the saved series)';
+  } else if (status === 'stub') {
+    src.textContent = 'not connected';
+    src.className = 'ndvi-src warn';
+    note.textContent = entry.message || 'Rainfall check is not live yet.' + (stale ? ' (offline)' : '');
+  } else if (status) {
+    src.textContent = 'unavailable';
+    src.className = 'ndvi-src warn';
+    note.textContent = 'The rainfall service did not answer this time. It appears as soon as a check succeeds.';
+  } else if (!navigator.onLine) {
+    src.textContent = '—';
+    src.className = 'ndvi-src';
+    note.textContent = 'No connection yet. Check this plot once online; its rainfall record then stays readable offline.';
+  } else {
+    note.textContent = 'Reading this plot\u2019s rainfall from the satellite record…';
+  }
+}
+
+async function loadRainPanel() {
+  const panel = $('#rain-panel');
+  if (!panel) return;
+  const farm = activeFarm();
+  if (!farm || !farm.polygon || farm.polygon.length < 3) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const cachedEntry = S.rain?.[farm.id];
+  if (!navigator.onLine) { renderRain(cachedEntry, { stale: true }); return; }
+  renderRain(cachedEntry);
+  if (cachedEntry && Date.now() - (cachedEntry.fetchedTs ?? 0) < NDVI_FRESH_MS) return; // same 6 h freshness
+  try {
+    const res = await fetch('api/registry/rain', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ polygon: farm.polygon, months: 6 }),
+    });
+    if (activeFarm()?.id !== farm.id) return; // farm switched mid-request
+    if (!res.ok) return renderRain({ status: 'unavailable' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      S.rain[farm.id] = { ...data, fetchedTs: Date.now() }; // server data only: stubs are never stored
+      save();
+    }
+    renderRain(data.status === 'ok' ? S.rain[farm.id] : data);
   } catch { /* offline mid-request: the cached render stands */ }
 }
 
@@ -1632,6 +1731,7 @@ function renderAll() {
   renderFarmList(); renderScoutHeader(); renderRecords(); prefillInputs(); renderTrees();
   renderDashboard(); renderProfileIdentity();
   loadNdviPanel();
+  loadRainPanel();
   if ($('#tab-heat').classList.contains('active')) renderHeat();
 }
 
@@ -1765,7 +1865,7 @@ function showTab(name) {
   // mid-fade rebuild.
   GN_MOTION.transition(() => {
     applySwitch();
-    if (name === 'farm') { loadNdviPanel(); if (farmMap) return resizeMap(farmMap); }
+    if (name === 'farm') { loadNdviPanel(); loadRainPanel(); if (farmMap) return resizeMap(farmMap); }
     if (name === 'heat' && heatMap) return resizeMap(heatMap).then(() => renderHeat());
     if (name === 'inputs') calcInputs();
     if (name === 'records') renderRecords();

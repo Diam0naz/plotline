@@ -1999,3 +1999,9 @@ body:not(.site):not(.console) textarea:focus {
 .ndvi-median { stroke: var(--green-400); stroke-width: 1.5; stroke-dasharray: 4 4; }
 .ndvi-dip { fill: none; stroke: var(--red); stroke-width: 2.5; }
 .ndvi-note { color: var(--text-2); font-size: 13px; margin: var(--s2) 0 0 0; }
+
+/* Rainfall panel — twin of the NDVI card; reuses .ndvi-head/.ndvi-src/
+   .ndvi-grid/.ndvi-label/.ndvi-note. Only the bars are rain-specific, and the
+   rules live at the end of the file so the cascade keeps them authoritative. */
+.rain-bar { fill: var(--blue); }
+.rain-bar:hover { fill: var(--blue-border); }

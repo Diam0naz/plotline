@@ -366,18 +366,35 @@ test('ndvi: GEE is asked for a region NDVI reduce; the result maps into the evid
   const body = JSON.parse(stats.body);
   assert.equal(body.workloadTag, 'plotline-ndvi');
   const dag = body.expression;
-  assert.equal(dag.result, '0');
-  const walk = (node) => [node, ...Object.values(node.arguments || {}).flatMap((a) => walk(a))];
-  const nodes = walk(dag.values['0']);
+  // node ids: `result` names the root; every argument is a valueReference into
+  // `values`, where each node is a functionInvocationValue variant.
+  assert.equal(typeof dag.result, 'string');
+  const walk = (id) => {
+    const node = dag.values[id]?.functionInvocationValue;
+    assert.ok(node, `node ${id} exists and is an invocation`);
+    const childRefs = Object.values(node.arguments ?? {})
+      .filter((a) => a?.valueReference != null)
+      .flatMap((a) => walk(a.valueReference));
+    return [node, ...childRefs];
+  };
+  const nodes = walk(dag.result);
   assert.ok(nodes.some((n) => n.functionName === 'Image.reduceRegion'));
-  const ndviNode = nodes.find((n) => n.functionName === 'Image.normalizedDifference');
-  assert.deepEqual(ndviNode.arguments.bandNames, { value: ['B8', 'B4'] }, 'NIR minus red: B8 first');
+  // NDVI = (B8 − B4) / (B8 + B4): the selects and the arithmetic prove band order.
+  const sel = nodes.filter((n) => n.functionName === 'Image.select');
+  assert.deepEqual(sel[0].arguments.bandSelectors, { constantValue: ['B8'] }, 'NIR first');
+  assert.deepEqual(sel[1].arguments.bandSelectors, { constantValue: ['B4'] });
+  const diff = nodes.find((n) => n.functionName === 'Image.subtract');
+  const sum = nodes.find((n) => n.functionName === 'Image.add');
+  const div = nodes.find((n) => n.functionName === 'Image.divide');
+  assert.ok(diff && sum && div, 'NDVI built as (NIR − red)/(NIR + red)');
   const buffer = nodes.find((n) => n.functionName === 'Geometry.buffer');
-  assert.equal(buffer.arguments.distance.value, 1000, '1 km buffer in metres');
-  const cloud = nodes.find((n) => n.functionName === 'Collection.filterMetadata');
-  assert.deepEqual(cloud.arguments.value, { value: 30 });
-  const statsCall2 = nodes.find((n) => n.functionName?.startsWith('Collection.filterDate'));
-  assert.equal(statsCall2.arguments.start.value, '2026-06-01');
+  assert.equal(buffer.arguments.distance.constantValue, 1000, '1 km buffer in metres');
+  const cloudFilter = nodes.find((n) => n.functionName === 'Filter.lt'
+    && n.arguments.leftField?.constantValue === 'CLOUDY_PIXEL_OVER_LAND_PERCENTAGE');
+  assert.equal(cloudFilter.arguments.rightValue.constantValue, 30);
+  const timeGte = nodes.find((n) => n.functionName === 'Filter.gte');
+  assert.equal(timeGte.arguments.leftField?.constantValue, 'system:time_start');
+  assert.equal(timeGte.arguments.rightValue?.constantValue, Date.parse('2026-06-01'), 'epoch-ms comparison');
 
   assert.equal(out.status, 'ok');
   assert.equal(out.source, 'gee value api');

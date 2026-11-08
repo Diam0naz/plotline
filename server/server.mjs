@@ -11,6 +11,8 @@ import { Registry } from './registry.mjs';
 import { verifyEvents } from './chainlog.mjs';
 import { cleanFireEvidence, recentFires, FIRE_DEFAULTS } from './fire.mjs';
 import { ndviEvidence, ndviSeriesEvidence, NDVI_DEFAULTS, clampMonths, normalizePolygon } from './ndvi.mjs';
+import { clampMonths as clampWindowMonths } from './geo.mjs';
+import { rainEvidence, RAIN_DEFAULTS } from './rain.mjs';
 import { classifyScoutPhotos, normalizeImages, classifyConfigured, CLASSIFY_MAX_BODY } from './classify.mjs';
 import { publishHead } from './anchor-publish.mjs';
 import { Accounts, LOGIN_FAILED, Sessions, cookieOriginOk, clearSessionCookie, parseCookies, sameOrigin, sessionCookie, sessionToken, verifyPassword } from './auth.mjs';
@@ -741,6 +743,25 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const key = `ndvi-series:${createHash('sha256').update(ringKey + '#' + months).digest('hex').slice(0, 24)}`;
       const result = await cached(key, 21_600, () =>
         ndviSeriesEvidence({ polygon: data.polygon, months, env: process.env, now }));
+      return send(res, 200, result);
+    }
+    if (post && path === '/api/registry/rain') {
+      // CHIRPS daily rainfall for one walked boundary — same farmer-facing shape
+      // as ndvi-series: polygon in the body (not operator-gated; farmers never
+      // hold the operator token), small size cap, rate-limited, and cached six
+      // hours so each plot is computed once regardless of who refreshes it.
+      if (limited(ip, 'rain', NDVI_SERIES_RATE)) {
+        return send(res, 429, { error: 'too many rainfall requests, try again in a minute' });
+      }
+      const data = await jsonBody(req, res, 2048);
+      if (data === undefined) return;
+      const months = clampWindowMonths(data?.months, { min: RAIN_DEFAULTS.minMonths, max: RAIN_DEFAULTS.maxMonths, fallback: RAIN_DEFAULTS.months });
+      const norm = normalizePolygon(data?.polygon);
+      if (!norm.ok) return send(res, 400, { error: norm.error });
+      const ringKey = norm.geojson.coordinates[0].map((p) => p.join(',')).join('|');
+      const key = `rain:${createHash('sha256').update(ringKey + '#' + months).digest('hex').slice(0, 24)}`;
+      const result = await cached(key, 21_600, () =>
+        rainEvidence({ polygon: data.polygon, months, env: process.env, now }));
       return send(res, 200, result);
     }
 
