@@ -58,6 +58,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createSign } from 'node:crypto';
+import { polygonAreaM2 } from '../core.js';
 
 export const NDVI_SOURCE = 'stub (no provider configured)';
 export const NDVI_SH_SOURCE = 'sentinel-hub statistical api';
@@ -476,4 +477,241 @@ async function geeEvidence({ lat, lon, bufferKm, cloudMaxPct, effectiveFrom, eff
 
 function validIso(v) {
   return typeof v === 'string' && v.length > 0 && !Number.isNaN(new Date(v).getTime());
+}
+
+// ---------- NDVI series: monthly trend over a walked polygon ----------
+//
+// The farmer app owns the boundary client-side (farms store polygon: [{lat,lon}]),
+// so series requests carry the polygon instead of an id. Providers mirror the
+// point check: Sentinel Hub / Copernicus first — its Statistical API accepts a
+// GeoJSON geometry in bounds.geometry, so the monthly P1M buckets run over the
+// exact walked ring rather than a bbox approximation. GEE fallback is honest
+// about its limits: the Value API cannot build monthly buckets without
+// server-side anonymous functions, so it returns ONE full-range average around
+// an area-derived centroid buffer, explicitly labelled as not-a-series.
+// Nothing configured → the stub, as everywhere else in this module.
+
+export const NDVI_SERIES_DEFAULTS = Object.freeze({
+  months: 12,
+  minMonths: 3,
+  maxMonths: 24,
+  maxVertices: 64,
+  maxHa: 20, // one series call is per plot, not per farm block
+  dipThreshold: 0.05, // plot-own dip flag: last month ≤ median(previous) − 0.05
+});
+
+export function clampMonths(v, { min = NDVI_SERIES_DEFAULTS.minMonths, max = NDVI_SERIES_DEFAULTS.maxMonths } = {}) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : NDVI_SERIES_DEFAULTS.months;
+}
+
+// Accepts [{lat, lon}] (the app shape), rounds to 7 dp, drops consecutive and
+// closing duplicates (walked boundaries usually end where they start), closes
+// the ring, and refuses implausible geometry. Returns
+// { ok, pts, areaM2, centroid, geojson } — geojson ring is [[lon, lat], ...] —
+// or { ok: false, error } with a message fit for the farmer's screen.
+export function normalizePolygon(
+  polygon,
+  { maxVertices = NDVI_SERIES_DEFAULTS.maxVertices, maxAreaM2 = NDVI_SERIES_DEFAULTS.maxHa * 10_000 } = {},
+) {
+  if (!Array.isArray(polygon)) return { ok: false, error: 'polygon must be an array of {lat, lon} points' };
+  const pts = [];
+  for (const p of polygon) {
+    if (!p || typeof p !== 'object' || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)
+      || Math.abs(p.lat) > 90 || Math.abs(p.lon) > 180) {
+      return { ok: false, error: 'polygon points must carry a valid lat and lon within range' };
+    }
+    const q = { lat: Math.round(p.lat * 1e7) / 1e7, lon: Math.round(p.lon * 1e7) / 1e7 };
+    const prev = pts[pts.length - 1];
+    if (prev && prev.lat === q.lat && prev.lon === q.lon) continue;
+    pts.push(q);
+  }
+  if (pts.length > 1 && pts[0].lat === pts[pts.length - 1].lat && pts[0].lon === pts[pts.length - 1].lon) pts.pop();
+  if (pts.length < 3) return { ok: false, error: 'polygon needs at least 3 distinct corners' };
+  if (pts.length > maxVertices) return { ok: false, error: 'polygon exceeds ' + maxVertices + ' corners — simplify the boundary' };
+  const areaM2 = polygonAreaM2(pts);
+  if (!(areaM2 > 0)) return { ok: false, error: 'polygon area is zero — the corners likely sit on one line' };
+  if (areaM2 > maxAreaM2) {
+    return { ok: false, error: 'polygon is too large (' + (areaM2 / 10_000).toFixed(1) + ' ha; NDVI series is capped at ' + NDVI_SERIES_DEFAULTS.maxHa + ' ha per plot)' };
+  }
+  const centroid = {
+    lat: Math.round((pts.reduce((s, p) => s + p.lat, 0) / pts.length) * 1e7) / 1e7,
+    lon: Math.round((pts.reduce((s, p) => s + p.lon, 0) / pts.length) * 1e7) / 1e7,
+  };
+  const ring = pts.map((p) => [p.lon, p.lat]);
+  return {
+    ok: true,
+    pts,
+    areaM2,
+    centroid,
+    geojson: { type: 'Polygon', coordinates: [[...ring, ring[0]]] },
+  };
+}
+
+// Sentinel Hub Statistical request over the exact boundary: bounds.geometry
+// clips every monthly bucket to the walked ring (no bbox, no buffer).
+export function seriesRequest({ polygonGeo, cloudMaxPct, from, to }) {
+  const timeRange = { from, to };
+  return {
+    input: {
+      bounds: {
+        geometry: polygonGeo,
+        properties: { crs: 'http://www.opengis.net/def/crs/EPSG/0/4326' },
+      },
+      data: [{
+        type: 'sentinel-2-l2a',
+        dataFilter: { timeRange, maxCloudCoverage: cloudMaxPct },
+        reprocessing: 'latest',
+      }],
+    },
+    aggregation: {
+      timeRange,
+      aggregationInterval: { of: 'P1M' }, // monthly buckets: the trend stays visible
+      evalscript: NDVI_EVALSCRIPT,
+      resamplingMethod: 'BILINEAR',
+    },
+  };
+}
+
+// Trend helper: compares the plot against the plot's own recent history (not a
+// regional baseline we do not have). A dip is the latest month sitting at least
+// 0.05 NDVI below the median of the prior months. Fewer than 4 valid months
+// (3 priors + the latest) earns no verdict — rainy-season cloud gaps make short
+// histories lie.
+export function ndviTrend(series) {
+  const values = (series ?? []).filter((p) => p && Number.isFinite(p.ndvi)).map((p) => p.ndvi);
+  if (values.length < 4) return { dip: false, monthsSampled: values.length, reason: 'insufficient_history' };
+  const last = values[values.length - 1];
+  const prev = values.slice(0, -1).sort((a, b) => a - b);
+  const median = prev.length % 2
+    ? prev[(prev.length - 1) / 2]
+    : (prev[prev.length / 2 - 1] + prev[prev.length / 2]) / 2;
+  const drop = Math.round((median - last) * 1000) / 1000;
+  return {
+    dip: last <= median - NDVI_SERIES_DEFAULTS.dipThreshold,
+    medianPrev: Math.round(median * 1000) / 1000,
+    drop,
+    monthsSampled: values.length,
+  };
+}
+
+/**
+ * Monthly NDVI series for one walked polygon.
+ *
+ * @param {{ polygon?: Array<{lat: number, lon: number}>, months?: number,
+ *           cloudMaxPct?: number, env?: object, fetchImpl?: Function,
+ *           now?: () => Date }} opts
+ */
+export async function ndviSeriesEvidence({
+  polygon,
+  months = NDVI_SERIES_DEFAULTS.months,
+  cloudMaxPct = NDVI_DEFAULTS.cloudMaxPct,
+  env = process.env,
+  fetchImpl = fetch,
+  now = () => new Date(),
+} = {}) {
+  const checkedAt = now().toISOString();
+  const effectiveMonths = clampMonths(months);
+  const meta = { source: NDVI_SOURCE, months: effectiveMonths, cloudMaxPct, checkedAt };
+
+  const norm = normalizePolygon(polygon);
+  if (!norm.ok) return { status: 'bad_polygon', error: norm.error, ...meta };
+
+  const dateTo = checkedAt;
+  const dateFrom = isoDaysAgo(checkedAt, effectiveMonths * 30);
+
+  if (!ndviConfigured(env)) {
+    return {
+      status: 'stub',
+      ...meta,
+      dateFrom,
+      dateTo,
+      series: null,
+      trend: null,
+      message: 'NDVI trend not yet live. Connect a satellite data provider to enable monthly series for this plot.',
+    };
+  }
+
+  try {
+    if (ndviProvider(env) === 'gee') {
+      return await geeSeriesEvidence({ norm, effectiveMonths, cloudMaxPct, dateFrom, dateTo, checkedAt, env, fetchImpl, meta });
+    }
+    const { base } = ndviEndpoints(env);
+    const token = await sentinelHubToken({ env, fetchImpl });
+    const res = await fetchImpl(base + '/api/v1/statistical', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+      body: JSON.stringify(seriesRequest({ polygonGeo: norm.geojson, cloudMaxPct, from: dateFrom, to: dateTo })),
+    });
+    if (!res.ok) {
+      const code = res.status >= 500 ? 'provider_error' : res.status === 401 || res.status === 403 ? 'auth_failed' : 'bad_request';
+      return { status: 'unavailable', error: code, ...meta, dateFrom, dateTo };
+    }
+    const json = await res.json().catch(() => null);
+    const stats = parseNdviStats(json);
+    // Chronological order (the API does not guarantee bucket order) and only the
+    // months that actually have satellite values — gaps stay gaps, not zeros.
+    const series = (stats?.periods ?? [])
+      .filter((p) => Number.isFinite(p.ndvi) && (p.from ?? p.to))
+      .sort((a, b) => new Date(a.from ?? a.to) - new Date(b.from ?? b.to))
+      .map((p) => ({ from: p.from, to: p.to, ndvi: p.ndvi }));
+    if (!series.length) return { status: 'unavailable', error: 'no_valid_pixels', ...meta, dateFrom, dateTo };
+    return {
+      status: 'ok',
+      source: NDVI_SH_SOURCE,
+      months: effectiveMonths,
+      dateFrom,
+      dateTo,
+      cloudMaxPct,
+      checkedAt,
+      centroid: norm.centroid,
+      areaM2: Math.round(norm.areaM2),
+      series,
+      trend: ndviTrend(series),
+    };
+  } catch (err) {
+    return { status: 'unavailable', error: err.code || 'provider_error', ...meta, dateFrom, dateTo };
+  }
+}
+
+// GEE fallback for a series: one full-range reduceRegion on a buffer sized from
+// the polygon area, around the centroid. It is an average over the whole range,
+// never a chart — the note says so, and the trend verdict is withheld.
+async function geeSeriesEvidence({ norm, effectiveMonths, cloudMaxPct, dateFrom, dateTo, checkedAt, env, fetchImpl, meta }) {
+  const token = await geeToken({ env, fetchImpl, now: new Date(checkedAt) });
+  const sa = geeServiceAccount(env);
+  const bufferKm = Math.max(0.05, Math.round((Math.sqrt(norm.areaM2 / Math.PI) / 1000) * 1000) / 1000);
+  const url = 'https://earthengine.googleapis.com/v1/projects/' + encodeURIComponent(sa.projectId) + '/value:compute';
+  const res = await fetchImpl(url, {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      expression: geeNdviExpression({ lat: norm.centroid.lat, lon: norm.centroid.lon, bufferKm, cloudMaxPct, from: dateFrom, to: dateTo }),
+      workloadTag: 'plotline-ndvi',
+    }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { detail = String(await res.text()).replace(/\s+/g, ' ').slice(0, 300); } catch { /* empty body */ }
+    const code = res.status >= 500 ? 'provider_error' : res.status === 401 || res.status === 403 ? 'auth_failed' : 'bad_request';
+    return { status: 'unavailable', error: code, detail, ...meta };
+  }
+  const json = await res.json().catch(() => null);
+  const stats = parseGeeNdvi(json?.result ?? json);
+  if (!stats) return { status: 'unavailable', error: 'no_valid_pixels', ...meta };
+  return {
+    status: 'ok',
+    source: NDVI_GEE_SOURCE,
+    months: effectiveMonths,
+    dateFrom,
+    dateTo,
+    cloudMaxPct,
+    checkedAt,
+    centroid: norm.centroid,
+    areaM2: Math.round(norm.areaM2),
+    bufferKm,
+    note: 'gee value api: full-range average around the centroid, not a monthly series — a sentinel-hub provider produces the true per-month trend',
+    series: [{ from: dateFrom, to: dateTo, ndvi: stats.ndvi }],
+    trend: { dip: false, monthsSampled: 1, reason: 'insufficient_history' },
+  };
 }

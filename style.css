@@ -1961,3 +1961,41 @@ body:not(.site):not(.console) textarea:focus {
     padding-bottom: calc(clamp(24px, 4vw, 56px) + 44px);
   }
 }
+
+/* ── NDVI trend panel (farm tab) ─────────────────────────────────────────────
+   Appended last on purpose: later rules win the cascade at equal specificity. */
+.ndvi-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s2);
+}
+.ndvi-head h2 { margin: 0; }
+.ndvi-src {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.ndvi-src.good { color: var(--green); border-color: var(--green-200); background: var(--green-50); }
+.ndvi-src.warn { color: var(--amber); border-color: var(--amber-border); background: var(--amber-bg); }
+.ndvi-chart svg { display: block; width: 100%; height: auto; }
+.ndvi-chart:empty { display: none; }
+.ndvi-line {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ndvi-grid { stroke: var(--border); stroke-width: 1; }
+.ndvi-label { font-family: var(--font-mono); font-size: 9px; fill: var(--text-2); }
+.ndvi-median { stroke: var(--green-400); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.ndvi-dip { fill: none; stroke: var(--red); stroke-width: 2.5; }
+.ndvi-note { color: var(--text-2); font-size: 13px; margin: var(--s2) 0 0 0; }

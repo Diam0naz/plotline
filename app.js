@@ -29,7 +29,7 @@ const FLAG_TEXT = {
 
 // ---------- storage ----------
 const KEY = 'plotline.v1';
-let S = { farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [], onboarded: false };
+let S = { farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [], onboarded: false, ndvi: {} };
 
 function load() {
   try {
@@ -411,7 +411,115 @@ function renderFarmList() {
     const f = farmById(S.activeFarm);
     if (farmMap && f) farmMap.fitBounds(latlngs(f.polygon), { padding: [30, 30] });
     drawFarmMap(); renderFarmList(); renderScoutHeader(); prefillInputs();
+    loadNdviPanel();
   }));
+}
+
+// ---------- NDVI trend panel ----------
+// The server computes the series — this phone never talks to a satellite
+// provider. The service worker passes /api/ requests straight to the network,
+// so localStorage is the offline cache: without signal the panel shows the
+// last saved series, and a plot that has been checked online once keeps its
+// 12-month trend available offline.
+const NDVI_FRESH_MS = 6 * 3600 * 1000; // matches the server-side cache window
+
+const ndviMonth = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('en', { month: 'short', year: '2-digit' });
+};
+
+function ndviSvg(series, trend) {
+  // Fixed 0–0.9 NDVI scale so every farm reads the same way:
+  // 0 bare soil … 0.3 sparse … 0.6 moderate canopy … 0.9 dense.
+  const W = 320, H = 128, padL = 30, padR = 10, padT = 8, padB = 18;
+  const n = series.length;
+  const x = (i) => padL + (n > 1 ? (i * (W - padL - padR)) / (n - 1) : (W - padL - padR) / 2);
+  const y = (v) => padT + (1 - Math.min(1, Math.max(0, v / 0.9))) * (H - padT - padB);
+  const grid = [0, 0.3, 0.6, 0.9].map((g) =>
+    `<line x1="${padL}" y1="${y(g).toFixed(1)}" x2="${W - padR}" y2="${y(g).toFixed(1)}" class="ndvi-grid"></line>`
+    + `<text x="${padL - 6}" y="${(y(g) + 3).toFixed(1)}" class="ndvi-label" text-anchor="end">${g.toFixed(1)}</text>`,
+  ).join('');
+  const median = trend?.medianPrev != null && n >= 4
+    ? `<line x1="${padL}" y1="${y(trend.medianPrev).toFixed(1)}" x2="${W - padR}" y2="${y(trend.medianPrev).toFixed(1)}" class="ndvi-median"></line>`
+    : '';
+  const dip = trend?.dip
+    ? `<circle cx="${x(n - 1).toFixed(1)}" cy="${y(series[n - 1].ndvi).toFixed(1)}" r="5" class="ndvi-dip"></circle>`
+    : '';
+  const pts = series.map((p, i) => x(i).toFixed(1) + ',' + y(p.ndvi).toFixed(1)).join(' ');
+  const labels = n > 1
+    ? `<text x="${x(0).toFixed(1)}" y="${H - 4}" class="ndvi-label" text-anchor="start">${ndviMonth(series[0].to || series[0].from)}</text>`
+      + `<text x="${x(n - 1).toFixed(1)}" y="${H - 4}" class="ndvi-label" text-anchor="end">${ndviMonth(series[n - 1].to || series[n - 1].from)}</text>`
+    : '';
+  const summary = 'NDVI by month: '
+    + series.map((p) => ndviMonth(p.to || p.from) + ' ' + p.ndvi.toFixed(2)).join(', ');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${summary}">${grid}${median}<polyline points="${pts}" class="ndvi-line"></polyline>${dip}${labels}</svg>`;
+}
+
+function renderNdvi(entry, { stale = false } = {}) {
+  const src = $('#ndvi-src');
+  const chart = $('#ndvi-chart');
+  const note = $('#ndvi-note');
+  if (!src || !chart || !note) return;
+  const status = entry?.status;
+  const series = status === 'ok' ? (entry.series ?? []) : [];
+  chart.innerHTML = series.length ? ndviSvg(series, entry.trend) : '';
+  if (status === 'ok') {
+    src.textContent = 'satellite · '
+      + (entry.fetchedTs ? 'checked ' + ndviMonth(entry.fetchedTs).replace(' ', ' \u2019') : 'just now');
+    src.className = 'ndvi-src good';
+    if (entry.trend?.dip) {
+      note.textContent = 'Last month is ' + Math.abs(entry.trend.drop).toFixed(2)
+        + ' below this plot\u2019s own median (' + entry.trend.medianPrev.toFixed(2)
+        + '). Possible stress \u2014 check the crop in person; satellites see clouds and soil, not causes.';
+    } else if (series.length < 4) {
+      note.textContent = 'History is building: a dip verdict needs at least 4 clear months.';
+    } else {
+      note.textContent = 'No dip: the latest month sits within this plot\u2019s own recent median ('
+        + (entry.trend?.medianPrev ?? series[series.length - 1].ndvi).toFixed(2) + ').';
+    }
+    if (stale) note.textContent += ' (offline \u2014 showing the saved series)';
+  } else if (status === 'stub') {
+    src.textContent = 'not connected';
+    src.className = 'ndvi-src warn';
+    note.textContent = entry.message || 'NDVI trend is not live yet.' + (stale ? ' (offline)' : '');
+  } else if (status) {
+    src.textContent = 'unavailable';
+    src.className = 'ndvi-src warn';
+    note.textContent = 'The satellite service did not answer this time. The trend appears as soon as a check succeeds.';
+  } else if (!navigator.onLine) {
+    src.textContent = '\u2014';
+    src.className = 'ndvi-src';
+    note.textContent = 'No connection yet. Check this plot once online; its trend then stays readable offline.';
+  } else {
+    note.textContent = 'Checking this plot\u2019s boundary against the satellite record\u2026';
+  }
+}
+
+async function loadNdviPanel() {
+  const panel = $('#ndvi-panel');
+  if (!panel) return;
+  const farm = activeFarm();
+  if (!farm || !farm.polygon || farm.polygon.length < 3) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const cachedEntry = S.ndvi?.[farm.id];
+  if (!navigator.onLine) { renderNdvi(cachedEntry, { stale: true }); return; } // offline: the saved series is the whole experience
+  renderNdvi(cachedEntry);
+  if (cachedEntry && Date.now() - (cachedEntry.fetchedTs ?? 0) < NDVI_FRESH_MS) return;
+  try {
+    const res = await fetch('api/registry/ndvi-series', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ polygon: farm.polygon, months: 12 }),
+    });
+    if (activeFarm()?.id !== farm.id) return; // farm switched mid-request: skip the stale redraw
+    if (!res.ok) return renderNdvi({ status: 'unavailable' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      S.ndvi[farm.id] = { ...data, fetchedTs: Date.now() }; // server data only: stubs are never stored
+      save();
+    }
+    renderNdvi(data.status === 'ok' ? S.ndvi[farm.id] : data);
+  } catch { /* offline mid-request: the cached render stands */ }
 }
 
 // ---------- scouting ----------
@@ -1523,6 +1631,7 @@ const PARENT = { inputs: 'farm', heat: 'scout' };
 function renderAll() {
   renderFarmList(); renderScoutHeader(); renderRecords(); prefillInputs(); renderTrees();
   renderDashboard(); renderProfileIdentity();
+  loadNdviPanel();
   if ($('#tab-heat').classList.contains('active')) renderHeat();
 }
 
@@ -1656,7 +1765,7 @@ function showTab(name) {
   // mid-fade rebuild.
   GN_MOTION.transition(() => {
     applySwitch();
-    if (name === 'farm' && farmMap) return resizeMap(farmMap);
+    if (name === 'farm') { loadNdviPanel(); if (farmMap) return resizeMap(farmMap); }
     if (name === 'heat' && heatMap) return resizeMap(heatMap).then(() => renderHeat());
     if (name === 'inputs') calcInputs();
     if (name === 'records') renderRecords();

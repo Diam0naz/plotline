@@ -10,7 +10,7 @@ import { Ledger } from './ledger.mjs';
 import { Registry } from './registry.mjs';
 import { verifyEvents } from './chainlog.mjs';
 import { cleanFireEvidence, recentFires, FIRE_DEFAULTS } from './fire.mjs';
-import { ndviEvidence, NDVI_DEFAULTS } from './ndvi.mjs';
+import { ndviEvidence, ndviSeriesEvidence, NDVI_DEFAULTS, clampMonths, normalizePolygon } from './ndvi.mjs';
 import { classifyScoutPhotos, normalizeImages, classifyConfigured, CLASSIFY_MAX_BODY } from './classify.mjs';
 import { publishHead } from './anchor-publish.mjs';
 import { Accounts, LOGIN_FAILED, Sessions, cookieOriginOk, clearSessionCookie, parseCookies, sameOrigin, sessionCookie, sessionToken, verifyPassword } from './auth.mjs';
@@ -37,6 +37,7 @@ const HIDDEN = new Set(['server', 'data', 'node_modules']);
 const HEX64 = /^[0-9a-f]{64}$/;
 const MAX_BODY = 2048;
 const RATE = { windowMs: 60_000, max: 30 };
+const NDVI_SERIES_RATE = { windowMs: 60_000, max: 10 }; // a trend refresh is heavier than a plain read
 const SUBMIT_MAX_BODY = 65536; // three signed records and a farm boundary
 const SUBMIT_RATE = { windowMs: 60_000, max: 10 };
 const LOGIN_RATE = { windowMs: 60_000, max: 10 };
@@ -713,6 +714,27 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const result = await registry.renew(data ?? {});
       if (result.ok) await cache?.invalidate();
       return answer(res, result, 201);
+    }
+
+    if (post && path === '/api/registry/ndvi-series') {
+      // Monthly NDVI trend for one walked boundary. Deliberately NOT operator-gated:
+      // farmers never hold the operator token — the polygon itself (and the small
+      // size cap of one plot) is what protects the endpoint. Cached six hours per
+      // rounded polygon+range so the same plot is computed once wherever it is
+      // refreshed from.
+      if (limited(ip, 'ndvi-series', NDVI_SERIES_RATE)) {
+        return send(res, 429, { error: 'too many NDVI requests, try again in a minute' });
+      }
+      const data = await jsonBody(req, res, 8192);
+      if (data === undefined) return;
+      const months = clampMonths(data?.months);
+      const norm = normalizePolygon(data?.polygon);
+      if (!norm.ok) return send(res, 400, { error: norm.error });
+      const ringKey = norm.geojson.coordinates[0].map((p) => p.join(',')).join('|');
+      const key = `ndvi-series:${createHash('sha256').update(ringKey + '#' + months).digest('hex').slice(0, 24)}`;
+      const result = await cached(key, 21_600, () =>
+        ndviSeriesEvidence({ polygon: data.polygon, months, env: process.env, now }));
+      return send(res, 200, result);
     }
 
     // ----- operator only -----

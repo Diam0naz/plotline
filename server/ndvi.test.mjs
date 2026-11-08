@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ndviEvidence, NDVI_DEFAULTS, NDVI_SOURCE, bboxFor, parseNdviStats, statsRequest, ndviConfigured, ndviEndpoints, credsFor } from './ndvi.mjs';
+import { ndviEvidence, ndviSeriesEvidence, NDVI_DEFAULTS, NDVI_SERIES_DEFAULTS, NDVI_SOURCE, NDVI_SH_SOURCE, NDVI_GEE_SOURCE, bboxFor, parseNdviStats, statsRequest, seriesRequest, ndviTrend, normalizePolygon, clampMonths, ndviConfigured, ndviEndpoints, credsFor } from './ndvi.mjs';
 import { createApp } from './server.mjs';
 
 const NOW = () => new Date('2026-11-15T12:00:00.000Z');
@@ -408,4 +408,180 @@ test('ndvi: GEE failures surface the exact reason, with the provider detail atta
   assert.equal(parseGeeNdvi({ mean: 0.4 }).ndvi, 0.4, 'fallback key without the ndvi_ prefix');
   assert.equal(parseGeeNdvi({}), null);
   assert.equal(parseGeeNdvi({ ndvi_mean: Number.NaN }), null);
+});
+
+// ---------- NDVI series: polygon validation, trend, providers, route ----------
+
+// ~1.2 ha square around the demo plot — the app shape ({lat, lon}), walk order.
+const PLOT = [[0, 0], [0, 0.001], [0.001, 0.001], [0.001, 0]].map(([da, db]) => ({ lat: 9.9 + da, lon: 8.9 + db }));
+
+const SERIES_BUCKETS = {
+  // Arrived out of chronological order on purpose: the series must be sorted.
+  data: {
+    B4: { interval: { from: '2026-04-15T00:00:00Z', to: '2026-05-15T00:00:00Z' }, basic: { ndvi: { mean: 0.35, min: 0.1, max: 0.6, stDev: 0.04 } }, totalCount: 400, noDataCount: 50 },
+    B2: { interval: { from: '2026-02-15T00:00:00Z', to: '2026-03-15T00:00:00Z' }, basic: { ndvi: { mean: 0.62, min: 0.4, max: 0.8, stDev: 0.03 } }, totalCount: 400, noDataCount: 50 },
+    B0: { interval: { from: '2025-12-15T00:00:00Z', to: '2026-01-15T00:00:00Z' }, basic: { ndvi: { mean: 0.50, min: 0.2, max: 0.7, stDev: 0.05 } }, totalCount: 400, noDataCount: 50 },
+    B3: { interval: { from: '2026-03-15T00:00:00Z', to: '2026-04-15T00:00:00Z' }, basic: { ndvi: { mean: 0.52, min: 0.3, max: 0.8, stDev: 0.04 } }, totalCount: 400, noDataCount: 50 },
+    B1: { interval: { from: '2026-01-15T00:00:00Z', to: '2026-02-15T00:00:00Z' }, basic: { ndvi: { mean: 0.55, min: 0.3, max: 0.75, stDev: 0.03 } }, totalCount: 400, noDataCount: 50 },
+  },
+};
+
+test('ndvi series: normalizePolygon accepts the app shape, closes the ring, refuses junk', () => {
+  const n = normalizePolygon(PLOT);
+  assert.equal(n.ok, true);
+  const ring = n.geojson.coordinates[0]; // [[lon, lat], ...] with the first point repeated last
+  assert.equal(ring.length, PLOT.length + 1);
+  assert.deepEqual(ring[ring.length - 1], ring[0]);
+  assert.equal(ring[0][0], 8.9, 'GeoJSON order is lon first');
+  assert.ok(n.areaM2 > 6000 && n.areaM2 < 15000, '~1.2 ha');
+
+  // walked boundaries usually end where they start: the closing duplicate must vanish
+  const closed = normalizePolygon([...PLOT, PLOT[0]]);
+  assert.equal(closed.ok, true);
+  assert.equal(closed.pts.length, 4);
+
+  assert.equal(normalizePolygon([{ lat: 9.9, lon: 8.9 }]).ok, false, 'needs 3 corners');
+  assert.equal(normalizePolygon([[9.9, 8.9], [9.91, 8.91], [9.92, 8.9]]).ok, false, 'arrays are not points');
+  assert.equal(normalizePolygon([{ lat: 999, lon: 8.9 }, { lat: 9.9, lon: 8.9 }, { lat: 9.91, lon: 8.91 }]).ok, false);
+  assert.equal(normalizePolygon(null).ok, false, 'missing polygon refused');
+  // bigger than a plot: series is capped at one walked field, not a farm block
+  const huge = [{ lat: 9.9, lon: 8.9 }, { lat: 9.9, lon: 9.4 }, { lat: 10.4, lon: 9.4 }, { lat: 10.4, lon: 8.9 }];
+  const h = normalizePolygon(huge);
+  assert.equal(h.ok, false);
+  assert.match(h.error, /too large/);
+});
+
+test('ndvi series: months clamp into the honest window', () => {
+  assert.equal(clampMonths(1), NDVI_SERIES_DEFAULTS.minMonths);
+  assert.equal(clampMonths(96), NDVI_SERIES_DEFAULTS.maxMonths);
+  assert.equal(clampMonths('x'), NDVI_SERIES_DEFAULTS.months);
+  assert.equal(clampMonths(6.4), 6);
+});
+
+test('ndvi series: ndviTrend flags the plot-own dip and refuses short histories', () => {
+  const mk = (vals) => vals.map((v) => ({ from: '2026-01-01', to: '2026-02-01', ndvi: v }));
+  const dipped = ndviTrend(mk([0.50, 0.55, 0.52, 0.62, 0.35]));
+  assert.equal(dipped.dip, true);
+  assert.equal(dipped.medianPrev, 0.535, 'even count of priors: mean of the middle two');
+  assert.equal(dipped.drop, 0.185);
+
+  assert.equal(ndviTrend(mk([0.5, 0.5, 0.5, 0.49])).dip, false, 'within 0.05 is no dip');
+  assert.equal(ndviTrend(mk([0.5, 0.3, 0.6])).reason, 'insufficient_history', 'needs 3 priors + latest');
+  assert.equal(ndviTrend(null).reason, 'insufficient_history');
+  assert.equal(ndviTrend(mk([0.5, NaN, 0.55, 0.6, 0.7])).monthsSampled, 4, 'gaps are skipped, not zeros');
+});
+
+test('ndvi series: the statistical request carries the walked ring, not a bbox', () => {
+  const req = seriesRequest({ polygonGeo: normalizePolygon(PLOT).geojson, cloudMaxPct: 30, from: 'X', to: 'Y' });
+  assert.equal(req.input.bounds.geometry.type, 'Polygon', 'bounds.geometry instead of bounds.bbox');
+  assert.equal(req.input.bounds.bbox, undefined);
+  assert.equal(req.input.bounds.properties.crs, 'http://www.opengis.net/def/crs/EPSG/0/4326');
+  assert.equal(req.aggregation.aggregationInterval.of, 'P1M');
+  assert.equal(req.input.data[0].dataFilter.maxCloudCoverage, 30);
+});
+
+test('ndvi series: without a provider the stub comes back, series honestly empty', async () => {
+  let called = false;
+  const fetchImpl = async () => { called = true; return ok(); };
+  const out = await ndviSeriesEvidence({ polygon: PLOT, env: {}, fetchImpl, now: NOW });
+  assert.equal(out.status, 'stub');
+  assert.equal(out.source, NDVI_SOURCE);
+  assert.equal(out.series, null);
+  assert.equal(out.trend, null);
+  assert.match(out.message, /not yet live/i);
+  assert.equal(called, false);
+  // Site elsewhere: bad geometry is its own status, never confused with the stub.
+  assert.equal((await ndviSeriesEvidence({ polygon: null, env: {}, fetchImpl, now: NOW })).status, 'bad_polygon');
+});
+
+test('ndvi series: sentinel-hub flow clips to the polygon and reports the dip', async () => {
+  let sent = null;
+  const fetchImpl = async (url, opts) => {
+    assert.match(String(url), /\/api\/v1\/statistical$/, 'the statistical endpoint, like the point check');
+    sent = JSON.parse(opts.body);
+    return { ok: true, status: 200, json: async () => SERIES_BUCKETS };
+  };
+  const out = await ndviSeriesEvidence({ polygon: PLOT, env: SH_ENV_BEARER, fetchImpl, now: NOW });
+  assert.equal(out.status, 'ok');
+  assert.equal(out.source, NDVI_SH_SOURCE);
+  const geometry = sent.input.bounds.geometry;
+  assert.equal(geometry.type, 'Polygon');
+  const ring = geometry.coordinates[0];
+  assert.equal(ring.length, 5, 'walked corners plus the implicit closing point');
+  assert.deepEqual(ring[0], ring[4]);
+  assert.equal(sent.aggregation.aggregationInterval.of, 'P1M');
+
+  assert.equal(out.series.length, 5, 'all months that carry values');
+  assert.deepEqual(out.series.map((p) => p.from), [
+    '2025-12-15T00:00:00Z', '2026-01-15T00:00:00Z', '2026-02-15T00:00:00Z',
+    '2026-03-15T00:00:00Z', '2026-04-15T00:00:00Z',
+  ], 'chronological regardless of bucket order');
+  assert.equal(out.series[4].ndvi, 0.35);
+  assert.equal(out.trend.dip, true, '0.35 vs median 0.535 is the dipped last month');
+  assert.equal(out.trend.drop, 0.185);
+  assert.ok(out.areaM2 > 6000);
+  assert.deepEqual(out.centroid, { lat: 9.9005, lon: 8.9005 });
+});
+
+test('ndvi series: provider failure and no-data are reported, never fabricated', async () => {
+  const refused = async () => ({ ok: false, status: 401, json: async () => ({}) });
+  const out = await ndviSeriesEvidence({ polygon: PLOT, env: SH_ENV_BEARER, fetchImpl: refused, now: NOW });
+  assert.equal(out.status, 'unavailable');
+  assert.equal(out.error, 'auth_failed');
+
+  const empty = { data: { B0: { interval: { from: 'X', to: 'Y' }, basic: { ndvi: { mean: 0.5 } }, totalCount: 200, noDataCount: 200 } } };
+  const nopixels = await ndviSeriesEvidence({ polygon: PLOT, env: SH_ENV_BEARER, fetchImpl: async () => ({ ok: true, status: 200, json: async () => empty }), now: NOW });
+  assert.equal(nopixels.status, 'unavailable');
+  assert.equal(nopixels.error, 'no_valid_pixels');
+});
+
+test('ndvi series: the GEE fallback is one honest average, explicitly not a series', async () => {
+  let sentBody = null;
+  const fetchImpl = async (url, opts) => {
+    if (String(url).includes('oauth2')) return GEE_TOKEN;
+    sentBody = JSON.parse(opts.body);
+    return GEE_OK(GEE_STATS);
+  };
+  const out = await ndviSeriesEvidence({ polygon: PLOT, env: GEE_ENV, fetchImpl, now: NOW });
+  assert.equal(out.status, 'ok');
+  assert.equal(out.source, NDVI_GEE_SOURCE);
+  assert.equal(out.series.length, 1, 'the value API cannot make monthly buckets in one call');
+  assert.match(out.note, /not a monthly series/);
+  assert.equal(out.trend.reason, 'insufficient_history');
+  assert.ok(out.bufferKm >= 0.05, 'buffer derived from the polygon area');
+  const expr = JSON.stringify(sentBody.expression);
+  assert.match(expr, /Geometry.buffer/, 'the reduce centres on the walked polygon');
+});
+
+test('ndvi series API: farmer-facing route validates the polygon and serves the stub', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ndviseries-'));
+  const app = createApp({ dataDir: dir, adminToken: 'op', now: NOW });
+  await new Promise((r) => app.server.listen(0, r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const post = async (body) => {
+    const res = await fetch(base + '/api/registry/ndvi-series', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, json: await res.json() };
+  };
+  try {
+    assert.equal((await post({})).status, 400, 'missing polygon');
+    assert.equal((await post({ polygon: [[9.9, 8.9], [9.91, 8.91], [9.92, 8.9]] })).status, 400, 'wrong point shape');
+    assert.equal((await post({ polygon: PLOT.slice(0, 2) })).status, 400, 'needs 3 corners');
+    const big = [{ lat: 9.9, lon: 8.9 }, { lat: 9.9, lon: 9.4 }, { lat: 10.4, lon: 9.4 }, { lat: 10.4, lon: 8.9 }];
+    const oversized = await post({ polygon: big });
+    assert.equal(oversized.status, 400);
+    assert.match(oversized.json.error, /too large/, 'per-plot size cap is enforced at the route');
+
+    const okres = await post({ polygon: PLOT, months: 99 });
+    assert.equal(okres.status, 200, 'no operator token needed: farmers never hold one');
+    assert.equal(okres.json.status, 'stub');
+    assert.equal(okres.json.months, NDVI_SERIES_DEFAULTS.maxMonths, 'months clamped at the route');
+    assert.equal(okres.json.series, null);
+  } finally {
+    app.server.closeAllConnections?.();
+    await new Promise((r) => app.server.close(r));
+  }
 });
