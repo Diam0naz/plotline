@@ -156,6 +156,13 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
   };
   const hits = new Map(); // "bucket:ip" -> [timestamps] of recent writes
 
+  // Client address for rate limiting: on serverless platforms the request object
+  // may not carry a socket, so fall back to the forwarded-for chain.
+  const clientIp = (req) =>
+    req.socket?.remoteAddress
+    || String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim()
+    || 'unknown';
+
   const limited = (ip, bucket = 'anchor', rate = RATE) => {
     const t = Date.now();
     const k = bucket + ':' + ip;
@@ -235,7 +242,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
         const valid = given.length === want.length && timingSafeEqual(given, want);
         if (!valid) return send(res, 401, { error: 'anchor API key required' });
       }
-      if (limited(req.socket.remoteAddress || 'unknown')) return send(res, 429, { error: 'too many requests, try again shortly' });
+      if (limited(clientIp(req))) return send(res, 429, { error: 'too many requests, try again shortly' });
       let data;
       try { data = JSON.parse(await readBody(req)); }
       catch (err) {
@@ -252,7 +259,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     // Farmers have no server accounts: their identity is the key on their phone and
     // offline-first access must keep working. These routes serve the console roles.
     if (path === '/api/auth/login' && req.method === 'POST') {
-      if (limited(req.socket.remoteAddress || 'unknown', 'login', LOGIN_RATE)) {
+      if (limited(clientIp(req), 'login', LOGIN_RATE)) {
         return send(res, 429, { error: 'too many sign-in attempts, wait a minute' });
       }
       if (!sameOrigin(req)) return send(res, 403, { error: 'cross-site sign-in refused' });
@@ -267,7 +274,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const ok = rec && verifyPassword(data.password, rec.hash) && !(username !== 'admin' && !verifiers[username]);
       if (ok) {
         const { token, session } = sessions.create(rec.role, username);
-        console.log(`sign-in: ${rec.role} ${username} from ${req.socket.remoteAddress}`);
+        console.log(`sign-in: ${rec.role} ${username} from ${clientIp(req)}`);
         return send(res, 200, { session: { role: session.role, username, expiresAt: session.expiresAt } }, {
           'set-cookie': sessionCookie(token, { secure: isSecure(req), maxAgeSeconds: Math.floor(sessionTtlMs / 1000) }),
         });
@@ -291,7 +298,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (userRec && verifyPassword(data.password, userRec.hash)) {
         const userRole = userRec.role || 'user';
         const { token, session } = sessions.create(userRole, matchedUsername);
-        console.log(`sign-in: ${userRole} ${matchedUsername} from ${req.socket.remoteAddress}`);
+        console.log(`sign-in: ${userRole} ${matchedUsername} from ${clientIp(req)}`);
         return send(res, 200, { session: { role: session.role, username: matchedUsername, expiresAt: session.expiresAt } }, {
           'set-cookie': sessionCookie(token, { secure: isSecure(req), maxAgeSeconds: Math.floor(sessionTtlMs / 1000) }),
         });
@@ -349,7 +356,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     // become verifiers via POST /api/auth/apply. Admin accounts cannot be
     // self-registered; admin is provisioned from ADMIN_PASSWORD or the operator token.
     if (path === '/api/auth/signup' && req.method === 'POST') {
-      if (limited(req.socket.remoteAddress || 'unknown', 'login', LOGIN_RATE)) {
+      if (limited(clientIp(req), 'login', LOGIN_RATE)) {
         return send(res, 429, { error: 'too many attempts, wait a minute' });
       }
       if (!sameOrigin(req)) return send(res, 403, { error: 'cross-site sign-up refused' });
@@ -374,7 +381,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       writeFileSync(usersFile, JSON.stringify(users, null, 2), { mode: 0o600 });
       // Auto sign in
       const { token: tok, session } = sessions.create('user', username);
-      console.log(`sign-up: user ${username} <${email}> from ${req.socket.remoteAddress}`);
+      console.log(`sign-up: user ${username} <${email}> from ${clientIp(req)}`);
       return send(res, 201, { session: { role: 'user', username, expiresAt: session.expiresAt } }, {
         'set-cookie': sessionCookie(tok, { secure: isSecure(req), maxAgeSeconds: Math.floor(sessionTtlMs / 1000) }),
       });
@@ -386,7 +393,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     // POST /api/auth/apply/:id/approve — admin: approve and auto-create account
     // POST /api/auth/apply/:id/reject  — admin: reject
     if (path === '/api/auth/apply' && req.method === 'POST') {
-      if (limited(req.socket.remoteAddress || 'unknown', 'apply', { windowMs: 60_000, max: 5 })) {
+      if (limited(clientIp(req), 'apply', { windowMs: 60_000, max: 5 })) {
         return send(res, 429, { error: 'too many application attempts, wait a minute' });
       }
       const data = await jsonBody(req, res, 2048);
@@ -600,7 +607,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     // Best-effort suggestion for the record the scout is writing; the report
     // never depends on it. Rate-limited because every call costs model tokens.
     if (path === '/api/classify' && req.method === 'POST') {
-      const ip = req.socket.remoteAddress || 'unknown';
+      const ip = clientIp(req);
       if (limited(ip, 'classify', { windowMs: 60_000, max: 10 })) {
         return send(res, 429, { error: 'too many classifications, try again shortly' });
       }
@@ -641,7 +648,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
   const cached = (key, ttl, fn) => (cache ? cache.wrap(key, ttl, fn) : fn());
 
   async function registryApi(req, res, path) {
-    const ip = req.socket.remoteAddress || 'unknown';
+    const ip = clientIp(req);
     const get = req.method === 'GET';
     const post = req.method === 'POST';
 
@@ -886,17 +893,25 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     }
   }
 
-  const server = http.createServer(async (req, res) => {
+  // One request cycle for every surface: /api/* consults the handlers below,
+  // anything else is a static shell file. Extracted from the http.createServer
+  // callback so long-running platforms (a plain node server here, a serverless
+  // entry elsewhere) can route the exact same logic into their own req/res pair.
+  const routeRequest = async (req, res, routePath = null) => {
+    const path = routePath || new URL(req.url, 'http://x').pathname;
     try {
-      const path = new URL(req.url, 'http://x').pathname;
       if (path.startsWith('/api/')) return await api(req, res, path);
       return await serveStatic(req, res, path);
     } catch (err) {
       console.error(err);
       if (!res.headersSent) send(res, 500, { error: 'server error' });
     }
+  };
+
+  const server = http.createServer((req, res) => {
+    routeRequest(req, res);
   });
-  return { server, ledger, registry, adminToken, logEvent, get neon() { return pg || neonAuth || realtime ? { pg, neonAuth, realtime } : null; } };
+  return { server, handle: routeRequest, ledger, registry, adminToken, logEvent, get neon() { return pg || neonAuth || realtime ? { pg, neonAuth, realtime } : null; } };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

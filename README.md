@@ -174,6 +174,17 @@ Provider: the Sentinel Hub **Statistical API** (`sentinel-2-l2a`, monthly bucket
 
 Interpretation guardrails: NDVI is **evidence, not proof** — the same caveats as the fire check apply (cloud, seasonality, sensor noise, and mixed-pixel effects near small plots), and the verifier's signed decision is still what counts.
 
+## Deploying to Vercel
+
+The repo ships a `vercel.json` that keeps the single Node handler intact:
+
+- **Static surfaces** (landing, app, console, pitch deck, service worker, vendored Leaflet) are staged by `scripts/vercel-stage.mjs` into `public/` and served by Vercel's static layer — only tracked files ship, so local-only material never goes public.
+- **Every `/api/*` route** is served by one serverless function, `api/app.mjs`, which reuses the exact `createApp` request handler from `server/server.mjs`. Same routing logic locally and on the platform; no framework, no rewrite of the brain.
+- Headers on static responses replicate the server's security headers (CSP, nosniff, frame-deny, no-cache for the service worker and manifest).
+- The demo registry state lives in files under `/tmp` of one instance: it survives requests, not platform recycles. Farmer phones keep their records locally, so the app itself is unaffected; re-provision verifiers after a recycle reboots the tenant. Pointing `DATABASE_URL` at Neon mirrors accounts and sessions to Postgres as usual.
+
+Setup: import the repo at `vercel.com/new`. No paths or framework questions — the config file decides. Optional environment variables (all served from `.env.example` locally): `ADMIN_PASSWORD` (so the operator console keeps one password across recycles), `DATABASE_URL` (Neon Postgres mirror), `ANCHOR_API_KEY` (facility for publishing ledger heads), `COPERNICUS_CLIENT_ID`/`COPERNICUS_CLIENT_SECRET` or `SENTINELHUB_*` (NDVI live), `OPENAI_API_KEY`/`GEMINI_API_KEY` (photo classification), `NEON_REALTIME_SECRET` (console live feed), `REDIS_URL` (leave unset — the function runs uncached).
+
 ## Limits to be honest about
 
 - **Self-reported survival counts are sampled, not measured.** The registry catches inconsistent or implausible counts and double registration, but an honest-looking false count still needs the verifier's judgment or a site visit. Random re-inspection would be a further control.
