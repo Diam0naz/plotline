@@ -1,20 +1,19 @@
 // scripts/vercel-stage.mjs — stage exactly what Vercel's static layer serves.
 //
 // The repo root is a mixed bag (server code, local state, function entry) and
-// only a whitelist is fit for the public web root. This copies each tracked
-// static file into `outputDirectory` (public/) — tracked-file enumeration via
-// git ls-files keeps local-only material (the working notes in assets/) out of
-// the deploy even when staging happens on a machine with uncommitted files.
-// Shipped deliberately because nothing here is incidental.
+// only a whitelist is fit for the public web root, so this copies each static
+// file into `outputDirectory` (public/) explicitly. The list is checked with
+// existsSync rather than git ls-files: CLI deploys upload files without .git,
+// and a build must not depend on repository plumbing being present.
 
-import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const OUT = join(ROOT, 'public');
 
 const FILES = [
+  // app shell + pages
   'index.html', 'site.css',
   'app.html', 'app.js', 'style.css', 'core.js',
   'console.html', 'console.js', 'console.css',
@@ -23,24 +22,32 @@ const FILES = [
   'manifest.webmanifest', 'icon.svg',
 ];
 
+const EXTRA = [
+  // decorative assets (tracked; never local-only material like working notes)
+  'assets/leaf-pattern.svg',
+  'assets/monstera/leaf-dark.png',
+  'assets/monstera/leaf-mist.png',
+  'assets/monstera/leaf.png',
+  'assets/monstera/pattern-dark.jpg',
+  'assets/monstera/pattern-mist.jpg',
+  'assets/monstera/pattern.jpg',
+  // vendored third-party clients
+  'vendor/leaflet/LICENSE',
+  'vendor/leaflet/leaflet-heat.js',
+  'vendor/leaflet/leaflet.css',
+  'vendor/leaflet/leaflet.js',
+  'vendor/neon-realtime-client.js',
+];
+
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 
-const tracked = (dir) => execFileSync('git', ['-C', ROOT, 'ls-files', dir], { encoding: 'utf8' })
-  .split('\n').filter(Boolean);
-
-mkdirSync(join(OUT, 'assets'), { recursive: true });
-for (const rel of tracked('assets')) cpSync(join(ROOT, rel), join(OUT, rel));
-
-mkdirSync(join(OUT, 'vendor'), { recursive: true });
-for (const rel of tracked('vendor')) {
+let n = 0;
+for (const rel of [...FILES, ...EXTRA]) {
+  if (!existsSync(join(ROOT, rel))) throw new Error(`staging: missing file ${rel} — the deploy would eat a 404`);
   mkdirSync(join(OUT, rel, '..'), { recursive: true });
   cpSync(join(ROOT, rel), join(OUT, rel));
+  n++;
 }
 
-for (const f of FILES) {
-  mkdirSync(join(OUT, f, '..'), { recursive: true });
-  cpSync(join(ROOT, f), join(OUT, f));
-}
-
-console.log(`staged ${FILES.length} files + tracked assets/ + tracked vendor/ into public/`);
+console.log(`staged ${n} files into public/`);
