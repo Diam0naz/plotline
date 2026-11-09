@@ -27,20 +27,146 @@ const FLAG_TEXT = {
   outside_boundary: 'Outside the saved farm boundary',
 };
 
-// ---------- storage ----------
+// ---------- storage seam: IndexedDB primary, localStorage shadow ----------
 const KEY = 'plotline.v1';
 let S = { farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [], onboarded: false, ndvi: {}, rain: {} };
 
-function load() {
+// The whole app state (identity keys, farms, every signed record, satellite
+// caches) used to live in ONE localStorage blob. That hits the ~5 MB quota
+// right at multi-season history, froze the main thread re-serializing it on
+// every save, and can be evicted outright under browser storage pressure —
+// the signing key would die with it. IndexedDB is the primary store now:
+// larger quota, async writes off the main thread, and a persisted-storage
+// request so the browser does not evict the origin.
+//
+// Safety rails, in order:
+// 1. boot prefers IndexedDB and imports the old localStorage copy once when
+//    the store is empty — existing phones migrate without any action;
+// 2. while localStorage still fits, a shadow copy is kept current (it is a
+//    free backup that survives a complete IndexedDB failure);
+// 3. a quota error on either side is silent as long as the other side held;
+//    only when BOTH fail does the farmer hear about it.
+const STORE_DB = 'plotline', STORE_OS = 'state';
+let storeRef = null; // { getJson, setJson, clear } on IndexedDB, or null
+let persistedFlag = false;
+let lastSavedBytes = 0;
+
+function openIdb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(STORE_DB, 1);
+    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE_OS)) req.result.createObjectStore(STORE_OS); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('indexedDB open failed'));
+    req.onblocked = () => reject(new Error('indexedDB blocked'));
+  });
+}
+const idbRead = (db) => new Promise((resolve, reject) => {
+  const req = db.transaction(STORE_OS, 'readonly').objectStore(STORE_OS).get(KEY);
+  req.onsuccess = () => resolve(req.result ?? null);
+  req.onerror = () => reject(req.error || new Error('indexedDB read failed'));
+});
+const idbWrite = (db, val) => new Promise((resolve, reject) => {
+  const tx = db.transaction(STORE_OS, 'readwrite');
+  tx.objectStore(STORE_OS).put(val, KEY);
+  tx.oncomplete = () => resolve(true);
+  tx.onabort = tx.onerror = () => reject(tx.error || new Error('indexedDB write failed'));
+});
+
+async function bootStorage() {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) S = { ...S, ...JSON.parse(raw) };
-  } catch { /* storage blocked: run in memory */ }
+    const db = await openIdb();
+    storeRef = {
+      getJson: () => idbRead(db),
+      setJson: (json) => idbWrite(db, json),
+      clear: () => new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_OS, 'readwrite');
+        tx.objectStore(STORE_OS).delete(KEY);
+        tx.oncomplete = () => resolve(true);
+        tx.onabort = tx.onerror = () => reject(tx.error || new Error('indexedDB clear failed'));
+      }),
+    };
+  } catch { storeRef = null; }
+  // Losing the signing key is the one catastrophic failure this app has, so
+  // ask every browser that supports it to never evict. Best effort: some
+  // browsers only grant it when data is already non-trivial.
+  try { persistedFlag = !!(await navigator.storage?.persist?.()); } catch { /* ignore */ }
 }
+
+function applyState(raw) { if (raw) S = { ...S, ...JSON.parse(raw) }; }
+
+async function bootLoad() {
+  if (!('indexedDB' in window)) { // every still-alive browser has it; belt and braces
+    try { applyState(localStorage.getItem(KEY)); } catch { /* storage blocked: run in memory */ }
+    return;
+  }
+  await bootStorage();
+  let raw = null;
+  try { raw = await storeRef.getJson(); } catch { raw = null; }
+  if (raw) {
+    try { applyState(raw); }
+    catch { try { applyState(localStorage.getItem(KEY)); } catch { /* corrupt everywhere: run in memory */ } }
+  } else {
+    // First IndexedDB boot on this origin: import the localStorage era. The
+    // old key stays — it becomes the fresh shadow copy on the next save.
+    try { applyState(localStorage.getItem(KEY)); } catch { /* ignore */ }
+  }
+  save();
+}
+
+let flushTimer = null, storageWarned = false, wiped = false;
+
 function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(S)); }
-  catch { toast('Storage is unavailable, so data will not persist'); }
+  // Callers stay synchronous; the write happens shortly after and the LAST
+  // state wins — rapid bursts (a corner walk, several records) coalesce.
+  if (wiped) return;
+  if (flushTimer !== null) return;
+  flushTimer = setTimeout(flushNow, 60);
 }
+
+async function flushNow() {
+  flushTimer = null;
+  if (wiped) return;
+  const json = JSON.stringify(S);
+  lastSavedBytes = new Blob([json]).size;
+  let idbDone = false, lsDone = false;
+  if (storeRef) { try { await storeRef.setJson(json); idbDone = true; } catch { /* ride on the shadow */ } }
+  try { localStorage.setItem(KEY, json); lsDone = true; } catch { /* quota: the primary holds */ }
+  if (!idbDone && !lsDone) {
+    if (!storageWarned) { storageWarned = true; toast('Storage is unavailable — records will not persist'); }
+    return;
+  }
+  renderStorageMeter();
+}
+
+async function wipeLocalState(cb) {
+  wiped = true; // the pagehide shadow-writer must not resurrect anything
+  S = { ...S, farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, outbox: [], sent: [], ndvi: {}, rain: {} };
+  try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+  if (storeRef) { try { await storeRef.clear(); } catch { /* ignore */ } }
+  cb();
+}
+
+function renderStorageMeter() {
+  const el = $('#storage-meter');
+  if (!el) return;
+  el.hidden = false;
+  const mb = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round((b || 0) / 1024) + ' KB');
+  const records = S.records.length;
+  el.textContent = `${records} signed record${records === 1 ? '' : 's'} · recording history of ${mb(lastSavedBytes)}`
+    + (persistedFlag ? ' · storage persistent (not evictable)' : ' · storage best-effort');
+  navigator.storage?.estimate?.().then(({ quota }) => {
+    if (quota) el.textContent += ` (browser quota ~${mb(quota)})`;
+  }).catch(() => { /* no estimate support: the line stands as is */ });
+}
+
+// Unload is the one moment IndexedDB transactions are not guaranteed to
+// commit, but a synchronous localStorage write still lands. Refresh the
+// shadow there and cancel any pending deferred flush.
+addEventListener('pagehide', () => {
+  if (wiped || flushTimer === null) return;
+  clearTimeout(flushTimer); flushTimer = null;
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* best effort */ }
+});
 
 let toastTimer;
 function toast(msg) {
@@ -1204,8 +1330,7 @@ $('#export-btn').addEventListener('click', () => {
 });
 $('#reset-btn').addEventListener('click', () => {
   if (!confirm('Delete all farms, records and your signing key from this device?')) return;
-  try { localStorage.removeItem(KEY); } catch { /* ignore */ }
-  location.reload();
+  wipeLocalState(() => location.reload());
 });
 
 // ---------- demo data ----------
@@ -1997,7 +2122,7 @@ function clearJoinParam() {
 }
 
 async function init() {
-  load();
+  await bootLoad(); // store seams in before anything reads S or the lock
   wireGateway(); // the split-screen signup / login gate
   wirePasswordReveal(); // eye toggles on every password / PIN field
   // A set PIN lock is the privacy screen: nothing renders (not even the gateway)
@@ -2106,7 +2231,7 @@ function wireGateway() {
     if (!(S.keys && S.keys.priv && S.fp)) return setGatewayMode('signup');
     if (!confirm('This clears this phone\'s identity — all farms, records and the signing key. Continue?')) return;
     try { localStorage.removeItem(KEY); localStorage.removeItem(LOCK_STORAGE); } catch { /* ignore */ }
-    location.reload();
+    wipeLocalState(() => location.reload());
   });
   $('#gw-signup-pin')?.addEventListener('input', (e) => { const row = $('#gw-signup-pin2-row'); if (row) row.hidden = !e.target.value; });
   $('#gw-signup-form')?.addEventListener('submit', onGatewaySignup);
