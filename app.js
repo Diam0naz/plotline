@@ -519,6 +519,37 @@ function onLiveFix() {
   if (walk.on) { drawWalk(); walkStats(); }
 }
 
+// ---------- locate helpers (Farm tab buttons) ----------
+async function locateMe() {
+  if (!farmMap) return;
+  const btn = $('#locate-me-btn');
+  const busy = btn.disabled; btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = 'Locating…';
+  try {
+    if (!startGps()) return;
+    // getFix reuses a fresh standing-watch fix or converges to a good one;
+    // the halo + dot appear the moment fixes flow via drawMe().
+    const fix = await getFix();
+    centered = true; // centered on purpose: later live fixes must not yank the view
+    farmMap.setView([fix.lat, fix.lon], 18);
+    toast(`You are here (±${Math.round(fix.acc)} m). Move the map freely — it stays put.`);
+  } catch (err) { toast(err.message); }
+  if (!busy) { btn.disabled = false; btn.textContent = label; }
+}
+
+function locateFarms() {
+  if (!farmMap) return;
+  if (!S.farms.length) {
+    toast('No farms yet — walk your first boundary and it will be here.');
+    return;
+  }
+  const corners = [];
+  for (const f of S.farms) for (const p of f.polygon) corners.push([p.lat, p.lon]);
+  farmMap.fitBounds(L.latLngBounds(corners), { padding: [40, 40], maxZoom: 18 });
+  toast(`Showing ${S.farms.length} farm${S.farms.length === 1 ? '' : 's'}.`);
+}
+
 $('#walk-btn').addEventListener('click', () => {
   if (!startGps()) return;
   walk.on = true; walk.pts = []; walk.done = false; centered = false;
@@ -532,6 +563,8 @@ $('#walk-cancel').addEventListener('click', () => {
   $('#farm-form').classList.add('hidden');
   walkButtons(); walkStats(); drawWalk();
 });
+$('#locate-me-btn').addEventListener('click', locateMe);
+$('#locate-farms-btn').addEventListener('click', locateFarms);
 $('#drop-btn').addEventListener('click', () => {
   if (!lastFix) return toast('Waiting for a GPS fix…');
   if (lastFix.acc > 50) return toast(`Fix is too weak (±${Math.round(lastFix.acc)} m). Wait for it to improve.`);
