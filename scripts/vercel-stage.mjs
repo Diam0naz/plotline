@@ -17,7 +17,7 @@ const FILES = [
   'index.html', 'site.css',
   'app.html', 'app.js', 'style.css', 'core.js',
   'console.html', 'console.js', 'console.css',
-  'pitch-deck.html',
+  'pitch-deck.html', 'pitch-deck.js',
   'sw.js', 'sw-update.js',
   'manifest.webmanifest', 'icon.svg',
 ];

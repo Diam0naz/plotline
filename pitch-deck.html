@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!-- Plotline pitch deck — one file, no build, no dependencies.
      Present: open in a browser (F11 for full screen), advance with → / space.
+     Mobile: swipe, the ‹ › buttons, or tap a dot.
      Print: Ctrl+P — each slide is an A4 landscape page, backgrounds included.
 Served at /pitch-deck.html by `npm start`. -->
 <html lang="en">
@@ -62,8 +63,16 @@ Served at /pitch-deck.html by `npm start`. -->
     color: var(--dim); font-size: 13px; z-index: 10;
   }
   .dots { display: flex; gap: 6px; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); cursor: pointer; }
   .dot.on { background: var(--acc); }
+  /* Touch navigation: swipe works everywhere; these buttons are the explicit controls */
+  .nv {
+    background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+    width: 34px; height: 34px; border-radius: 50%; font-size: 17px; line-height: 1;
+    cursor: pointer; touch-action: manipulation;
+  }
+  .nv:disabled { opacity: .3; }
+  .parrows { display: flex; gap: 8px; align-items: center; }
   .brand { font-weight: 800; color: var(--ink); }
   .brand span { color: var(--acc); }
   .rule { border: 0; border-top: 1px solid var(--line); margin: 2.4vh 0; }
@@ -82,6 +91,20 @@ Served at /pitch-deck.html by `npm start`. -->
     .slide { display: flex !important; position: relative; page-break-after: always; height: 100vh; }
     .foot { position: fixed; }
     @page { size: A4 landscape; margin: 0; }
+  }
+  /* Phones: canvases collapse to one column, slides scroll vertically and
+     clear the fixed footer, dots grow to finger-sized tap targets. */
+  @media (max-width: 760px) {
+    .slide { padding: 4.5vh 6vw 13vh; justify-content: flex-start; overflow-y: auto; }
+    .cols, .cards { display: block; }
+    .cards > .card, .cols > div + div { margin-top: 1.8vh; }
+    .flow { grid-template-columns: 1fr; gap: 1.2vh; }
+    .foot { left: 4vw; right: 4vw; }
+    .foot .brand { display: none; }
+    .dots { gap: 0; }
+    .dot { width: 12px; height: 12px; padding: 0; }
+    table { font-size: 14px; }
+    th, td { padding: 1vh .6vw; }
   }
 </style>
 </head>
@@ -178,7 +201,7 @@ public views
   <div class="cols">
     <div>
       <ul>
-        <li><b>Offline-first is hard.</b> Conflict-free merge, signed sync bundles, cached map tiles, install-as-you-update PWA delivery — built and tested (74 automated tests).</li>
+        <li><b>Offline-first is hard.</b> Conflict-free merge, signed sync bundles, cached map tiles, install-as-you-update PWA delivery — built and tested (119 automated tests).</li>
         <li><b>The chain format</b> — evidence-to-decision lineage with accreditation expiry rules — is the thing registries and buyers will ask for, and we designed to it from day one.</li>
         <li><b>Field data compounds.</b> Every farm mapped becomes a permanent, keyed asset; validation history accrues to the farmer and the aggregator.</li>
       </ul>
@@ -244,16 +267,16 @@ public views
   <div class="cols">
     <div>
       <ul>
-        <li><b>Farmer app (PWA)</b> — offline install, boundary walking, scouting, key custody, backup, records sync. Ships today on mid-range Android.</li>
+        <li><b>Farmer app (PWA)</b> — offline install, boundary walking with a GPS convergence lock (corners worse than ±50 m refused, one-tap Locate me / Locate farms map tools), scouting, key custody in an IndexedDB store with persistent storage requested, backup and records sync. Ships today on mid-range Android.</li>
         <li><b>Registry + console</b> — submissions, decisions, accreditations, market views, orders, retirement certificates, reconciliation — live.</li>
-        <li><b>Satellite evidence pipeline</b> — fire overlap checked; NDVI provider stubbed, awaiting Sentinel-Hub/Planet credentials.</li>
+        <li><b>Satellite evidence pipeline</b> — live: CHIRPS daily rainfall and per-plot NDVI snapshots via Google Earth Engine, cached on the farm tab (per-month NDVI trend returns when the Sentinel Hub provider recovers); VIIRS fire-overlap check enforced at submission.</li>
         <li><b>Cloud backend live on Neon</b> — managed Postgres, managed auth, functions and live queries wired with encrypted session persistence.</li>
       </ul>
     </div>
     <div>
       <div class="card">
         <h3>Quality bar</h3>
-        <p class="small">74 automated tests covering crypto, ledger chain, registry lifecycle and access control; zero-dependency codebase; threat-modelled auth (scrypt, constant-time compares, CSP everywhere).</p>
+        <p class="small">119 automated tests covering crypto, ledger chain, registry lifecycle and access control, plus real-Chrome run-throughs of the GPS engine, storage migration and locate tools; zero-dependency codebase; threat-modelled auth (scrypt, constant-time compares, CSP everywhere).</p>
         <p class="small" style="margin-top:1.6vh">Next hardening: external security audit <span class="todo">scope quote needed</span>.</p>
       </div>
       <div class="card" style="margin-top:1.8vh">
@@ -283,7 +306,7 @@ public views
   <div class="kicker">Roadmap</div>
   <h2>From pilot to registry-grade issuance.</h2>
   <ul>
-    <li><b class="accent">Now</b> — farmer app + registry console live; NDVI evidence integration; pilot farm set <span class="todo">N farms, region</span>.</li>
+    <li><b class="accent">Now</b> — farmer app + registry console live, with NDVI snapshot and CHIRPS daily-rainfall evidence per plot via Google Earth Engine (per-month NDVI trend when Sentinel Hub recovers); pilot farm set <span class="todo">N farms, region</span>.</li>
     <li><b class="accent">Next</b> — first aggregated submission batch passes full verification; accreditation from <span class="todo">standards body</span>; first buyer retirement.</li>
     <li><b class="accent">Then</b> — agronomic manuals (fallow/cover-crop/agroforestry) with named methodologies; public landing page with live market table; payment rails.</li>
     <li><b class="accent">Later</b> — country compliance scheme plugins; anchoring to multiple notarisation backends; verifier marketplace UI.</li>
@@ -330,29 +353,12 @@ public views
   <span class="brand">Plot<span>line</span></span>
   <span id="pageno"></span>
   <span class="dots" id="dots"></span>
+  <span class="parrows">
+    <button class="nv" id="prev" aria-label="Previous slide" type="button">‹</button>
+    <button class="nv" id="next" aria-label="Next slide" type="button">›</button>
+  </span>
 </footer>
 
-<script>
-const slides = [...document.querySelectorAll('.slide')];
-let i = 0;
-const dots = document.getElementById('dots');
-slides.forEach((_, n) => { const d = document.createElement('span'); d.className = 'dot'; d.onclick = () => go(n); dots.append(d); });
-const foot = document.getElementById('footer'); foot.style.display = 'flex';
-
-function go(n) {
-  i = Math.max(0, Math.min(slides.length - 1, n));
-  slides.forEach((s, k) => s.classList.toggle('active', k === i));
-  [...dots.children].forEach((d, k) => d.classList.toggle('on', k === i));
-  document.getElementById('pageno').textContent = `${i + 1} / ${slides.length}`;
-}
-addEventListener('keydown', (e) => {
-  if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(i + 1); }
-  if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); go(i - 1); }
-  if (e.key === 'Home') go(0);
-  if (e.key === 'End') go(slides.length - 1);
-});
-addEventListener('click', (e) => { if (e.clientX > innerWidth * .66) go(i + 1); if (e.clientX < innerWidth * .33) go(i - 1); });
-go(0);
-</script>
+<script src="pitch-deck.js" defer></script>
 </body>
 </html>
