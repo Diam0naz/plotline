@@ -280,8 +280,26 @@ function updateGpsChip() {
   chip.hidden = false;
   chip.textContent = `GPS ±${Math.round(a)} m`;
 }
-function startGps() {
+// A permission the user (or an impatient tap) once blocked never re-prompts
+// from JS in Chromium — the farmer would tap a button and stare at GPS
+// spin-ups for the full watchdog with zero chance of a fix. Query the state
+// up front so 'denied' becomes an instant, actionable message instead.
+async function ensureLocationPermission() {
+  if (!navigator.permissions || typeof navigator.permissions.query !== 'function') return true; // older browsers: the watch error path still reports
+  try {
+    const st = await navigator.permissions.query({ name: 'geolocation' });
+    if (st.state === 'denied') {
+      toast('Location is blocked for this app. Tap the padlock in the address bar and allow Location.');
+      return false;
+    }
+    // granted — or 'prompt', where the next geolocation call shows the dialog
+    return true;
+  } catch { return true; }
+}
+
+async function startGps() {
   if (!('geolocation' in navigator)) { toast('This browser has no location support'); return false; }
+  if (!(await ensureLocationPermission())) return false;
   if (watchId !== null) return true;
   centered = false; // center on the first fix of this GPS session, even outside a walk
   watchId = navigator.geolocation.watchPosition(
@@ -527,7 +545,7 @@ async function locateMe() {
   const label = btn.textContent;
   btn.textContent = 'Locating…';
   try {
-    if (!startGps()) return;
+    if (!(await startGps())) return;
     // getFix reuses a fresh standing-watch fix or converges to a good one;
     // the halo + dot appear the moment fixes flow via drawMe().
     const fix = await getFix();
@@ -535,7 +553,7 @@ async function locateMe() {
     farmMap.setView([fix.lat, fix.lon], 18);
     toast(`You are here (±${Math.round(fix.acc)} m). Move the map freely — it stays put.`);
   } catch (err) { toast(err.message); }
-  if (!busy) { btn.disabled = false; btn.textContent = label; }
+  finally { if (!busy) { btn.disabled = false; btn.textContent = label; } }
 }
 
 function locateFarms() {
@@ -550,8 +568,8 @@ function locateFarms() {
   toast(`Showing ${S.farms.length} farm${S.farms.length === 1 ? '' : 's'}.`);
 }
 
-$('#walk-btn').addEventListener('click', () => {
-  if (!startGps()) return;
+$('#walk-btn').addEventListener('click', async () => {
+  if (!(await startGps())) return;
   walk.on = true; walk.pts = []; walk.done = false; centered = false;
   $('#farm-form').classList.add('hidden');
   toast('Walk to the first corner, then tap Mark corner');
