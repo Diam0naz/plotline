@@ -157,15 +157,18 @@ function updateGpsChip() {
 function startGps() {
   if (!('geolocation' in navigator)) { toast('This browser has no location support'); return false; }
   if (watchId !== null) return true;
+  centered = false; // center on the first fix of this GPS session, even outside a walk
   watchId = navigator.geolocation.watchPosition(
     (p) => {
       lastFix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, ts: p.timestamp };
-      updateGpsChip(); updateHud();
+      updateGpsChip(); updateHud(); drawMe();
       onLiveFix();
     },
     // Brief signal drops are normal in the field; only complain when there has been no fix for a while.
     (e) => { if (!lastFix || Date.now() - lastFix.ts > 15000) toast(geoMsg(e)); },
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
+    // maximumAge hands over a fresh system-cached fix instantly so the pin
+    // appears at once; the watch then converges live to high accuracy.
+    { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
   );
   return true;
 }
@@ -173,14 +176,63 @@ function stopGps() {
   if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   watchId = null;
   lastFix = null;
-  updateGpsChip();
+  updateGpsChip(); updateHud();
+  drawMe();
 }
+// One "fix" for a record is NOT a single getCurrentPosition. On Android the
+// first answer is usually the stale network cache (often kilometres off) and a
+// single-shot request frequently times out before the GNSS chip converges at
+// all — the phone reports "Timed out waiting for a GPS fix" even under open
+// sky. Instead we hold a short watch, keep the best fix seen, and return as
+// soon as it is good enough — or when it has stopped improving.
+const GPS_TARGET_ACC = 25;   // m — good enough to resolve early
+const GPS_MIN_WAIT = 3000;   // ms — never return earlier; the first fixes jump
+const GPS_SETTLE_MS = 4000;  // ms — stop when no improvement for this long
+const GPS_MAX_WAIT = 25000;  // ms — hard watchdog; best-so-far still wins
+
 function getFix() {
   return new Promise((resolve, reject) => {
     if (!('geolocation' in navigator)) return reject(new Error('This browser has no location support'));
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, ts: p.timestamp }),
-      (e) => reject(new Error(geoMsg(e))),
+    // The standing watch may already hold a fresh, decent fix — reuse it
+    // instead of making the farmer wait through another convergence.
+    if (lastFix && Date.now() - lastFix.ts < 10000 && lastFix.acc <= 30) return resolve({ ...lastFix });
+    let best = null;
+    let done = false;
+    let timer = null;
+    let watch = null;
+    const start = Date.now();
+    const finish = (fix, errMsg) => {
+      if (done) return;
+      done = true;
+      if (timer !== null) clearTimeout(timer);
+      if (watch !== null) navigator.geolocation.clearWatch(watch);
+      if (fix) resolve({ ...fix });
+      else reject(new Error(errMsg || 'No GPS fix yet — move to open sky and try again.'));
+    };
+    const armSettler = () => {
+      if (timer !== null) clearTimeout(timer);
+      // Honour GPS_MIN_WAIT even when the first fix lands on target.
+      timer = setTimeout(() => finish(best), Math.max(GPS_SETTLE_MS, GPS_MIN_WAIT - (Date.now() - start)));
+    };
+    timer = setTimeout(() => finish(best), GPS_MAX_WAIT);
+    watch = navigator.geolocation.watchPosition(
+      (p) => {
+        const fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, ts: p.timestamp };
+        lastFix = fix;
+        updateGpsChip(); updateHud();
+        // 1 m jitter guard: only treat real improvements as progress.
+        if (!best || fix.acc < best.acc - 1) {
+          best = fix;
+          drawMe();
+          if (best.acc <= GPS_TARGET_ACC && Date.now() - start >= GPS_MIN_WAIT) return finish(best);
+          armSettler();
+        }
+      },
+      (e) => {
+        // Permission denied is final; cycle timeouts (code 3) and position
+        // failures (code 2) wait for the watchdog — the chip often recovers.
+        if (e && e.code === 1) finish(null, geoMsg(e));
+      },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
     );
   });
@@ -250,7 +302,7 @@ function makeMap(el) {
   }).addTo(m);
   return m;
 }
-let farmMap, heatMap, farmLayer, walkLayer, heatLayerGroup;
+let farmMap, heatMap, farmLayer, walkLayer, meLayer, heatLayerGroup;
 let heat = null;
 
 function latlngs(poly) { return poly.map((p) => [p.lat, p.lon]); }
@@ -317,18 +369,28 @@ function drawWalk() {
     (walk.pts.length >= 3 ? L.polygon(ll, { color: '#b4761e', dashArray: '6 6', weight: 2, fillOpacity: 0.1 }) : L.polyline(ll, { color: '#b4761e', weight: 2 })).addTo(walkLayer);
     ll.forEach((p) => L.circleMarker(p, { radius: 4, color: '#b4761e', fillOpacity: 1 }).addTo(walkLayer));
   }
-  if (walk.on && lastFix) {
-    L.circle([lastFix.lat, lastFix.lon], { radius: Math.max(lastFix.acc, 2), color: '#476633', weight: 1, fillOpacity: 0.12 }).addTo(walkLayer);
-    L.circleMarker([lastFix.lat, lastFix.lon], { radius: 6, color: '#fff', fillColor: '#476633', fillOpacity: 1, weight: 2 }).addTo(walkLayer);
-  }
+  // The live fix pin (halo + dot) lives on meLayer via drawMe(), independent
+  // of whether a walk is running.
+}
+// The live "you are here" pin: an accuracy halo under a dot, on its own layer
+// so it survives walk/polygon redraws and shows even outside a boundary walk.
+function drawMe() {
+  if (!farmMap || !meLayer) return;
+  meLayer.clearLayers();
+  if (!lastFix) return;
+  L.circle([lastFix.lat, lastFix.lon], {
+    radius: Math.max(lastFix.acc, 2), color: '#476633', weight: 1, fillOpacity: 0.12, interactive: false,
+  }).addTo(meLayer);
+  L.circleMarker([lastFix.lat, lastFix.lon], {
+    radius: 6, color: '#fff', fillColor: '#476633', fillOpacity: 1, weight: 2, interactive: false,
+  }).addTo(meLayer);
 }
 let centered = false;
 function onLiveFix() {
-  if (walk.on) {
-    if (!centered && farmMap && lastFix) { farmMap.setView([lastFix.lat, lastFix.lon], 18); centered = true; }
-    drawWalk();
-    walkStats();
-  }
+  // Center the map once per GPS session — not just during a walk — so opening
+  // the app puts the farmer's own farm on screen without a second tap.
+  if (!centered && farmMap && lastFix) { farmMap.setView([lastFix.lat, lastFix.lon], 18); centered = true; }
+  if (walk.on) { drawWalk(); walkStats(); }
 }
 
 $('#walk-btn').addEventListener('click', () => {
@@ -1940,7 +2002,7 @@ async function init() {
   wirePasswordReveal(); // eye toggles on every password / PIN field
   // A set PIN lock is the privacy screen: nothing renders (not even the gateway)
   // until the correct PIN unlocks this phone.
-  if (getLock()) { showLockOverlay(); return; }
+  if (getLock()) { showLockIfNeeded(); return; }
   const join = joinParamMode();
   const registered = !!(S.keys && S.keys.priv && S.fp);
   showGateway(join || (registered ? 'login' : 'signup'));
@@ -2121,7 +2183,7 @@ async function continueInit() {
 
   farmMap = makeMap($('#map-farm'));
   heatMap = makeMap($('#map-heat'));
-  if (farmMap) { farmLayer = L.layerGroup().addTo(farmMap); walkLayer = L.layerGroup().addTo(farmMap); }
+  if (farmMap) { farmLayer = L.layerGroup().addTo(farmMap); walkLayer = L.layerGroup().addTo(farmMap); meLayer = L.layerGroup().addTo(farmMap); }
   if (heatMap) heatLayerGroup = L.layerGroup().addTo(heatMap);
 
   const f = activeFarm();
