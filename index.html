@@ -98,7 +98,7 @@
         <dd class="feat-stat-cap">of a small project's credit value is usually lost to MRV</dd>
       </div>
       <div class="feat-stat">
-        <dt class="feat-stat-val">99</dt>
+        <dt class="feat-stat-val">119</dt>
         <dd class="feat-stat-cap">automated tests across crypto, ledger chain, registry lifecycle and access control</dd>
       </div>
       <div class="feat-stat">
@@ -161,7 +161,7 @@
           <span class="feat-step-pill">Step 1 · Map</span>
         </div>
         <h3>Walk your boundary</h3>
-        <p>The phone logs GNSS points into a polygon: area, perimeter, plant counts, seed and fertiliser quantities. Maps are cached while you have signal, so it works with none.</p>
+        <p>The phone logs GNSS points into a polygon: area, perimeter, plant counts, seed and fertiliser quantities. A convergence lock keeps watching until the fix is genuinely good — corners worse than ±50 m are refused — while a live you-are-here pin and Locate me / Locate farms buttons put the map to work. Maps are cached while you have signal, so it works with none.</p>
         <div class="feat-chip-wrap">
           <span class="feat-proof-chip">Works offline</span>
         </div>
@@ -194,9 +194,9 @@
           <span class="feat-step-pill">Step 3 · Submit</span>
         </div>
         <h3>Satellite evidence</h3>
-        <p>Each submission carries a farm snapshot and an automated VIIRS fire check, with duplicate-plot detection guarding against double registration. NDVI trajectory (integrating) adds historical context once the provider is wired.</p>
+        <p>Each submission carries a farm snapshot and an automated VIIRS fire check, with duplicate-plot detection guarding against double registration. The farm tab also shows NDVI trend and CHIRPS daily rainfall per plot, fetched live through Google Earth Engine and cached on the phone — NDVI is a plot snapshot for now; the per-month trend returns when the Sentinel Hub provider recovers.</p>
         <div class="feat-chip-wrap">
-          <span class="feat-proof-chip">VIIRS fire check</span>
+          <span class="feat-proof-chip">NDVI · CHIRPS · VIIRS fire check</span>
         </div>
       </article>
 
@@ -276,6 +276,7 @@
         <ul class="acc-bullets">
           <li>Lives on your phone, never leaves it</li>
           <li>Works with zero network access</li>
+          <li>Kept in IndexedDB with persistent storage requested, so the browser won't evict it</li>
           <li>No email, no password</li>
         </ul>
         <span class="acc-badge acc-badge--device">Created at first launch</span>
