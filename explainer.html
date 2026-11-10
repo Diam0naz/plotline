@@ -1,0 +1,374 @@
+<!doctype html>
+<!-- Plotline faceless explainer — animated player for the 5-minute script.
+     No dependencies. No inline scripts (CSP). Record each scene full-screen
+     and add voiceover after; scenes are individually re-recordable.
+     URL params: ?scene=4 (start at a scene), &speed=8 (fast review),
+     &clean=1 (hide controls at start). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plotline — 5-minute explainer</title>
+<style>
+  :root {
+    --bg: #0d1a12; --panel: #12241a; --panel2: #16301f;
+    --ink: #e8f3ec; --dim: #9db4a6; --acc: #7ed957; --acc2: #eab308;
+    --line: #2a4634; --bad: #e4503d;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+  .stage { position: fixed; inset: 0; }
+  .scene { display: none; position: absolute; inset: 0; padding: 9vh 8vw 18vh;
+    flex-direction: column; justify-content: center; }
+  .scene.on { display: flex; }
+
+  /* entrance animation: only runs while .on, so re-entering a scene replays it */
+  .a { opacity: 0; }
+  .scene.on .a { animation: rise .6s cubic-bezier(.2,.7,.25,1) both; animation-delay: var(--d, 0s); }
+  .scene.on .a.fade { animation-name: fadein; }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+
+  .kicker { color: var(--acc); text-transform: uppercase; letter-spacing: .3em;
+    font-weight: 700; font-size: clamp(12px, 1.3vw, 15px); margin-bottom: 2.2vh; }
+  h1 { font-size: clamp(34px, 6.4vw, 84px); line-height: 1.05; letter-spacing: -.02em; }
+  h2 { font-size: clamp(26px, 3.6vw, 46px); line-height: 1.12; margin-bottom: 3vh; }
+  h3 { color: var(--acc); font-size: clamp(15px, 1.7vw, 19px); margin-bottom: .8vh; }
+  p, li { font-size: clamp(15px, 1.8vw, 21px); line-height: 1.5; }
+  .dim { color: var(--dim); }
+  .small { font-size: clamp(12px, 1.35vw, 16px); }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .accent { color: var(--acc); }
+  .gold { color: var(--acc2); }
+  .big { font-size: clamp(30px, 4.6vw, 62px); font-weight: 800; color: var(--acc); }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2vw; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 3vh 1.8vw; }
+  .cols { display: flex; gap: 3vw; align-items: stretch; }
+  .cols > div { flex: 1; }
+
+  .pill { display: inline-block; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--acc); border-radius: 999px; padding: 1.1vh 1.4vw; font-weight: 600;
+    font-size: clamp(13px, 1.5vw, 18px); }
+  .pill.warn { color: var(--acc2); border-color: var(--acc2); }
+  .pill.bad { color: var(--bad); border-color: var(--bad); }
+
+  /* scene 1 */
+  .dawn { position: absolute; inset: 0; z-index: -1;
+    background: linear-gradient(120deg, #1a2c12 0%, #0d1a12 55%, #24200c 100%);
+    background-size: 160% 160%; }
+  .scene.on .dawn { animation: pan 25s linear both; }
+  @keyframes pan { from { background-position: 0% 40%; } to { background-position: 100% 60%; } }
+
+  /* scene 3: phone + map */
+  .phone { background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
+    padding: 2vh 1.2vw; width: 52vw; }
+  .phone .tabbar { display: flex; gap: 1vw; border-bottom: 1px solid var(--line); padding-bottom: 1.2vh; margin-bottom: 1.6vh; }
+  .tab { color: var(--dim); font-size: clamp(12px, 1.3vw, 15px); padding: .4vh .9vw; border-radius: 8px; }
+  .tab.on { color: var(--ink); background: var(--panel2); font-weight: 600; }
+  .maplook { background: #14231a; border: 1px solid var(--line); border-radius: 12px;
+    height: 26vh; position: relative; }
+  .maplook svg { width: 100%; height: 100%; }
+  .walk-line { stroke: var(--acc); stroke-width: 3; fill: rgba(126, 217, 87, .12);
+    stroke-linejoin: round; }
+  .scene.on .walk-draw { stroke-dasharray: 1400; stroke-dashoffset: 1400;
+    animation: draw 6s ease-in-out 2s forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .corner { position: absolute; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--acc); border: 3px solid #0d1a12; transform: translate(-50%, -50%) scale(0); }
+  .scene.on .corner { animation: pop .4s cubic-bezier(.2,.7,.3,1.4) both; animation-delay: var(--t); }
+  @keyframes pop { to { transform: translate(-50%, -50%) scale(1); } }
+  .offline-badge { position: absolute; top: 10px; right: 10px; }
+  .hudrow { display: flex; gap: 2.4vw; margin-top: 1.6vh; }
+  .hud b { font-size: clamp(18px, 2.4vw, 30px); font-weight: 800; color: var(--acc); }
+
+  /* scene 5: chain */
+  .records { display: flex; gap: 1vw; justify-content: center; }
+  .rec { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.2vh 1vw; font-size: clamp(12px, 1.3vw, 15px); min-width: 15vw; }
+  .chain { display: flex; gap: .6vw; align-items: center; justify-content: center; margin-top: 2vh; }
+  .block { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.4vh 1vw; font-size: clamp(11px, 1.15vw, 14px); color: var(--dim); }
+  .block b { color: var(--acc); }
+  .link { width: 22px; height: 2px; background: var(--acc2); }
+  .fp { color: var(--acc2); font-weight: 700; }
+
+  /* scene 7: split bars */
+  .split-bar { display: grid; grid-template-columns: 11em 1fr 3.5em; gap: 1vw;
+    align-items: center; margin-bottom: 1.4vh; font-size: clamp(13px, 1.5vw, 18px); }
+  .bar { height: 14px; border-radius: 999px; background: var(--panel2); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--acc); }
+  .scene.on .bar > i { transition: width 1.4s cubic-bezier(.2,.7,.2,1); transition-delay: var(--d); }
+  .scene.on .bar > i.go { width: var(--w); }
+  .phonepay { background: var(--panel2); border: 2px solid var(--acc); border-radius: 18px;
+    padding: 2.4vh 1.6vw; text-align: center; }
+
+  /* scene 8: log */
+  .logrow { display: flex; gap: 1.2vw; align-items: center; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; padding: 1.3vh 1.2vw;
+    margin-bottom: .8vh; font-size: clamp(12px, 1.4vw, 16px); }
+  .logrow .lk { width: 14px; text-align: center; color: var(--acc2); }
+  .logrow.altered { border-color: var(--bad); }
+  .logrow.altered .mono, .logrow.altered .lk { color: var(--bad); }
+
+  .tick { color: var(--acc); font-weight: 800; }
+
+  /* captions — the voiceover text; always visible */
+  .capbar { position: fixed; left: 8vw; right: 8vw; bottom: 9.5vh; z-index: 20;
+    display: flex; justify-content: center; pointer-events: none; }
+  .cap { background: rgba(13, 26, 18, .82); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.6vh 2vw; max-width: 62ch; text-align: center;
+    font-size: clamp(16px, 2.1vw, 26px); line-height: 1.45; min-height: 8.5vh;
+    display: flex; align-items: center; }
+
+  /* chrome */
+  .progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--acc);
+    width: 0%; z-index: 30; }
+  .controls { position: fixed; right: 1.6vw; bottom: 2vh; z-index: 30; display: flex;
+    gap: .6vw; align-items: center; transition: opacity .4s; }
+  .controls.dimmed { opacity: .12; }
+  .controls button { background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+    width: 42px; height: 42px; border-radius: 50%; font-size: 17px; cursor: pointer; }
+  .controls .count { color: var(--dim); font-size: 14px; margin-right: .6vw; }
+  .chapters { position: fixed; left: 1.6vw; top: 2vh; z-index: 30; display: flex; gap: .4vw;
+    transition: opacity .4s; }
+  .chapters.dimmed { opacity: .12; }
+  .chapters button { background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+    width: 30px; height: 30px; border-radius: 8px; font-size: 12px; cursor: pointer; }
+  .chapters button.on { color: var(--bg); background: var(--acc); border-color: var(--acc); font-weight: 700; }
+  .dots { position: fixed; left: 50%; transform: translateX(-50%); bottom: 4.4vh; z-index: 25;
+    display: flex; gap: 8px; }
+  .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+  .dots i.on { background: var(--acc); }
+  .disclaimer { position: fixed; left: 1.6vw; bottom: 2vh; z-index: 25; color: var(--dim);
+    font-size: 12px; }
+
+  .vid16x9-note { position: fixed; right: 1.6vw; top: 2vh; color: var(--dim); font-size: 12px; z-index: 25; }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="chapters" id="chapters"></div>
+<div class="vid16x9-note">1526 × 858 px · 30 fps</div>
+
+<main class="stage" id="stage">
+
+  <!-- 1 COLD OPEN (0:00–0:25) -->
+  <section class="scene">
+    <div class="dawn"></div>
+    <div style="text-align:center">
+      <h1 class="a" style="--d:1.4s">800 trees planted.</h1>
+      <h1 class="a dim" style="--d:5s">Proof? None.</h1>
+      <p class="a dim small" style="--d:8s; margin-top:3vh">Plotline — proof of what grows</p>
+    </div>
+  </section>
+
+  <!-- 2 PROBLEM (0:25–1:00) -->
+  <section class="scene">
+    <div class="kicker a">The problem</div>
+    <h2>Proof is the wall between farmers and carbon money.</h2>
+    <div class="cards" style="margin-bottom:4vh">
+      <div class="card a" style="--d:1s"><h3>Carbon markets are growing</h3><p class="small dim">Nigeria is building one around trees that stay alive.</p></div>
+      <div class="card a" style="--d:2.4s"><h3>Proof is expensive</h3><p class="small dim">Audits and paperwork eat the credit value.</p></div>
+      <div class="card a" style="--d:3.8s"><h3>Smallholders are shut out</h3><p class="small dim">Some tools even charge per record.</p></div>
+    </div>
+    <div class="cols">
+      <div class="card a" style="--d:6s; text-align:center">
+        <div style="font-size:clamp(40px,4vw,60px)">🧑🏾‍🌾📱</div>
+        <p class="small">The farmer, doing the work</p>
+      </div>
+      <div class="card a" style="--d:7s; text-align:center">
+        <div style="font-size:clamp(40px,4vw,60px)">🗂️🗂️🗂️</div>
+        <p class="small">The stack of paperwork no one will trust</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 MEASURE (1:00–1:40) -->
+  <section class="scene">
+    <div class="kicker a">Step 1 · Measure the land</div>
+    <div class="phone a" style="--d:.4s">
+      <div class="tabbar">
+        <span class="tab on">Farm</span><span class="tab">Trees</span><span class="tab">Scout</span><span class="tab">Market</span><span class="tab">Log</span>
+      </div>
+      <div class="maplook">
+        <svg viewBox="0 0 600 260" preserveAspectRatio="none" aria-hidden="true">
+          <path class="walk-line walk-draw" d="M 120 210 L 210 60 L 420 40 L 510 150 L 360 225 Z"></path>
+        </svg>
+        <span class="corner" style="left:20%; top:86%; --t:3s"></span>
+        <span class="corner" style="left:34.8%; top:23%; --t:4.2s"></span>
+        <span class="corner" style="left:71.8%; top:15.4%; --t:5.2s"></span>
+        <span class="corner" style="left:86%; top:55.8%; --t:6.2s"></span>
+        <span class="corner" style="left:61.4%; top:83.6%; --t:7.2s"></span>
+        <span class="pill small offline-badge a" style="--d:8s">OFFLINE · no signal</span>
+      </div>
+      <div class="hudrow">
+        <div class="hud"><span class="dim small">AREA</span><br><b id="area-val">0.00</b> <span class="small dim">ha</span></div>
+        <div class="hud"><span class="dim small">PERIMETER</span><br><b id="peri-val">0</b> <span class="small dim">m</span></div>
+        <div class="hud"><span class="dim small">GPS</span><br><b>±4 m</b></div>
+      </div>
+    </div>
+    <p class="a small dim" style="--d:9s; margin-top:1.6vh">Corners worse than ±50 m are refused. Amina is illustrative — a stand-in for thousands of real smallholders.</p>
+  </section>
+
+  <!-- 4 RECORD TREES (1:40–2:15) -->
+  <section class="scene">
+    <div class="kicker a">Step 2 · Record the trees</div>
+    <div class="cols" style="max-width:64vw; margin:0 auto">
+      <div class="card">
+        <h3 class="a" style="--d:.4s">Planting</h3>
+        <p class="a" style="--d:1.2s">🫘&nbsp; Trees planted &nbsp;<b class="big">800</b> <span class="tick a" style="--d:1.8s">✓ signed</span></p>
+        <h3 class="a" style="--d:9s; margin-top:3vh">Survival count (sample)</h3>
+        <p class="a" style="--d:9.8s">🎲&nbsp; Trees counted &nbsp;<b class="big">80</b> <span class="tick a" style="--d:10.4s">✓ signed</span></p>
+        <p class="a" style="--d:13s">🌳&nbsp; Alive in sample &nbsp;<b class="big">70</b> <span class="tick a" style="--d:13.6s">✓ signed</span></p>
+      </div>
+      <div class="card a" style="--d:18s; align-self:center">
+        <h3>Registry estimate</h3>
+        <p class="big">700 <span class="dim" style="font-size:.4em">of 800 alive</span></p>
+        <p class="small dim">70/80 in the sample → 87.5% survival, applied to the planted count. Shown with the exact sample method — no hidden maths.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 SIGN FREE (2:15–2:50) -->
+  <section class="scene">
+    <div class="kicker a">Step 3 · Sign it — for free</div>
+    <div class="records">
+      <div class="rec a" style="--d:.6s">boundary<br><span class="mono dim small">0.561 ha · ±4 m</span></div>
+      <div class="rec a" style="--d:1.2s">planted<br><span class="mono dim small">800 trees · legal name confirmed</span></div>
+      <div class="rec a" style="--d:1.8s">survival<br><span class="mono dim small">70/80 walk · species date</span></div>
+    </div>
+    <div class="a" style="--d:3.4s; text-align:center; margin-top:2.4vh">
+      <span class="pill">📱 signed on the phone</span>
+      <span class="dim" style="padding:0 1vw">→</span>
+      <span class="pill warn fp">batch fingerprint <span class="mono">8f21…c40d</span></span>
+      <span class="dim" style="padding:0 1vw">→</span>
+      <span class="pill">public log</span>
+    </div>
+    <div class="chain">
+      <div class="block a" style="--d:6s"><span class="lk">⛓</span> <b>#41</b><br>prev 9c1f…<br>hash 5503…</div>
+      <div class="link a" style="--d:6.4s"></div>
+      <div class="block a" style="--d:6.8s"><span class="lk">⛓</span> <b>#42</b><br>prev 5503…<br>hash 8f21…</div>
+      <div class="link a" style="--d:7.2s"></div>
+      <div class="block a" style="--d:7.6s"><span class="lk">⛓</span> <b>#43</b><br>prev 8f21…<br>hash e094…</div>
+    </div>
+    <p class="a small dim" style="--d:9.5s; text-align:center; margin-top:2vh">Only the fingerprint leaves the phone. ₦0 per record · no fee · no wallet.</p>
+  </section>
+
+  <!-- 6 CHECK & VERIFY (2:50–3:30) -->
+  <section class="scene">
+    <div class="kicker a">Step 4 · Check and verify</div>
+    <div class="cols">
+      <div class="card" style="flex:1.4">
+        <h3 class="a" style="--d:.4s">Operator console · submissions queue</h3>
+        <div class="logrow a" style="--d:1s">
+          <b>Amina</b> <span class="dim small">Jos East · 0.561 ha · 800 planted</span>
+        </div>
+        <div class="a" style="--d:2.2s; display:flex; gap:.8vw; flex-wrap:wrap">
+          <span class="pill warn small">⚠ plot overlaps a registered plot?</span>
+          <span class="pill warn small">⚠ tree count high for the area?</span>
+          <span class="pill small">GPS quality ✓</span>
+          <span class="pill small">fire overlap ✓ none nearby</span>
+        </div>
+        <svg class="a" style="--d:3.6s; width:100%; height:20vh; margin-top:2vh" viewBox="0 0 600 160" aria-hidden="true">
+          <path d="M 110 140 L 170 40 L 340 30 L 390 115 L 260 150 Z" fill="rgba(126,217,87,.15)" stroke="#7ed957" stroke-width="2.5"></path>
+          <path d="M 385 118 L 430 30 L 560 45 L 520 130 Z" fill="rgba(234,179,8,.14)" stroke="#eab308" stroke-width="2" stroke-dasharray="6 4"></path>
+          <text x="215" y="95" fill="#e8f3ec" font-size="16">Amina</text>
+          <text x="440" y="90" fill="#eab308" font-size="16">neighbour</text>
+        </svg>
+        <p class="a small dim" style="--d:4.6s; margin-top:1vh">Doubtful corners are flagged — a verifier writes a note before anything is approved.</p>
+      </div>
+      <div class="card a" style="--d:6.5s">
+        <h3>Verifier decision</h3>
+        <p class="small dim">note: "boundary redrawn with co-op; overlap resolved by 0.15 ha adjustment"</p>
+        <p style="margin-top:2vh"><span class="pill">✍️&nbsp; sign &amp; approve ✓</span></p>
+        <p class="small dim" style="margin-top:2vh">The verifier's own key signs this. A farmer can never verify her own submission.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 ISSUE, SELL, PAY (3:30–4:00) -->
+  <section class="scene">
+    <div class="kicker a">Step 5 · Issue, sell and pay</div>
+    <div class="cols">
+      <div style="flex:1.5">
+        <div class="cards" style="grid-template-columns:1fr 1fr">
+          <div class="card a" style="--d:.4s"><h3>Issued units</h3><p class="small mono">PL-NG-00000042<br>PL-NG-00000043<br>PL-NG-00000044</p><p class="small dim" style="margin-top:.8vh">one serial = one tonne, forever</p></div>
+          <div class="card a" style="--d:1.6s"><h3>Buyer order</h3><p class="small"><b>120 tCO₂e</b> @ <span class="mono">₦12,000</span> <span class="tick">✓</span></p><p class="small dim" style="margin-top:.8vh">sale total ₦1,440,000 (demo price)</p></div>
+        </div>
+        <div style="margin-top:3vh">
+          <div class="split-bar a" style="--d:3.6s"><span>Farmer</span><div class="bar"><i style="--w:60%; --d:4s" data-go="1"></i></div><b>60%</b></div>
+          <div class="split-bar a" style="--d:4s"><span>Community</span><div class="bar"><i style="--w:25%; --d:4.5s; background:var(--acc2)" data-go="1"></i></div><b>25%</b></div>
+          <div class="split-bar a" style="--d:4.4s"><span>Verifier</span><div class="bar"><i style="--w:5%; --d:5s; background:#6ea8fe" data-go="1"></i></div><b>5%</b></div>
+          <div class="split-bar a" style="--d:4.8s"><span>Platform</span><div class="bar"><i style="--w:10%; --d:5.5s; background:var(--dim)" data-go="1"></i></div><b>10%</b></div>
+        </div>
+      </div>
+      <div class="phonepay a" style="--d:7s; align-self:center">
+        <p class="small dim">Amina's phone</p>
+        <p class="big" style="margin:1vh 0">Payment sent</p>
+        <p class="mono accent">₦864,000 → +234 ••• 0000</p>
+        <p class="small dim" style="margin-top:1.2vh">rules: one payout number per farmer · hold after any change · cap on first payout</p>
+        <p class="pill warn small" style="margin-top:1.6vh">SANDBOX — simulated payout</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 AUDIT (4:00–4:30) -->
+  <section class="scene">
+    <div class="kicker a">Step 6 · Anyone can audit it</div>
+    <h2>The log that catches every edit.</h2>
+    <div style="max-width:72vw; margin:0 auto">
+      <div class="logrow a" style="--d:.5s"><span class="lk">⛓</span><b>#41</b><span class="mono dim small">prev 9c1f…a2 → hash 5503…7b</span><span class="pill small" style="margin-left:auto">open studio pass</span></div>
+      <div class="logrow" id="altered-row"><span class="lk a" style="--d:5s">⛓</span><b class="a" style="--d:5s">#42</b><span class="mono dim small a" style="--d:5s">prev 5503…7b → hash 8f21…c4</span><span class="pill warn small a" style="--d:7s" id="edited-badge">✗ edited after sealing</span></div>
+      <div class="logrow a altered" style="--d:9s; opacity:.9"><span class="lk">✗</span><b>#43</b><span class="mono small">expected prev 8f21…c4 → found 5503…7b</span><span class="pill bad small">chain broken here</span></div>
+      <p class="a small" style="--d:12s; margin-top:2.4vh">Download the log, <b class="accent">re-hash it in your own browser</b>, and the failure points to the exact entry. <span class="dim">Books must also balance to the kobo: in = paid + held + shared.</span></p>
+    </div>
+  </section>
+
+  <!-- 9 OPPORTUNITY (4:30–4:50) -->
+  <section class="scene">
+    <div class="kicker a">The opportunity</div>
+    <h2 class="a" style="--d:.4s">Nigeria is building the demand. The evidence has to come from the ground.</h2>
+    <div class="a" style="--d:2s; display:flex; gap:1vw; flex-wrap:wrap; margin-bottom:4vh">
+      <span class="pill">carbon market office</span>
+      <span class="pill">verification requirements</span>
+      <span class="pill warn">carbon tax pilot · 2029</span>
+    </div>
+    <div class="cards">
+      <div class="card a" style="--d:3.4s"><h3>Farmer</h3><p class="small dim">free · offline · owns the evidence</p></div>
+      <div class="card a" style="--d:4.2s"><h3>Verifier</h3><p class="small dim">cheap · flags do the triage</p></div>
+      <div class="card a" style="--d:5s"><h3>Buyer</h3><p class="small dim">auditable · no double counting</p></div>
+    </div>
+    <p class="a small dim" style="--d:6.6s; margin-top:3vh">Next: photo checks with a specialised vision model · satellite vegetation data to catch false survival counts.</p>
+  </section>
+
+  <!-- 10 CLOSE (4:50–5:00) -->
+  <section class="scene">
+    <div class="dawn"></div>
+    <div style="text-align:center">
+      <h1 class="a" style="--d:.3s">Plot<span style="color:var(--acc)">line</span></h1>
+      <h2 class="a" style="--d:1.2s">Farmers already do the work.<br>Plotline makes it count.</h2>
+    </div>
+  </section>
+
+</main>
+
+<div class="capbar"><div class="cap" id="cap">&nbsp;</div></div>
+<div class="dots" id="dots"></div>
+<div class="disclaimer">Amina is an illustrative character, not a real person · payouts simulated in a sandbox · carbon conversion is a demo assumption</div>
+
+<div class="controls" id="controls">
+  <span class="count" id="clock">0:00 / 5:00</span>
+  <button id="b-prev" title="Previous scene" type="button">⏮</button>
+  <button id="b-play" title="Play / pause" type="button">⏸</button>
+  <button id="b-next" title="Next scene" type="button">⏭</button>
+  <button id="b-fs" title="Fullscreen" type="button">⛶</button>
+</div>
+
+<script src="explainer.js" defer></script>
+</body>
+</html>
