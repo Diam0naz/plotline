@@ -423,3 +423,23 @@ test('an approved verifier with a still-pending slot binds its key on first use'
     await cleanup(b);
   }
 });
+
+test('sign-up: one account per email and no clash with a verifier account', async () => {
+  const b = await boot();
+  const jAdmin = jar();
+  try {
+    const first = await post(b.base, '/api/auth/signup', { username: 'amina', password: 'mypassword123', email: 'Amina@Example.com', name: 'Amina' });
+    assert.equal(first.status, 201);
+    const sameEmail = await status(await post(b.base, '/api/auth/signup', { username: 'amina2', password: 'mypassword123', email: 'amina@example.com', name: 'Amina' }));
+    assert.equal(sameEmail.status, 409);
+    assert.match(sameEmail.json.error, /email/);
+
+    // An approved verifier id is taken for sign-up as well.
+    await post(b.base, '/api/auth/login', { username: 'admin', password: 'op' }, { jar: jAdmin });
+    const { json: { id } } = await status(await post(b.base, '/api/auth/apply', { name: 'Kemi', email: 'k@example.com', reason: 'I would like to review agroforestry plots.' }));
+    await post(b.base, `/api/auth/apply/${id}/approve`, {}, { jar: jAdmin });
+    assert.equal((await post(b.base, '/api/auth/signup', { username: 'kemi', password: 'mypassword123', email: 'other@example.com', name: 'K' })).status, 409);
+  } finally {
+    await cleanup(b);
+  }
+});

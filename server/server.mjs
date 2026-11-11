@@ -393,7 +393,11 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       let users;
       try { users = existsSync(usersFile) ? JSON.parse(readFileSync(usersFile, 'utf8')) : {}; }
       catch { users = {}; }
-      if (users[username]) return send(res, 409, { error: 'that username is already taken' });
+      if (users[username] || accounts.find('verifier', username)) return send(res, 409, { error: 'that username is already taken' });
+      // Sign-in accepts an email, so an email can belong to one account only.
+      if (Object.values(users).some((u) => String(u.email || '').toLowerCase() === email.toLowerCase())) {
+        return send(res, 409, { error: 'an account with this email already exists — sign in instead' });
+      }
       const { hashPassword } = await import('./auth.mjs');
       users[username] = { hash: hashPassword(password), email, name, createdAt: now().toISOString(), role: 'user' };
       writeFileSync(usersFile, JSON.stringify(users, null, 2), { mode: 0o600 });

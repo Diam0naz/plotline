@@ -29,7 +29,8 @@ const FLAG_TEXT = {
 
 // ---------- storage seam: IndexedDB primary, localStorage shadow ----------
 const KEY = 'plotline.v1';
-let S = { farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [], onboarded: false, ndvi: {}, rain: {} };
+const blankState = () => ({ farms: [], records: [], batches: [], keys: null, fp: null, activeFarm: null, msisdn: '', outbox: [], sent: [], onboarded: false, ndvi: {}, rain: {} });
+let S = blankState();
 
 // The whole app state (identity keys, farms, every signed record, satellite
 // caches) used to live in ONE localStorage blob. That hits the ~5 MB quota
@@ -1607,13 +1608,20 @@ function wireAuthEvents() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (errBox) {
-          errBox.textContent = json.error || 'Sign-in failed.';
+          errBox.textContent = authError(res, json, 'Sign-in failed.');
           errBox.hidden = false;
         }
+        $('#gw-srv-login-pass').select();
         return;
       }
       $('#gw-srv-login-pass').value = '';
       currentSession = json.session;
+      // A phone without a field identity gets one quietly (the app shell needs
+      // a key); give it the account's name so the app never greets nobody.
+      if (!hasIdentity()) {
+        if (!S.name) S.name = currentSession?.username || '';
+        S.onboarded = true; // reviewers and operators skip the farmer walkthrough
+      }
       // Server sessions ride on the unlocked app shell, so the device identity
       // flow runs first when this phone has not created one yet.
       await continueInit();
@@ -1635,6 +1643,13 @@ function wireAuthEvents() {
     e.preventDefault();
     const btn = $('#gw-srv-signup-btn');
     const errBox = $('#gw-srv-signup-err');
+    if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
+    const problem = serverSignupProblem();
+    if (problem) {
+      if (errBox) { errBox.textContent = problem[0]; errBox.hidden = false; }
+      problem[1].focus();
+      return;
+    }
     btn.disabled = true;
     btn.textContent = 'Creating account…';
     if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
@@ -1654,13 +1669,22 @@ function wireAuthEvents() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (errBox) {
-          errBox.textContent = json.error || 'Sign-up failed.';
+          errBox.textContent = authError(res, json, 'Sign-up failed.');
           errBox.hidden = false;
         }
+        if (res.status === 409) $(json.error?.includes('email') ? '#gw-srv-signup-email' : '#gw-srv-signup-user')?.focus();
         return;
       }
       $('#gw-srv-signup-pass').value = '';
+      for (const [from, to] of [['#gw-srv-signup-name', '#apply-name'], ['#gw-srv-signup-email', '#apply-email']]) {
+        const v = $(from).value.trim(); const field = $(to);
+        if (v && field && !field.value) field.value = v;
+      }
       currentSession = json.session; // standard user role
+      if (!hasIdentity()) {
+        if (!S.name) S.name = $('#gw-srv-signup-name').value.trim();
+        S.onboarded = true; // a new account lands on its application, not the farmer walkthrough
+      }
       await continueInit();
       handleRoleRedirection(currentSession);
       toast(`Account created. Welcome, ${currentSession?.username}!`);
@@ -1797,7 +1821,8 @@ function wireAuthEvents() {
 }
 
 async function initAuth() {
-  wireAuthEvents();
+  // Handlers are attached once at boot (init → wireAuthEvents), not here:
+  // the gateway's server forms must work before the app shell ever opens.
   try {
     const res = await fetch('api/auth/session', { credentials: 'same-origin' });
     if (res.ok) {
@@ -2188,6 +2213,7 @@ function clearJoinParam() {
 async function init() {
   await bootLoad(); // store seams in before anything reads S or the lock
   wireGateway(); // the split-screen signup / login gate
+  wireAuthEvents(); // server sign-in / sign-up must work from the gateway itself
   wirePasswordReveal(); // eye toggles on every password / PIN field
   // A set PIN lock is the privacy screen: nothing renders (not even the gateway)
   // until the correct PIN unlocks this phone.
@@ -2236,7 +2262,29 @@ function setGatewayMode(mode) {
   $('#gw-panel-signin')?.toggleAttribute('hidden', mode !== 'login');
   $('#gw-panel-server-in')?.toggleAttribute('hidden', mode !== 'server-in');
   $('#gw-panel-server-up')?.toggleAttribute('hidden', mode !== 'server-up');
+  const registered = hasIdentity();
+  // Footer link to the server panels is noise while already on them.
+  const vrow = $('#gw-verifier-row'); if (vrow) vrow.hidden = server;
+  if (mode === 'signup') {
+    // Creating over an existing identity is destructive: say so before the form.
+    const note = $('#gw-replace-note'); if (note) note.hidden = !registered;
+    const who = $('#gw-replace-who');
+    if (who && registered) who.textContent = `${S.name || 'Field identity'} · ${S.records.length} record${S.records.length === 1 ? '' : 's'} · key ${fmtFingerprint(S.fp)}`;
+    const btn = $('#gw-signup-btn'); if (btn) btn.textContent = registered ? 'Replace identity & delete records' : 'Create my identity →';
+    btn?.classList.toggle('primary', !registered);
+    btn?.classList.toggle('gw-danger', registered);
+  }
   if (mode === 'login') {
+    // A phone with no identity has nothing to unlock: offer a key-backup restore.
+    $('#gw-restore-form').hidden = registered;
+    $('#gw-signin-existing').hidden = !registered;
+    $('#gw-signin-title').textContent = registered ? 'Welcome back' : 'Bring your identity to this phone';
+    $('#gw-signin-lede').textContent = registered
+      ? 'This phone already holds a field identity. Unlock it to continue — everything unlocks locally, no network needed.'
+      : 'There is no field identity on this phone yet. Restore yours from the key backup you exported on your old phone.';
+    const rErr = $('#gw-restore-err'); if (rErr) { rErr.hidden = true; rErr.textContent = ''; }
+  }
+  if (mode === 'login' && registered) {
     $('#gw-id-name').textContent = S.name || 'Field identity';
     $('#gw-id-fp').textContent = fmtFingerprint(S.fp);
     const nf = (S.farms || []).length, nr = (S.records || []).length, nb = (S.batches || []).length;
@@ -2255,6 +2303,50 @@ function setGatewayMode(mode) {
 // The "Apply" intent survives the detour through the auth gateway: after the
 // account is created or signed in, the user lands straight on the application.
 const VERIFIER_INTENT = 'plotline-apply-verifier';
+function hasIdentity() { return !!(S.keys && S.keys.priv && S.fp); }
+
+// Server sign-up checks the same rules the server enforces, as the person types,
+// so a mistake shows next to its field instead of after a round trip.
+const USERNAME_RE = /^[a-z0-9-]{2,32}$/;
+const slugUser = (v) => v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-').slice(0, 32);
+function wireServerSignupHints() {
+  const user = $('#gw-srv-signup-user'), email = $('#gw-srv-signup-email'), pass = $('#gw-srv-signup-pass');
+  const userHint = $('#gw-srv-user-hint'), passHint = $('#gw-srv-pass-hint');
+  if (!user || !email || !pass) return;
+  let userEdited = false;
+  user.addEventListener('input', () => {
+    userEdited = !!user.value;
+    const at = user.selectionStart;
+    const clean = user.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (clean !== user.value) { user.value = clean; try { user.setSelectionRange(at - 1, at - 1); } catch { /* ignore */ } }
+    userHint.textContent = !user.value || USERNAME_RE.test(user.value) ? '2–32 characters: a–z, 0–9, dash' : 'At least 2 characters.';
+    userHint.classList.toggle('text-red', !!user.value && !USERNAME_RE.test(user.value));
+  });
+  // Until they pick one, suggest a username from the email's name part.
+  email.addEventListener('input', () => {
+    if (userEdited) return;
+    const local = email.value.split('@')[0] || '';
+    user.value = slugUser(local);
+  });
+  pass.addEventListener('input', () => {
+    const n = pass.value.length;
+    passHint.textContent = n === 0 ? 'At least 8 characters.' : n < 8 ? `${8 - n} more character${8 - n === 1 ? '' : 's'} needed.` : 'Looks good.';
+    passHint.classList.toggle('text-red', n > 0 && n < 8);
+  });
+}
+function serverSignupProblem() {
+  const name = $('#gw-srv-signup-name'), email = $('#gw-srv-signup-email'), user = $('#gw-srv-signup-user'), pass = $('#gw-srv-signup-pass');
+  if (!name.value.trim()) return ['Enter your full name.', name];
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) return ['Enter a valid email address.', email];
+  if (!USERNAME_RE.test(user.value)) return ['Choose a username of 2–32 characters: a–z, 0–9 and dashes.', user];
+  if (user.value === 'admin') return ['That username is reserved — pick another.', user];
+  if (pass.value.length < 8) return ['Use a password of at least 8 characters.', pass];
+  return null;
+}
+// Friendlier words for the server's answers.
+const authError = (res, json, fallback) => res.status === 429 ? 'Too many attempts — wait a minute and try again.'
+  : res.status === 401 ? 'That username/email and password do not match an account.'
+  : json.error || fallback;
 function rememberVerifierIntent() { try { sessionStorage.setItem(VERIFIER_INTENT, '1'); } catch { /* in-memory only */ } }
 function takeVerifierIntent() {
   try { return sessionStorage.getItem(VERIFIER_INTENT) === '1' && (sessionStorage.removeItem(VERIFIER_INTENT), true); }
@@ -2300,6 +2392,9 @@ function wireGateway() {
   $('#gw-signup-pin')?.addEventListener('input', (e) => { const row = $('#gw-signup-pin2-row'); if (row) row.hidden = !e.target.value; });
   $('#gw-signup-form')?.addEventListener('submit', onGatewaySignup);
   $('#gw-login-form')?.addEventListener('submit', onGatewayLogin);
+  $('#gw-restore-form')?.addEventListener('submit', onGatewayRestore);
+  $('#gw-restore-to-signup')?.addEventListener('click', (e) => { e.preventDefault(); setGatewayMode('signup'); });
+  wireServerSignupHints();
   $('#gw-verifier-link')?.addEventListener('click', (e) => { e.preventDefault(); rememberVerifierIntent(); showGateway('server-in'); });
   $('#gw-srv-tab-in')?.addEventListener('click', () => setGatewayMode('server-in'));
   $('#gw-srv-tab-up')?.addEventListener('click', () => setGatewayMode('server-up'));
@@ -2312,15 +2407,25 @@ async function onGatewaySignup(e) {
   e.preventDefault();
   const errBox = $('#gw-signup-err');
   const fail = (msg) => { if (errBox) { errBox.textContent = msg; errBox.hidden = false; } };
+  if (errBox) { errBox.hidden = true; errBox.textContent = ''; }
   const name = $('#gw-signup-name').value.trim();
   if (!name) return fail('Please enter your name');
   const pin = $('#gw-signup-pin').value;
   const pin2 = $('#gw-signup-pin2').value;
   if (pin && pin.length < 4) return fail('The PIN needs at least 4 characters');
   if (pin && pin !== pin2) return fail('The two PIN entries differ');
+  const replacing = hasIdentity();
+  if (replacing && !confirm(`Delete ${S.name || 'the current identity'} and its ${S.records.length} record${S.records.length === 1 ? '' : 's'} from this phone, and create a new identity?`)) return;
   const btn = $('#gw-signup-btn');
   btn.disabled = true; btn.textContent = 'Generating your key…';
   try {
+    if (replacing) {
+      // Records signed by the old key would no longer verify against the new
+      // one, so the whole device state goes with it — farms, records, outbox.
+      S = blankState();
+      try { localStorage.removeItem(LOCK_STORAGE); } catch { /* ignore */ }
+      lastRenderSig.clear();
+    }
     S.name = name;
     S.msisdn = $('#gw-signup-msisdn').value.trim();
     S.keys = await C.generateKeys();
@@ -2335,7 +2440,39 @@ async function onGatewaySignup(e) {
   } catch (err) {
     fail('Could not create the identity on this device: ' + (err.message || err));
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Create my identity →'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Create my identity →'; btn.classList.remove('gw-danger'); btn.classList.add('primary'); }
+  }
+}
+
+// Restore a field identity on a phone that has none, from the encrypted key
+// backup exported in Settings (same format as the in-app restore).
+async function onGatewayRestore(e) {
+  e.preventDefault();
+  const errBox = $('#gw-restore-err');
+  const fail = (msg, field) => { if (errBox) { errBox.textContent = msg; errBox.hidden = false; } field?.focus(); };
+  if (errBox) { errBox.hidden = true; errBox.textContent = ''; } // never show the last attempt's error
+  const fileInput = $('#gw-restore-file'), passInput = $('#gw-restore-pass');
+  const file = fileInput.files?.[0];
+  if (!file) return fail('Choose the key backup file (.json) from your old phone.', fileInput);
+  if (!passInput.value) return fail('Enter the passphrase you chose when you exported the backup.', passInput);
+  const btn = $('#gw-restore-btn');
+  btn.disabled = true; btn.textContent = 'Decrypting your key…';
+  try {
+    let backup;
+    try { backup = JSON.parse(await file.text()); } catch { return fail('That file is not a Plotline key backup.', fileInput); }
+    const keys = await importEncryptedKey(backup, passInput.value);
+    S.keys = keys;
+    S.fp = await C.fingerprint(keys.pub);
+    const name = $('#gw-restore-name').value.trim();
+    if (name) S.name = name;
+    save();
+    passInput.value = '';
+    toast(`Identity restored — key ${fmtFingerprint(S.fp)}`);
+    await continueInit();
+  } catch (err) {
+    fail(err.message || 'Could not restore this backup.', passInput);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Restore my identity →';
   }
 }
 async function onGatewayLogin(e) {

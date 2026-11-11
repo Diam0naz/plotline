@@ -2031,3 +2031,7 @@ body:not(.site):not(.console) textarea:focus {
 @media (min-width: 760px) {
   .tabs { padding-inline: calc((100% - 640px) / 2); }
 }
+
+/* Destructive full-width action on the gateway (replace an existing identity). */
+button.gw-danger { background: var(--red); border-color: var(--red); color: #fff; }
+button.gw-danger:hover:not(:disabled) { background: #8a2f28; border-color: #8a2f28; }

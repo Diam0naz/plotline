@@ -285,7 +285,13 @@
             <h2>Create your field identity</h2>
             <p>Plotline issues a signing key <strong>on this phone</strong> — your name is the only thing you give us. No password ever leaves the device.</p>
           </div>
-          <form id="gw-signup-form" class="stack">
+          <div id="gw-replace-note" class="alert-box amber text-sm" role="note" hidden>
+            <div>
+              <b>This phone already has an identity:</b> <span id="gw-replace-who">a field identity</span>.<br>
+              Creating a new one deletes its farms, records and signing key. To keep it, use <b>Welcome back</b> — or export a key backup in Settings first.
+            </div>
+          </div>
+          <form id="gw-signup-form" class="stack" novalidate>
             <label>Full name
               <input id="gw-signup-name" required maxlength="80" placeholder="e.g. Amina Bello" autocomplete="name">
             </label>
@@ -314,7 +320,7 @@
               <span class="gw-fp-label">Signing key fingerprint</span>
               <code id="gw-signup-fp-val" class="mono"></code>
             </div>
-            <div id="gw-signup-err" class="alert-box red text-sm" hidden></div>
+            <div id="gw-signup-err" class="alert-box red text-sm" role="alert" hidden></div>
             <button id="gw-signup-btn" class="primary wide lg" type="submit">Create my identity →</button>
           </form>
           <p class="gw-switch-link">This phone already has an identity? <a href="#" id="gw-go-signin">Welcome back</a></p>
@@ -323,9 +329,32 @@
         <!-- Sign In Panel — unlock this device's existing identity -->
         <div id="gw-panel-signin" hidden>
           <div class="gw-panel-head">
-            <h2>Welcome back</h2>
-            <p>This phone already holds a field identity. Unlock it to continue — everything unlocks locally, no network needed.</p>
+            <h2 id="gw-signin-title">Welcome back</h2>
+            <p id="gw-signin-lede">This phone already holds a field identity. Unlock it to continue — everything unlocks locally, no network needed.</p>
           </div>
+          <!-- No identity on this phone: bring one back from a key backup file -->
+          <form id="gw-restore-form" class="stack" hidden novalidate>
+            <label>Key backup file <span class="hint">the .json you exported from Settings on your old phone</span>
+              <input id="gw-restore-file" type="file" accept="application/json,.json" required>
+            </label>
+            <label>Backup passphrase
+              <span class="pw-field">
+                <input id="gw-restore-pass" type="password" autocomplete="current-password" placeholder="The passphrase you chose when exporting" required>
+                <button type="button" class="pw-toggle" data-pw-for="gw-restore-pass" aria-pressed="false" aria-label="Show passphrase" title="Show passphrase">
+                  <svg class="pw-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="pw-eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M2 12s3.5-6 10-6c1.9 0 3.5.5 5 1.3L21 2M2 22 22 2M9 19.7c.95.2 1.95.3 3 .3 6.5 0 10-6 10-6a17 17 0 0 0-3-3.6"/></svg>
+                </button>
+              </span>
+            </label>
+            <label>Your name <span class="hint">shown on this phone</span>
+              <input id="gw-restore-name" maxlength="80" placeholder="e.g. Amina Bello" autocomplete="name">
+            </label>
+            <p class="text-xs text-faint">A key backup carries your signing key, so new records keep the same identity. Farms and records from the old phone are not inside it.</p>
+            <div id="gw-restore-err" class="alert-box red text-sm" role="alert" hidden></div>
+            <button id="gw-restore-btn" class="primary wide lg" type="submit">Restore my identity →</button>
+            <p class="gw-switch-link">No backup? <a href="#" id="gw-restore-to-signup">Create a new identity</a></p>
+          </form>
+          <div id="gw-signin-existing">
           <div class="gw-identity card-flat">
             <div class="gw-id-row"><span class="gw-id-label">Signed in as</span><b id="gw-id-name">—</b></div>
             <div class="gw-id-row"><span class="gw-id-label">Key fingerprint</span><code id="gw-id-fp" class="mono">—</code></div>
@@ -341,10 +370,11 @@
                 </button>
               </span>
             </label></div>
-            <div id="gw-login-err" class="alert-box red text-sm" hidden></div>
+            <div id="gw-login-err" class="alert-box red text-sm" role="alert" hidden></div>
             <button id="gw-login-btn" class="primary wide lg" type="submit">Unlock &amp; continue →</button>
           </form>
           <p class="gw-switch-link">Not you? <a href="#" id="gw-go-signup" class="text-red">Start a new identity</a> <span class="text-faint text-xs">(clears this phone's records)</span></p>
+          </div>
         </div>
 
         <!-- Verifier / operator / standard-user route (server session, separate from the device identity) -->
@@ -372,19 +402,19 @@
                 </button>
               </span>
             </label>
-            <div id="gw-srv-login-err" class="alert-box red text-sm" hidden></div>
+            <div id="gw-srv-login-err" class="alert-box red text-sm" role="alert" hidden></div>
             <button id="gw-srv-login-btn" class="primary wide lg" type="submit">Sign in →</button>
           </form>
-          <p class="gw-switch-link"><a href="#" id="gw-back-device">Back to field identity</a> · No account? <a href="#" id="gw-go-srv-up">Create one</a></p>
+          <p class="gw-switch-link"><a href="#" id="gw-back-device">← Back to field identity</a> · No account? <a href="#" id="gw-go-srv-up">Create one</a></p>
         </div>
 
         <!-- Server Sign up — standard accounts (application-based verifiers upgrade later) -->
         <div id="gw-panel-server-up" hidden>
           <div class="gw-panel-head">
             <h2>Create your account</h2>
-            <p>A standard account can apply to become a verifier once approved off-band by the registry.</p>
+            <p>Accounts are for people who review or run the registry. Create one, then apply to become a verifier — the operator approves applications and sends you an activation code. Farmers don't need an account.</p>
           </div>
-          <form id="gw-srv-signup-form" class="stack">
+          <form id="gw-srv-signup-form" class="stack" novalidate>
             <label>Full name
               <input id="gw-srv-signup-name" required maxlength="80" placeholder="Your full name">
             </label>
@@ -392,25 +422,26 @@
               <input id="gw-srv-signup-email" type="email" required maxlength="120" placeholder="you@example.com">
             </label>
             <label>Username
-              <input id="gw-srv-signup-user" required maxlength="32" placeholder="lowercase letters, numbers, dashes" autocomplete="username">
-              <span class="hint">2–32 characters: a–z, 0–9, dash</span>
+              <input id="gw-srv-signup-user" required minlength="2" maxlength="32" pattern="[a-z0-9-]{2,32}" autocapitalize="none" spellcheck="false" placeholder="e.g. amina-bello" autocomplete="username">
+              <span class="hint" id="gw-srv-user-hint">2–32 characters: a–z, 0–9, dash</span>
             </label>
             <label>Password
               <span class="pw-field">
-                <input id="gw-srv-signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
+                <input id="gw-srv-signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters" aria-describedby="gw-srv-pass-hint">
                 <button type="button" class="pw-toggle" data-pw-for="gw-srv-signup-pass" aria-pressed="false" aria-label="Show password" title="Show password">
                   <svg class="pw-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
                   <svg class="pw-eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M2 12s3.5-6 10-6c1.9 0 3.5.5 5 1.3L21 2M2 22 22 2M9 19.7c.95.2 1.95.3 3 .3 6.5 0 10-6 10-6a17 17 0 0 0-3-3.6"/></svg>
                 </button>
               </span>
             </label>
-            <div id="gw-srv-signup-err" class="alert-box red text-sm" hidden></div>
+            <span class="hint" id="gw-srv-pass-hint">At least 8 characters.</span>
+            <div id="gw-srv-signup-err" class="alert-box red text-sm" role="alert" hidden></div>
             <button id="gw-srv-signup-btn" class="primary wide lg" type="submit">Create account →</button>
           </form>
-          <p class="gw-switch-link"><a href="#" id="gw-back-device-up">Back to field identity</a> · Already registered? <a href="#" id="gw-go-srv-in">Sign in</a></p>
+          <p class="gw-switch-link"><a href="#" id="gw-back-device-up">← Back to field identity</a> · Already registered? <a href="#" id="gw-go-srv-in">Sign in</a></p>
         </div>
 
-        <p class="gw-switch-link" style="border-top:1px solid var(--border-2); padding-top:var(--s3); margin-top:var(--s2)"><a href="#" id="gw-verifier-link">Verifier or operator? Use a server account →</a></p>
+        <p class="gw-switch-link" id="gw-verifier-row" style="border-top:1px solid var(--border-2); padding-top:var(--s3); margin-top:var(--s2)"><a href="#" id="gw-verifier-link">Verifier or operator? Use a server account →</a></p>
       </div>
     </div>
 
