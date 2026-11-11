@@ -8,17 +8,22 @@ Served at /pitch-deck.html by `npm start`. -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+
 <title>Plotline — carbon-ready smallholder farms, offline first</title>
 <style>
   :root {
-    --bg: #0d1a12;          /* deep field green */
-    --panel: #12241a;
-    --ink: #e8f3ec;
-    --dim: #9db4a6;
-    --acc: #7ed957;         /* seedling green */
-    --acc2: #eab308;        /* harvest gold */
-    --line: #2a4634;
-    --bad: #e4503d;
+    --bg: #141612;          /* deep field green */
+    --panel: #1f221c;
+    --ink: #f5f6f3;
+    --dim: #b3b8ad;
+    --acc: #9dbb80;         /* seedling green */
+    --acc2: #d9a54f;        /* harvest gold */
+    --line: #363a31;
+    --bad: #d8665b;
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
@@ -74,7 +79,7 @@ Served at /pitch-deck.html by `npm start`. -->
   .nv:disabled { opacity: .3; }
   .parrows { display: flex; gap: 8px; align-items: center; }
   .brand { font-weight: 800; color: var(--ink); }
-  .brand span { color: var(--acc); }
+  .brand .accent { color: var(--acc); }
   .rule { border: 0; border-top: 1px solid var(--line); margin: 2.4vh 0; }
   .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: .9vw; margin-top: 2.5vh; }
   .step { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 2vh 1vw; }
@@ -99,23 +104,43 @@ Served at /pitch-deck.html by `npm start`. -->
     .cols, .cards { display: block; }
     .cards > .card, .cols > div + div { margin-top: 1.8vh; }
     .flow { grid-template-columns: 1fr; gap: 1.2vh; }
-    .foot { left: 4vw; right: 4vw; }
+    .step, .card { padding: 2vh 4.5vw; }
+    /* The footer sits over scrolling slide text: give it a backdrop that
+       fades in from the slide so nothing reads through the controls. */
+    .foot { left: 0; right: 0; bottom: 0; padding: 4vh 4vw 2.2vh;
+      background: linear-gradient(transparent, var(--bg) 38%); }
     .foot .brand { display: none; }
-    .dots { gap: 0; }
-    .dot { width: 12px; height: 12px; padding: 0; }
+    .dots { gap: 5px; }
+    .dot { width: 9px; height: 9px; padding: 0; flex: none; }
     table { font-size: 14px; }
     th, td { padding: 1vh .6vw; }
   }
+
+  /* ── Plotline brand type (same families as the site and app) ── */
+  body { font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  h1, h2, h3, .kicker, .big, .brand, .chapters button { font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
+  h1 { font-weight: 700; letter-spacing: -0.03em; }
+  h2 { font-weight: 700; letter-spacing: -0.02em; }
+  .mono, .arch, code { font-family: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand img { width: 18px; height: 18px; display: block; }
+  .kicker { letter-spacing: .14em; font-weight: 600; }
+  /* Monstera crest: the brand's leaf, resting in the corner of opening screens */
+  .leafed { isolation: isolate; } /* slides/scenes are already absolutely positioned */
+  .leafed::after { content: ''; position: absolute; right: -4vw; top: -6vh; width: min(38vw, 460px); aspect-ratio: 1;
+    background: url('assets/monstera/leaf-dark.png') no-repeat center / contain; opacity: .42; transform: rotate(18deg);
+    pointer-events: none; z-index: -1; }
+  @media (max-width: 760px) { .leafed::after { width: 60vw; right: -20vw; top: -2vh; opacity: .3; } }
 </style>
 </head>
 <body>
 
 <!-- 1 ▪ TITLE -->
-<section class="slide active">
-  <div class="kicker">Seed deck · <span class="todo">Month Year</span></div>
-  <h1 style="font-size:clamp(44px,7.5vw,96px)">Plot<span class="accent">line</span></h1>
+<section class="slide active leafed">
+  <div class="kicker">Seed deck · November 2026</div>
+  <h1 class="brand" style="font-size:clamp(44px,7.5vw,96px); gap:.25em"><img src="icon.svg" alt="" style="width:.8em;height:.8em"><span>Plot<span class="accent">line</span></span></h1>
   <p style="max-width:26em;margin-top:2.5vh">Carbon-ready smallholder farms, <b class="accent">offline&nbsp;first</b>. The farmer's phone is the monitoring instrument — boundaries, scouting records and harvest evidence become issuance-grade carbon registry entries.</p>
-  <p class="dim small" style="margin-top:4vh">Offline PWA app · hash-chained registry · verifier marketplace · <span class="todo">Country</span></p>
+  <p class="dim small" style="margin-top:4vh">Offline PWA app · hash-chained registry · verifier marketplace · Nigeria</p>
 </section>
 
 <!-- 2 ▪ PROBLEM -->
@@ -350,7 +375,7 @@ public views
 </section>
 
 <footer class="foot" style="display:none" id="footer">
-  <span class="brand">Plot<span>line</span></span>
+  <span class="brand"><img src="icon.svg" alt=""><span>Plot<span class="accent">line</span></span></span>
   <span id="pageno"></span>
   <span class="dots" id="dots"></span>
   <span class="parrows">

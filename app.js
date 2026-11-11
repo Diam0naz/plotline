@@ -189,7 +189,11 @@ const GN_MOTION = (() => {
     // Rules 1 & 15/18 inside a wrapped View Transition (overlap + crossfade).
     async transition(fn) {
       if (reduced || !vtOkay) return fn();
-      return document.startViewTransition(fn).finished;
+      // A skipped or timed-out transition (backgrounded tab, slow device) still
+      // ran its DOM update; only the animation is lost, so never surface it.
+      const vt = document.startViewTransition(fn);
+      vt.ready.catch(() => {});
+      return vt.finished.catch(() => {});
     },
     // Rule 1: ease-out entrance with an opt-out at 30ms-per-row stagger.
     enter(el, i = null) {
@@ -459,9 +463,10 @@ function drawFarmMap() {
   const act = activeFarm();
   for (const f of S.farms) {
     L.polygon(latlngs(f.polygon), {
-      color: act && f.id === act.id ? '#476633' : '#9aab88',
-      weight: 2,
-      fillOpacity: 0.15,
+      color: act && f.id === act.id ? '#2d4419' : '#6b9454',
+      weight: 3,
+      fillColor: '#8faf73',
+      fillOpacity: 0.18,
     }).bindTooltip(esc(f.name)).addTo(farmLayer);
   }
   for (const r of scoutReports()) {
@@ -636,7 +641,7 @@ $('#farm-form').addEventListener('submit', async (e) => {
 
 function renderFarmList() {
   const el = $('#farm-list');
-  if (!S.farms.length) { el.innerHTML = '<div class="muted">No farms yet. Walk your boundary to add one.</div>'; return; }
+  if (!S.farms.length) { el.innerHTML = '<div class="muted empty">No farms yet. Walk your boundary to add one.</div>'; return; }
   const act = activeFarm();
   el.innerHTML = S.farms.map((f) => {
     const on = act && act.id === f.id;
@@ -1058,7 +1063,7 @@ function renderHeat() {
   const al = $('#alerts');
   al.innerHTML = clusters.length
     ? clusters.map((c) => `<div class="item alert"><span>${c.count} reports of ${esc((TYPES[c.type] || c.type).toLowerCase())} within 1 km<br><span class="sub">Highest severity ${c.maxSeverity}/3 · needs expert verification</span></span></div>`).join('')
-    : '<div class="muted">No outbreak clusters right now.</div>';
+    : '<div class="muted empty">No outbreak clusters right now.</div>';
   if (excluded) al.innerHTML += `<div class="muted small">${excluded} report${excluded > 1 ? 's' : ''} with a weak or suspicious GNSS fix (quality under 50) ${excluded > 1 ? 'are' : 'is'} left out of the map and alerts.</div>`;
   gnStag(al);
 }
@@ -1167,10 +1172,10 @@ function renderTrees() {
         const dec = s.decision ? `<div class="sub">Verifier note: ${esc(s.decision.note || 'none')}</div>` : '';
         return `<div class="item"><span>${esc(s.farmName || 'Plot')} · ${s.units} tCO₂e credits<br><span class="sub">${s.activityUnits ? s.activityUnits + ' verified tree-years · ' : ''}${s.alive}/${s.sample} alive of ${s.trees} planted · ${esc(fmtTime(s.receivedAt))}</span>${issues}${dec}</span><span class="badge ${cls}">${label}</span></div>`;
       }).join('')
-    : '<div class="muted">Nothing submitted yet.</div>';
+    : '<div class="muted empty">Nothing submitted yet.</div>';
   $('#tr-pay').innerHTML = v && v.payouts.length
     ? v.payouts.map((p) => `<div class="item"><span>${naira(p.amountKobo)} · ${esc(p.orderId)}<br><span class="sub">${p.status === 'paid' ? `Sent to ${esc(p.to)} · ref ${esc(p.ref)} (sandbox)` : esc(PAY_REASON[p.reason] || 'Held')}</span></span><span class="badge ${p.status === 'paid' ? 'good' : 'ok'}">${p.status}</span></div>`).join('')
-    : '<div class="muted">No payouts yet. They appear after a buyer purchases units from verified plots.</div>';
+    : '<div class="muted empty">No payouts yet. They appear after a buyer purchases units from verified plots.</div>';
   gnStag($('#tr-list')); gnStag($('#tr-pay'));
 }
 
@@ -1255,15 +1260,17 @@ function renderRecords() {
     $('#seal-btn').disabled = pending === 0;
     $('#batch-list').innerHTML = S.batches.length
       ? [...S.batches].reverse().map((b) => `<div class="item"><span>Batch ${esc(b.id)} · ${b.count} record${b.count === 1 ? '' : 's'}<br><span class="sub">root <code>${esc(short(b.root, 16))}</code> · ${esc(fmtTime(b.ts))}</span></span>${b.anchor ? `<span class="badge good">ledger #${b.anchor.seq}</span>` : '<span class="badge ok">not anchored</span>'}</div>`).join('')
-      : '<div class="muted">No batches yet. Sealing groups pending records under one fingerprint (a Merkle root).</div>';
+      : '<div class="muted empty">No batches yet. Sealing groups pending records under one fingerprint (a Merkle root).</div>';
     gnStag($('#batch-list'));
     $('#record-list').innerHTML = S.records.length
-      ? [...S.records].reverse().slice(0, 100).map((r) => {
+      // Newest first by when the record was made (demo and imported records
+      // are not stored in time order).
+      ? [...S.records].sort((a, b) => Date.parse(b.body.ts) - Date.parse(a.body.ts)).slice(0, 100).map((r) => {
           const b = r.body, q = b.quality.score;
           const label = b.kind === 'farm' ? `Farm: ${b.data.name}` : b.kind === 'planting' ? `Planted ${b.data.count} trees` : b.kind === 'survival' ? `Survival: ${b.data.alive} of ${b.data.sampleSize} alive` : TYPES[b.data.type] || b.data.type;
-          return `<button class="item" data-rec="${esc(b.id)}"><span>${esc(label)}<br><span class="sub">${esc(fmtTime(b.ts))} · ${r.batchId ? 'sealed' : 'pending'}</span></span><span class="badge ${q >= 80 ? 'good' : q >= 50 ? 'ok' : 'bad'}">${q}</span></button>`;
+          return `<button class="item" data-rec="${esc(b.id)}"><span>${esc(label)}<br><span class="sub">${esc(fmtTime(b.ts))} · ${r.batchId ? 'sealed' : 'not sealed yet'}</span></span><span class="badge ${q >= 80 ? 'good' : q >= 50 ? 'ok' : 'bad'}" title="GPS quality score (out of 100)" aria-label="GPS quality ${q} of 100">${q}</span></button>`;
         }).join('')
-      : '<div class="muted">No records yet.</div>';
+      : '<div class="muted empty">No records yet.</div>';
     gnStag($('#record-list'));
     $$('#record-list [data-rec]').forEach((b) => b.addEventListener('click', () => openVerify(b.dataset.rec)));
   });
@@ -2098,7 +2105,12 @@ function showTab(name) {
   // hidden, so Leaflet's cached size went stale, and a mid-fade resize is
   // what flickers. The new-state snapshot is only taken once the awaited
   // promise resolves, so it captures the corrected, drawn map.
-  const resizeMap = (m) => new Promise((resolve) => requestAnimationFrame(() => { m.invalidateSize(); resolve(); }));
+  // rAF never fires in a hidden page; the timeout keeps the transition from stalling.
+  const resizeMap = (m) => new Promise((resolve) => {
+    let done = false;
+    const run = () => { if (done) return; done = true; m.invalidateSize(); resolve(); };
+    requestAnimationFrame(run); setTimeout(run, 120);
+  });
   // Non-map tab content also renders inside the awaited update phase, so the
   // new-state snapshot shows finished content instead of catching a
   // mid-fade rebuild.

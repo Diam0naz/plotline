@@ -720,18 +720,19 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 
 /* ---------- Extended Industrial Tokens ---------- */
 :root {
-  --industrial-black:   #070a08;
-  --industrial-slate:   #0e1410;
-  --industrial-card:    #131c15;
+  /* Same near-blacks as the landing page's dark batch card. */
+  --industrial-black:   #0e0f0d;
+  --industrial-slate:   #1a1c18;
+  --industrial-card:    #22251f;
   --industrial-border:  rgba(255, 255, 255, 0.09);
   --industrial-border-light: rgba(0, 0, 0, 0.08);
-  --industrial-emerald: #10b981;
-  --industrial-emerald-glow: rgba(16, 185, 129, 0.28);
-  --industrial-emerald-dim: rgba(16, 185, 129, 0.12);
-  --industrial-amber:   #f59e0b;
-  --industrial-amber-dim: rgba(245, 158, 11, 0.14);
-  --industrial-cyan:    #06b6d4;
-  --industrial-cyan-dim: rgba(6, 182, 212, 0.14);
+  --industrial-emerald: #8faf73;
+  --industrial-emerald-glow: rgba(143, 175, 115, 0.28);
+  --industrial-emerald-dim: rgba(143, 175, 115, 0.12);
+  --industrial-amber:   #d39a45;
+  --industrial-amber-dim: rgba(211, 154, 69, 0.14);
+  --industrial-cyan:    #8fb3d9;
+  --industrial-cyan-dim: rgba(143, 179, 217, 0.14);
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -743,7 +744,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   width: 100%;
   display: flex;
   background: var(--industrial-black);
-  color: #f8fafc;
+  color: #f5f6f3;
   font-family: var(--font-body);
   position: relative;
   z-index: 9000;
@@ -765,12 +766,16 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
     display: flex;
     flex-direction: column;
   }
-  /* Stacked: the art panel still owns the first full screen, so the dark
-     half never stops mid-viewport with the white card underneath it. */
+  /* Stacked (phones, small tablets): the form is the job, so the art panel
+     shrinks to a short brand header and the sign-up card shows above the
+     fold. The illustration and ticker are desktop-only decoration. */
   .climate-art-half {
-    min-height: 100vh;
-    min-height: 100dvh;
+    min-height: 0;
+    padding: 28px 20px 24px;
+    border-right: 0;
+    border-bottom: 1px solid var(--industrial-border);
   }
+
   /* Stacked-gateway leaf + link clearance overrides live at the END of this
      file — they must come after the base .auth-card-half rules to win the
      cascade (equal specificity, later declaration). */
@@ -778,7 +783,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 
 /* ── Left Half: Climate Action Doodle & Telemetry Art ── */
 .climate-art-half {
-  background: radial-gradient(circle at 20% 20%, #15291b 0%, #0c1810 50%, #060a07 100%);
+  background: radial-gradient(circle at 20% 20%, #263220 0%, #1a1c18 50%, #0e0f0d 100%);
   border-right: 1px solid var(--industrial-border);
   padding: clamp(28px, 5vw, 56px);
   display: flex;
@@ -850,7 +855,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   text-transform: uppercase;
   color: var(--industrial-emerald);
   background: var(--industrial-emerald-dim);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border: 1px solid rgba(143, 175, 115, 0.3);
   padding: 4px 12px;
   border-radius: var(--r-pill);
   width: fit-content;
@@ -867,13 +872,13 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 
 .climate-header-block h1 span {
   color: var(--industrial-emerald);
-  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  background: linear-gradient(135deg, #a9c48f 0%, #8faf73 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .climate-lede {
-  color: #94a3b8;
+  color: #959b8e;
   font-size: clamp(14px, 1.2vw, 16px);
   max-width: 520px;
   line-height: 1.6;
@@ -952,7 +957,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   gap: var(--s2);
   font-family: var(--font-mono);
   font-size: 11px;
-  color: #cbd5e1;
+  color: #b8bdb2;
   letter-spacing: 0.04em;
 }
 
@@ -967,7 +972,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 /* ── Right Half: Industrial Auth Card ── */
 .auth-card-half {
   background: #ffffff;
-  color: #0f172a;
+  color: #1a1c18;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1020,7 +1025,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: #1a1c18;
   letter-spacing: -0.03em;
 }
 
@@ -1037,8 +1042,8 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   letter-spacing: 0.06em;
   padding: 3px 10px;
   border-radius: var(--r-pill);
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  background: #e8ebe4;
+  border: 1px solid #d4d9ce;
   color: #475569;
 }
 
@@ -1046,8 +1051,8 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 .gw-mode-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  background: #f1f5f9;
-  border: 1.5px solid #e2e8f0;
+  background: #e8ebe4;
+  border: 1.5px solid #d4d9ce;
   border-radius: var(--r2);
   padding: 4px;
   gap: 4px;
@@ -1059,7 +1064,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   border: 0;
   border-radius: var(--r1);
   background: transparent;
-  color: #64748b;
+  color: #6e7368;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1068,7 +1073,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 }
 
 .gw-tab:hover {
-  color: #0f172a;
+  color: #1a1c18;
   background: rgba(255, 255, 255, 0.6);
 }
 
@@ -1086,21 +1091,21 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: #0f172a;
+  color: #1a1c18;
   margin-bottom: 4px;
 }
 
 .gw-panel-head p {
   font-size: 13px;
-  color: #64748b;
+  color: #6e7368;
   line-height: 1.45;
 }
 
 /* Device-identity summary shown on the "Welcome back" panel */
 .gw-identity {
-  border: 1px solid #e2e8f0;
+  border: 1px solid #d4d9ce;
   border-radius: var(--r3);
-  background: #f8fafc;
+  background: #f5f6f3;
   padding: var(--s3) var(--s4);
   display: flex;
   flex-direction: column;
@@ -1114,7 +1119,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   font-size: 13px;
 }
 .gw-id-label {
-  color: #64748b;
+  color: #6e7368;
   font-size: 11px;
   font-family: var(--font-mono);
   text-transform: uppercase;
@@ -1140,7 +1145,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 
 .gw-switch-link {
   font-size: 13px;
-  color: #64748b;
+  color: #6e7368;
   text-align: center;
   margin-top: var(--s1);
 }
@@ -1189,8 +1194,8 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   gap: 6px;
   padding: 2px 8px;
   border-radius: var(--r-pill);
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(143, 175, 115, 0.12);
+  border: 1px solid rgba(143, 175, 115, 0.3);
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
@@ -1220,13 +1225,13 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   height: 7px;
   border-radius: 50%;
   background: var(--industrial-emerald);
-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  box-shadow: 0 0 0 0 rgba(143, 175, 115, 0.7);
   animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
 @keyframes ping {
   75%, 100% {
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 6px rgba(143, 175, 115, 0);
   }
 }
 
@@ -1235,11 +1240,11 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
   font-size: 12px;
   background: rgba(255, 255, 255, 0.08) !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
-  color: #f1f5f9 !important;
+  color: #e8ebe4 !important;
 }
 
 .industrial-top button.quiet {
-  color: #cbd5e1 !important;
+  color: #b8bdb2 !important;
 }
 
 .industrial-top button.quiet:hover {
@@ -1256,11 +1261,11 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 .map-hud {
   position: absolute;
   top: 12px;
-  left: 12px;
+  right: 12px; /* Leaflet's zoom control owns the top-left corner */
   z-index: 400;
   display: flex;
   gap: 8px;
-  background: rgba(11, 16, 12, 0.88);
+  background: rgba(14, 15, 13, 0.88);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -1283,7 +1288,7 @@ dialog.onboard { padding: 0; max-width: 440px; overflow: hidden; }
 .hud-label {
   font-size: 9px;
   font-family: var(--font-mono);
-  color: #94a3b8;
+  color: #959b8e;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1319,7 +1324,7 @@ body:not(.site):not(.console) input:focus,
 body:not(.site):not(.console) select:focus,
 body:not(.site):not(.console) textarea:focus {
   border-color: var(--green);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+  box-shadow: 0 0 0 3px rgba(143, 175, 115, 0.18);
 }
 
 /* Tactical Bottom Bar */
@@ -1367,7 +1372,7 @@ body:not(.site):not(.console) textarea:focus {
   border: 1px solid var(--industrial-border);
   border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.04);
-  color: #e5e7eb;
+  color: #e8ebe4;
   padding: 3px 10px 3px 3px;
   cursor: pointer;
   transition: background var(--t-fast), border-color var(--t-fast);
@@ -1583,13 +1588,13 @@ body:not(.site):not(.console) textarea:focus {
   background: var(--industrial-card);
   border: 1px solid var(--industrial-border);
   border-radius: var(--r3);
-  color: #e5e7eb;
+  color: #e8ebe4;
   text-align: center;
 }
 .lock-card .lock-brand { font-size: 26px; color: #fff; }
 .lock-card .lock-brand span { color: var(--industrial-emerald); }
 .lock-card h2 { color: #fff; margin: var(--s4) 0 var(--s2); font-size: 20px; }
-.lock-card .lock-label { text-align: left; color: #cbd5e1; font-size: 13px; }
+.lock-card .lock-label { text-align: left; color: #b8bdb2; font-size: 13px; }
 .lock-card input {
   margin-top: var(--s2);
   background: var(--industrial-slate);
@@ -1602,7 +1607,7 @@ body:not(.site):not(.console) textarea:focus {
 .lock-card input:focus { border-color: var(--industrial-emerald); outline: none; box-shadow: 0 0 0 3px var(--industrial-emerald-dim); }
 .lock-card .primary { background: var(--industrial-emerald); border: 0; color: #04120c; font-weight: 700; }
 .lock-card .lock-err { min-height: 18px; color: #fca5a5; font-size: 13px; }
-.lock-card .lock-sub { color: #94a3b8; font-size: 13px; margin: 0 0 var(--s4); }
+.lock-card .lock-sub { color: #959b8e; font-size: 13px; margin: 0 0 var(--s4); }
 
 /* ---------- Scout photos & AI check ---------- */
 .photo-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -2005,3 +2010,24 @@ body:not(.site):not(.console) textarea:focus {
    rules live at the end of the file so the cascade keeps them authoritative. */
 .rain-bar { fill: var(--blue); }
 .rain-bar:hover { fill: var(--blue-border); }
+
+/* Stacked gateway (phones): after the base rules so these win the cascade. */
+@media (max-width: 960px) {
+  .climate-doodle-stage, .climate-telemetry-strip { display: none; }
+  .climate-header-block h1 { font-size: 30px; }
+  .climate-lede { font-size: 14px; margin-top: 8px; }
+}
+
+/* Empty states read as quiet hints, not as body copy. */
+.muted.empty { font-size: 14px; line-height: 1.5; padding: var(--s2) 0; }
+
+/* Decorative leaves always sit behind the text they decorate. */
+.dash-greeting, .scout-photo-check, .apply-section { isolation: isolate; }
+.dash-greeting::after, .scout-photo-check::after, .apply-section::before { z-index: -1; }
+
+/* Wide screens: the bottom bar keeps its full-width backdrop, but its buttons
+   line up with the 640px content column instead of spreading across the
+   whole window. */
+@media (min-width: 760px) {
+  .tabs { padding-inline: calc((100% - 640px) / 2); }
+}

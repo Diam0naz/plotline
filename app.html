@@ -79,10 +79,10 @@
       <div class="climate-header-block">
         <div class="climate-eyebrow">
           <span class="tel-dot"></span>
-          <span>GNSS Agri-Telemetry &amp; Carbon Proof</span>
+          <span>Offline-first farm records</span>
         </div>
         <h1>Proof of what<br><span>grows.</span></h1>
-        <p class="climate-lede">Map boundaries with centimeter-scored GNSS fixes. Audit living tree survival and seal verifiable carbon credits on-device with zero network dependency.</p>
+        <p class="climate-lede">Walk your boundary, report what you see, and turn living trees into verified carbon credits — signed on this phone, with or without a network.</p>
       </div>
 
       <!-- Climate Action Doodle Stage -->
@@ -90,9 +90,9 @@
         <svg class="climate-svg-doodle" viewBox="0 0 640 680" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="treeCanopyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stop-color="#34d399" />
-              <stop offset="40%" stop-color="#10b981" />
-              <stop offset="100%" stop-color="#065f46" />
+              <stop offset="0%" stop-color="#a9c48f" />
+              <stop offset="40%" stop-color="#8faf73" />
+              <stop offset="100%" stop-color="#2d4419" />
             </linearGradient>
             <linearGradient id="trunkGrad" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stop-color="#3e2723" />
@@ -100,65 +100,65 @@
               <stop offset="100%" stop-color="#271c19" />
             </linearGradient>
             <linearGradient id="beamGrad" x1="50%" y1="0%" x2="50%" y2="100%">
-              <stop offset="0%" stop-color="#10b981" stop-opacity="0.65" />
-              <stop offset="35%" stop-color="#10b981" stop-opacity="0.22" />
-              <stop offset="100%" stop-color="#10b981" stop-opacity="0.01" />
+              <stop offset="0%" stop-color="#8faf73" stop-opacity="0.65" />
+              <stop offset="35%" stop-color="#8faf73" stop-opacity="0.22" />
+              <stop offset="100%" stop-color="#8faf73" stop-opacity="0.01" />
             </linearGradient>
             <linearGradient id="soilGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stop-color="#1c2b20" />
+              <stop offset="0%" stop-color="#232a1c" />
               <stop offset="30%" stop-color="#121d15" />
               <stop offset="100%" stop-color="#080e0a" />
             </linearGradient>
             <pattern id="polyGrid" width="20" height="20" patternUnits="userSpaceOnUse">
-              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(52, 211, 153, 0.14)" stroke-width="1"/>
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(169, 196, 143, 0.14)" stroke-width="1"/>
             </pattern>
           </defs>
 
           <!-- Technical Grid & Compass Circles -->
           <g opacity="0.4">
-            <circle cx="320" cy="340" r="260" stroke="#10b981" stroke-width="1" stroke-dasharray="4 8" opacity="0.3"/>
-            <circle cx="320" cy="340" r="180" stroke="#10b981" stroke-width="1" stroke-dasharray="2 6" opacity="0.2"/>
+            <circle cx="320" cy="340" r="260" stroke="#8faf73" stroke-width="1" stroke-dasharray="4 8" opacity="0.3"/>
+            <circle cx="320" cy="340" r="180" stroke="#8faf73" stroke-width="1" stroke-dasharray="2 6" opacity="0.2"/>
             <line x1="320" y1="60" x2="320" y2="620" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="3 3"/>
             <line x1="40" y1="340" x2="600" y2="340" stroke="rgba(255,255,255,0.06)" stroke-width="1" stroke-dasharray="3 3"/>
           </g>
 
           <!-- Topographic Elevation Contours -->
           <g opacity="0.35">
-            <path d="M20 280 Q 180 230, 320 270 T 620 250" fill="none" stroke="#34d399" stroke-width="1.5" stroke-dasharray="4 4" />
-            <path d="M20 310 Q 150 280, 310 300 T 620 300" fill="none" stroke="#10b981" stroke-width="1.2" />
-            <path d="M20 350 Q 210 320, 340 360 T 620 340" fill="none" stroke="#059669" stroke-width="1.2" stroke-dasharray="6 4" />
+            <path d="M20 280 Q 180 230, 320 270 T 620 250" fill="none" stroke="#a9c48f" stroke-width="1.5" stroke-dasharray="4 4" />
+            <path d="M20 310 Q 150 280, 310 300 T 620 300" fill="none" stroke="#8faf73" stroke-width="1.2" />
+            <path d="M20 350 Q 210 320, 340 360 T 620 340" fill="none" stroke="#6b9454" stroke-width="1.2" stroke-dasharray="6 4" />
             <path d="M20 400 Q 170 370, 330 410 T 620 390" fill="none" stroke="#047857" stroke-width="1.5" />
           </g>
 
           <!-- Satellite Orbit Arc & Telemetry -->
-          <path d="M 80 180 C 200 70, 440 60, 580 140" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="5 5" opacity="0.6"/>
+          <path d="M 80 180 C 200 70, 440 60, 580 140" fill="none" stroke="#8fb3d9" stroke-width="1.5" stroke-dasharray="5 5" opacity="0.6"/>
           <!-- Satellite Unit -->
           <g transform="translate(420, 80)">
-            <circle cx="0" cy="0" r="14" stroke="#38bdf8" stroke-width="1" fill="none" class="sat-radar-wave" />
-            <circle cx="0" cy="0" r="28" stroke="#38bdf8" stroke-width="1" fill="none" opacity="0.5" class="sat-radar-wave" />
-            <rect x="-10" y="-8" width="20" height="16" rx="3" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
-            <rect x="-34" y="-6" width="20" height="12" rx="1" fill="#0284c7" stroke="#bae6fd" stroke-width="1"/>
-            <rect x="14" y="-6" width="20" height="12" rx="1" fill="#0284c7" stroke="#bae6fd" stroke-width="1"/>
-            <line x1="0" y1="8" x2="0" y2="15" stroke="#38bdf8" stroke-width="2"/>
-            <circle cx="0" cy="16" r="2.5" fill="#38bdf8"/>
-            <text x="36" y="4" font-family="'Roboto Mono', monospace" font-size="10" fill="#7dd3fc" font-weight="600">GNSS L1/L5 (RTK LOCK)</text>
+            <circle cx="0" cy="0" r="14" stroke="#8fb3d9" stroke-width="1" fill="none" class="sat-radar-wave" />
+            <circle cx="0" cy="0" r="28" stroke="#8fb3d9" stroke-width="1" fill="none" opacity="0.5" class="sat-radar-wave" />
+            <rect x="-10" y="-8" width="20" height="16" rx="3" fill="#1a1c18" stroke="#8fb3d9" stroke-width="2"/>
+            <rect x="-34" y="-6" width="20" height="12" rx="1" fill="#2563a8" stroke="#d5e4f5" stroke-width="1"/>
+            <rect x="14" y="-6" width="20" height="12" rx="1" fill="#2563a8" stroke="#d5e4f5" stroke-width="1"/>
+            <line x1="0" y1="8" x2="0" y2="15" stroke="#8fb3d9" stroke-width="2"/>
+            <circle cx="0" cy="16" r="2.5" fill="#8fb3d9"/>
+            <text x="36" y="4" font-family="'Roboto Mono', monospace" font-size="10" fill="#bcd4f0" font-weight="600">GPS FIX · SCORED</text>
           </g>
 
           <!-- Downlink Telemetry Beam onto Farm Boundary -->
           <polygon points="420,96 200,430 460,430" fill="url(#beamGrad)" class="carbon-flux-beam"/>
 
           <!-- Soil Stratum Layer (Subterranean Carbon Sink) -->
-          <path d="M 30 420 Q 180 410, 320 420 T 610 415 L 610 650 L 30 650 Z" fill="url(#soilGrad)" stroke="#22543d" stroke-width="1.5"/>
+          <path d="M 30 420 Q 180 410, 320 420 T 610 415 L 610 650 L 30 650 Z" fill="url(#soilGrad)" stroke="#2d4419" stroke-width="1.5"/>
 
           <!-- Soil Carbon Nodules -->
           <g opacity="0.7">
-            <circle cx="120" cy="480" r="6" fill="#34d399" opacity="0.6"/>
-            <circle cx="180" cy="520" r="8" fill="#10b981" opacity="0.5"/>
-            <circle cx="280" cy="490" r="7" fill="#059669" opacity="0.7"/>
-            <circle cx="360" cy="540" r="9" fill="#34d399" opacity="0.6"/>
-            <circle cx="440" cy="500" r="6" fill="#10b981" opacity="0.8"/>
-            <circle cx="510" cy="530" r="8" fill="#059669" opacity="0.5"/>
-            <text x="70" y="580" font-family="'Roboto Mono', monospace" font-size="10" fill="#6ee7b7" opacity="0.8">SUBTERRANEAN CARBON SINK (+2.8 tCO₂e/ha)</text>
+            <circle cx="120" cy="480" r="6" fill="#a9c48f" opacity="0.6"/>
+            <circle cx="180" cy="520" r="8" fill="#8faf73" opacity="0.5"/>
+            <circle cx="280" cy="490" r="7" fill="#6b9454" opacity="0.7"/>
+            <circle cx="360" cy="540" r="9" fill="#a9c48f" opacity="0.6"/>
+            <circle cx="440" cy="500" r="6" fill="#8faf73" opacity="0.8"/>
+            <circle cx="510" cy="530" r="8" fill="#6b9454" opacity="0.5"/>
+            <text x="70" y="580" font-family="'Roboto Mono', monospace" font-size="10" fill="#c7d9b2" opacity="0.8">SUBTERRANEAN CARBON SINK (+2.8 tCO₂e/ha)</text>
           </g>
 
           <!-- Agroforestry Living Tree Doodle -->
@@ -181,70 +181,70 @@
           <!-- Layered Foliage Clusters -->
           <g filter="drop-shadow(0 4px 12px rgba(0,0,0,0.3))">
             <ellipse cx="285" cy="230" rx="95" ry="75" fill="url(#treeCanopyGrad)" opacity="0.95"/>
-            <ellipse cx="230" cy="245" rx="70" ry="60" fill="#059669" opacity="0.9"/>
-            <ellipse cx="340" cy="240" rx="75" ry="60" fill="#10b981" opacity="0.92"/>
-            <ellipse cx="285" cy="180" rx="80" ry="65" fill="#34d399" opacity="0.88"/>
-            <ellipse cx="215" cy="195" rx="55" ry="48" fill="#10b981" opacity="0.85"/>
-            <ellipse cx="355" cy="190" rx="60" ry="50" fill="#34d399" opacity="0.85"/>
-            <ellipse cx="285" cy="140" rx="50" ry="42" fill="#6ee7b7" opacity="0.95"/>
+            <ellipse cx="230" cy="245" rx="70" ry="60" fill="#6b9454" opacity="0.9"/>
+            <ellipse cx="340" cy="240" rx="75" ry="60" fill="#8faf73" opacity="0.92"/>
+            <ellipse cx="285" cy="180" rx="80" ry="65" fill="#a9c48f" opacity="0.88"/>
+            <ellipse cx="215" cy="195" rx="55" ry="48" fill="#8faf73" opacity="0.85"/>
+            <ellipse cx="355" cy="190" rx="60" ry="50" fill="#a9c48f" opacity="0.85"/>
+            <ellipse cx="285" cy="140" rx="50" ry="42" fill="#c7d9b2" opacity="0.95"/>
           </g>
 
           <!-- Carbon Flux Absorption Arrows -->
-          <g stroke="#34d399" stroke-width="2" stroke-linecap="round" opacity="0.9">
+          <g stroke="#a9c48f" stroke-width="2" stroke-linecap="round" opacity="0.9">
             <path d="M 170 120 L 210 160" />
             <line x1="210" y1="160" x2="200" y2="158"/>
             <line x1="210" y1="160" x2="208" y2="150"/>
-            <text x="130" y="115" font-family="'Roboto Mono', monospace" font-size="11" fill="#34d399" font-weight="700">CO₂ ↓</text>
+            <text x="130" y="115" font-family="'Roboto Mono', monospace" font-size="11" fill="#a9c48f" font-weight="700">CO₂ ↓</text>
 
             <path d="M 400 110 L 360 150" />
             <line x1="360" y1="150" x2="370" y2="148"/>
             <line x1="360" y1="150" x2="362" y2="140"/>
-            <text x="408" y="112" font-family="'Roboto Mono', monospace" font-size="11" fill="#34d399" font-weight="700">CO₂ ↓</text>
+            <text x="408" y="112" font-family="'Roboto Mono', monospace" font-size="11" fill="#a9c48f" font-weight="700">CO₂ ↓</text>
           </g>
 
           <!-- Walked Farm Boundary Polygon -->
           <g id="farm-polygon-doodle" opacity="0.95">
-            <polygon points="120,430 460,405 520,460 190,480" fill="url(#polyGrid)" stroke="#10b981" stroke-width="2.5" stroke-dasharray="6 4"/>
+            <polygon points="120,430 460,405 520,460 190,480" fill="url(#polyGrid)" stroke="#8faf73" stroke-width="2.5" stroke-dasharray="6 4"/>
             <!-- Corner Pins -->
-            <circle cx="120" cy="430" r="7" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+            <circle cx="120" cy="430" r="7" fill="#8faf73" stroke="#ffffff" stroke-width="2"/>
             <text x="96" y="424" font-family="'Roboto Mono', monospace" font-size="11" fill="#ffffff" font-weight="700">C1</text>
-            <circle cx="460" cy="405" r="7" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+            <circle cx="460" cy="405" r="7" fill="#8faf73" stroke="#ffffff" stroke-width="2"/>
             <text x="472" y="405" font-family="'Roboto Mono', monospace" font-size="11" fill="#ffffff" font-weight="700">C2</text>
-            <circle cx="520" cy="460" r="7" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+            <circle cx="520" cy="460" r="7" fill="#8faf73" stroke="#ffffff" stroke-width="2"/>
             <text x="532" y="468" font-family="'Roboto Mono', monospace" font-size="11" fill="#ffffff" font-weight="700">C3</text>
-            <circle cx="190" cy="480" r="7" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+            <circle cx="190" cy="480" r="7" fill="#8faf73" stroke="#ffffff" stroke-width="2"/>
             <text x="170" y="500" font-family="'Roboto Mono', monospace" font-size="11" fill="#ffffff" font-weight="700">C4</text>
           </g>
 
           <!-- GNSS Rover Field Surveyor -->
           <g transform="translate(180, 435)">
-            <line x1="0" y1="0" x2="0" y2="-36" stroke="#f59e0b" stroke-width="2"/>
-            <circle cx="0" cy="-38" r="4" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5"/>
-            <circle cx="0" cy="-38" r="9" stroke="#f59e0b" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>
-            <circle cx="-12" cy="-18" r="5" fill="#f8fafc"/>
-            <line x1="-12" y1="-13" x2="-8" y2="4" stroke="#f8fafc" stroke-width="2.5"/>
-            <line x1="-12" y1="-7" x2="0" y2="-12" stroke="#f8fafc" stroke-width="2"/>
-            <line x1="-8" y1="4" x2="-14" y2="18" stroke="#f8fafc" stroke-width="2"/>
-            <line x1="-8" y1="4" x2="-2" y2="18" stroke="#f8fafc" stroke-width="2"/>
+            <line x1="0" y1="0" x2="0" y2="-36" stroke="#d39a45" stroke-width="2"/>
+            <circle cx="0" cy="-38" r="4" fill="#d39a45" stroke="#ffffff" stroke-width="1.5"/>
+            <circle cx="0" cy="-38" r="9" stroke="#d39a45" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>
+            <circle cx="-12" cy="-18" r="5" fill="#f5f6f3"/>
+            <line x1="-12" y1="-13" x2="-8" y2="4" stroke="#f5f6f3" stroke-width="2.5"/>
+            <line x1="-12" y1="-7" x2="0" y2="-12" stroke="#f5f6f3" stroke-width="2"/>
+            <line x1="-8" y1="4" x2="-14" y2="18" stroke="#f5f6f3" stroke-width="2"/>
+            <line x1="-8" y1="4" x2="-2" y2="18" stroke="#f5f6f3" stroke-width="2"/>
           </g>
 
           <!-- Floating Industrial Telemetry Badges -->
           <g class="floating-telemetry-pill" transform="translate(48, 220)">
-            <rect width="180" height="34" rx="6" fill="rgba(15, 23, 42, 0.88)" stroke="rgba(56, 189, 248, 0.4)" stroke-width="1.5" />
-            <circle cx="16" cy="17" r="4" fill="#38bdf8"/>
-            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#e0f2fe" font-weight="600">GNSS RTK ±0.03m FIX</text>
+            <rect width="180" height="34" rx="6" fill="rgba(26, 28, 24, 0.88)" stroke="rgba(143, 179, 217, 0.4)" stroke-width="1.5" />
+            <circle cx="16" cy="17" r="4" fill="#8fb3d9"/>
+            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#eef4fc" font-weight="600">FIX ±4 m · QUALITY 92</text>
           </g>
 
           <g class="floating-telemetry-pill" transform="translate(405, 220)">
-            <rect width="195" height="34" rx="6" fill="rgba(15, 23, 42, 0.88)" stroke="rgba(52, 211, 153, 0.4)" stroke-width="1.5" />
-            <circle cx="16" cy="17" r="4" fill="#34d399"/>
-            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#dcfce7" font-weight="600">0.42 tCO₂e / TREE-YEAR</text>
+            <rect width="195" height="34" rx="6" fill="rgba(26, 28, 24, 0.88)" stroke="rgba(169, 196, 143, 0.4)" stroke-width="1.5" />
+            <circle cx="16" cy="17" r="4" fill="#a9c48f"/>
+            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#edf5e5" font-weight="600">18 kg CO₂e / TREE-YEAR</text>
           </g>
 
           <g class="floating-telemetry-pill" transform="translate(380, 330)">
-            <rect width="210" height="34" rx="6" fill="rgba(15, 23, 42, 0.88)" stroke="rgba(245, 158, 11, 0.4)" stroke-width="1.5" />
-            <circle cx="16" cy="17" r="4" fill="#f59e0b"/>
-            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#fef3c7" font-weight="600">MERKLE ROOT 8f21…c40d</text>
+            <rect width="210" height="34" rx="6" fill="rgba(26, 28, 24, 0.88)" stroke="rgba(211, 154, 69, 0.4)" stroke-width="1.5" />
+            <circle cx="16" cy="17" r="4" fill="#d39a45"/>
+            <text x="28" y="21" font-family="'Roboto Mono', monospace" font-size="10.5" fill="#fbf4e7" font-weight="600">MERKLE ROOT 8f21…c40d</text>
           </g>
 
           <!-- Crosshairs -->
@@ -259,9 +259,9 @@
 
       <!-- Telemetry Ticker -->
       <div class="climate-telemetry-strip">
-        <div class="tel-item"><span class="tel-dot"></span><span>GNSS RTK ±1.8m ACTIVE</span></div>
-        <div class="tel-item"><span>ARTICLE 6.2 ACCREDITED</span></div>
-        <div class="tel-item"><span>OFFLINE-FIRST SHA-256</span></div>
+        <div class="tel-item"><span class="tel-dot"></span><span>Every GPS fix scored</span></div>
+        <div class="tel-item"><span>Signed on this phone</span></div>
+        <div class="tel-item"><span>Works offline</span></div>
       </div>
     </div>
 

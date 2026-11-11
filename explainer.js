@@ -163,9 +163,13 @@ function wakeHud() {
 }
 
 const clean = params.get('clean') === '1';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>';
 function togglePlay() {
   playing = !playing;
-  $('b-play').textContent = playing ? '⏸' : '⏵';
+  const b = $('b-play');
+  b.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+  b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
 }
 
 function loop(ts) {
@@ -179,7 +183,7 @@ function loop(ts) {
     refreshChrome();
     if (tScene >= SCENES[i].dur) {
       if (i < SCENES.length - 1) enter(i + 1);
-      else { playing = false; $('b-play').textContent = '⏵'; }
+      else { playing = false; $('b-play').innerHTML = ICON_PLAY; $('b-play').setAttribute('aria-label', 'Play'); }
     }
   }
   requestAnimationFrame(loop);

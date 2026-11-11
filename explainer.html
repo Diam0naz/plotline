@@ -8,12 +8,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+
 <title>Plotline — 5-minute explainer</title>
 <style>
   :root {
-    --bg: #0d1a12; --panel: #12241a; --panel2: #16301f;
-    --ink: #e8f3ec; --dim: #9db4a6; --acc: #7ed957; --acc2: #eab308;
-    --line: #2a4634; --bad: #e4503d;
+    --bg: #141612; --panel: #1f221c; --panel2: #272b23;
+    --ink: #f5f6f3; --dim: #b3b8ad; --acc: #9dbb80; --acc2: #d9a54f;
+    --line: #363a31; --bad: #d8665b;
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
@@ -58,7 +63,7 @@
 
   /* scene 1 */
   .dawn { position: absolute; inset: 0; z-index: -1;
-    background: linear-gradient(120deg, #1a2c12 0%, #0d1a12 55%, #24200c 100%);
+    background: linear-gradient(120deg, #232a1c 0%, #141612 55%, #25211a 100%);
     background-size: 160% 160%; }
   .scene.on .dawn { animation: pan 25s linear both; }
   @keyframes pan { from { background-position: 0% 40%; } to { background-position: 100% 60%; } }
@@ -69,16 +74,16 @@
   .phone .tabbar { display: flex; gap: 1vw; border-bottom: 1px solid var(--line); padding-bottom: 1.2vh; margin-bottom: 1.6vh; }
   .tab { color: var(--dim); font-size: clamp(12px, 1.3vw, 15px); padding: .4vh .9vw; border-radius: 8px; }
   .tab.on { color: var(--ink); background: var(--panel2); font-weight: 600; }
-  .maplook { background: #14231a; border: 1px solid var(--line); border-radius: 12px;
+  .maplook { background: #1c1f19; border: 1px solid var(--line); border-radius: 12px;
     height: 26vh; position: relative; }
   .maplook svg { width: 100%; height: 100%; }
-  .walk-line { stroke: var(--acc); stroke-width: 3; fill: rgba(126, 217, 87, .12);
+  .walk-line { stroke: var(--acc); stroke-width: 3; fill: rgba(157, 187, 128, .12);
     stroke-linejoin: round; }
   .scene.on .walk-draw { stroke-dasharray: 1400; stroke-dashoffset: 1400;
     animation: draw 6s ease-in-out 2s forwards; }
   @keyframes draw { to { stroke-dashoffset: 0; } }
   .corner { position: absolute; width: 14px; height: 14px; border-radius: 50%;
-    background: var(--acc); border: 3px solid #0d1a12; transform: translate(-50%, -50%) scale(0); }
+    background: var(--acc); border: 3px solid #141612; transform: translate(-50%, -50%) scale(0); }
   .scene.on .corner { animation: pop .4s cubic-bezier(.2,.7,.3,1.4) both; animation-delay: var(--t); }
   @keyframes pop { to { transform: translate(-50%, -50%) scale(1); } }
   .offline-badge { position: absolute; top: 10px; right: 10px; }
@@ -119,7 +124,7 @@
   /* captions — the voiceover text; always visible */
   .capbar { position: fixed; left: 8vw; right: 8vw; bottom: 9.5vh; z-index: 20;
     display: flex; justify-content: center; pointer-events: none; }
-  .cap { background: rgba(13, 26, 18, .82); border: 1px solid var(--line);
+  .cap { background: rgba(20, 22, 18, .82); border: 1px solid var(--line);
     border-radius: 14px; padding: 1.6vh 2vw; max-width: 62ch; text-align: center;
     font-size: clamp(16px, 2.1vw, 26px); line-height: 1.45; min-height: 8.5vh;
     display: flex; align-items: center; }
@@ -131,7 +136,9 @@
     gap: .6vw; align-items: center; transition: opacity .4s; }
   .controls.dimmed { opacity: .12; }
   .controls button { background: var(--panel); border: 1px solid var(--line); color: var(--ink);
-    width: 42px; height: 42px; border-radius: 50%; font-size: 17px; cursor: pointer; }
+    width: 42px; height: 42px; border-radius: 50%; font-size: 17px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .controls button:hover { border-color: var(--acc); color: var(--acc); }
   .controls .count { color: var(--dim); font-size: 14px; margin-right: .6vw; }
   .chapters { position: fixed; left: 1.6vw; top: 2vh; z-index: 30; display: flex; gap: .4vw;
     transition: opacity .4s; }
@@ -147,6 +154,22 @@
     font-size: 12px; }
 
   .vid16x9-note { position: fixed; right: 1.6vw; top: 2vh; color: var(--dim); font-size: 12px; z-index: 25; }
+
+  /* ── Plotline brand type (same families as the site and app) ── */
+  body { font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  h1, h2, h3, .kicker, .big, .brand, .chapters button { font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
+  h1 { font-weight: 700; letter-spacing: -0.03em; }
+  h2 { font-weight: 700; letter-spacing: -0.02em; }
+  .mono, .arch, code { font-family: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand img { width: 18px; height: 18px; display: block; }
+  .kicker { letter-spacing: .14em; font-weight: 600; }
+  /* Monstera crest: the brand's leaf, resting in the corner of opening screens */
+  .leafed { isolation: isolate; } /* slides/scenes are already absolutely positioned */
+  .leafed::after { content: ''; position: absolute; right: -4vw; top: -6vh; width: min(38vw, 460px); aspect-ratio: 1;
+    background: url('assets/monstera/leaf-dark.png') no-repeat center / contain; opacity: .42; transform: rotate(18deg);
+    pointer-events: none; z-index: -1; }
+  @media (max-width: 760px) { .leafed::after { width: 60vw; right: -20vw; top: -2vh; opacity: .3; } }
 </style>
 </head>
 <body>
@@ -158,7 +181,7 @@
 <main class="stage" id="stage">
 
   <!-- 1 COLD OPEN (0:00–0:25) -->
-  <section class="scene">
+  <section class="scene leafed">
     <div class="dawn"></div>
     <div style="text-align:center">
       <h1 class="a" style="--d:1.4s">800 trees planted.</h1>
@@ -275,10 +298,10 @@
           <span class="pill small">fire overlap ✓ none nearby</span>
         </div>
         <svg class="a" style="--d:3.6s; width:100%; height:20vh; margin-top:2vh" viewBox="0 0 600 160" aria-hidden="true">
-          <path d="M 110 140 L 170 40 L 340 30 L 390 115 L 260 150 Z" fill="rgba(126,217,87,.15)" stroke="#7ed957" stroke-width="2.5"></path>
-          <path d="M 385 118 L 430 30 L 560 45 L 520 130 Z" fill="rgba(234,179,8,.14)" stroke="#eab308" stroke-width="2" stroke-dasharray="6 4"></path>
-          <text x="215" y="95" fill="#e8f3ec" font-size="16">Amina</text>
-          <text x="440" y="90" fill="#eab308" font-size="16">neighbour</text>
+          <path d="M 110 140 L 170 40 L 340 30 L 390 115 L 260 150 Z" fill="rgba(157, 187, 128, .15)" stroke="#9dbb80" stroke-width="2.5"></path>
+          <path d="M 385 118 L 430 30 L 560 45 L 520 130 Z" fill="rgba(217, 165, 79, .14)" stroke="#d9a54f" stroke-width="2" stroke-dasharray="6 4"></path>
+          <text x="215" y="95" fill="#f5f6f3" font-size="16">Amina</text>
+          <text x="440" y="90" fill="#d9a54f" font-size="16">neighbour</text>
         </svg>
         <p class="a small dim" style="--d:4.6s; margin-top:1vh">Doubtful corners are flagged — a verifier writes a note before anything is approved.</p>
       </div>
@@ -363,10 +386,10 @@
 
 <div class="controls" id="controls">
   <span class="count" id="clock">0:00 / 5:00</span>
-  <button id="b-prev" title="Previous scene" type="button">⏮</button>
-  <button id="b-play" title="Play / pause" type="button">⏸</button>
-  <button id="b-next" title="Next scene" type="button">⏭</button>
-  <button id="b-fs" title="Fullscreen" type="button">⛶</button>
+  <button id="b-prev" title="Previous scene" aria-label="Previous scene" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+  <button id="b-play" title="Play / pause" aria-label="Pause" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+  <button id="b-next" title="Next scene" aria-label="Next scene" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+  <button id="b-fs" title="Fullscreen" aria-label="Fullscreen" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
 </div>
 
 <script src="explainer.js" defer></script>
