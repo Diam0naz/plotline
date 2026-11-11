@@ -1,0 +1,12 @@
+# CLI deploys upload this folder. Keep secrets, local state and working files
+# on this machine: Vercel injects env vars from the project settings, and the
+# build stages only a whitelist into public/ (scripts/vercel-stage.mjs).
+.env
+.env.*
+!.env.example
+data/
+.neon/
+public/
+node_modules/
+assets/*.pdf
+*.test.mjs
