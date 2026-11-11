@@ -38,43 +38,60 @@ body.console main { max-width: 1200px; margin: 0 auto; padding: var(--s4) var(--
 }
 .console-top .user-pill .role-dot.admin { background: var(--amber); }
 
-/* ── Auth screen ── */
+/* ── Auth screen: split like the app gateway — dark brand side, white form ── */
 body.auth-page { background: var(--grey-50); }
-.auth-wrap {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--s6) var(--s4);
+.auth-wrap { min-height: 100vh; min-height: 100dvh; display: flex; }
+.auth-split { display: grid; grid-template-columns: 1.05fr 0.95fr; width: 100%; min-height: inherit; }
+.auth-brand {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: space-between; gap: var(--s8);
+  padding: clamp(28px, 5vw, 64px);
+  background: radial-gradient(circle at 20% 20%, #263220 0%, #1a1c18 50%, #0e0f0d 100%);
+  color: #f5f6f3;
 }
-.auth-card {
-  width: 100%;
-  max-width: 440px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r4);
-  box-shadow: var(--shadow-xl);
-  overflow: hidden;
+.auth-brand::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: url('assets/monstera/pattern-dark.jpg') repeat; background-size: 320px 320px; opacity: .55;
+  -webkit-mask-image: radial-gradient(120% 100% at 0% 60%, #000 35%, transparent 100%);
+          mask-image: radial-gradient(120% 100% at 0% 60%, #000 35%, transparent 100%);
 }
-.auth-card-head {
-  padding: var(--s6) var(--s6) var(--s5);
-  border-bottom: 1px solid var(--border-2);
-  background: var(--surface);
+.auth-lockup { display: inline-flex; align-items: center; gap: 10px; color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -0.02em; text-decoration: none; }
+.auth-lockup:hover { text-decoration: none; }
+.auth-lockup > span > span, .auth-brand h1 span { color: var(--green-400); }
+.auth-eyebrow {
+  display: inline-block; font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--green-200); border: 1px solid rgba(143,175,115,.35); background: rgba(143,175,115,.10);
+  padding: 4px 12px; border-radius: var(--r-pill); margin-bottom: var(--s4);
 }
-.auth-card-head .brand { margin-bottom: var(--s4); }
-.auth-card-head h1 { font-size: 22px; margin-bottom: var(--s1); }
-.auth-card-head p  { font-size: 14px; color: var(--text-2); }
-.auth-card-body { padding: var(--s5) var(--s6); }
-.auth-card-foot {
-  padding: var(--s4) var(--s6);
-  border-top: 1px solid var(--border-2);
-  background: var(--grey-50);
-  font-size: 13px;
-  color: var(--text-2);
-  text-align: center;
+.auth-brand h1 { font-size: clamp(30px, 3.4vw, 44px); line-height: 1.12; letter-spacing: -0.03em; color: #fff; margin-bottom: var(--s4); }
+.auth-brand-copy p { color: #b8bdb2; max-width: 34em; line-height: 1.6; }
+.auth-points { list-style: none; padding: 0; margin: var(--s5) 0 0; display: grid; gap: var(--s2); }
+.auth-points li { position: relative; padding-left: 26px; color: #e8ebe4; font-size: 15px; }
+.auth-points li::before {
+  content: ''; position: absolute; left: 0; top: .45em; width: 14px; height: 8px;
+  border-left: 2px solid var(--green-400); border-bottom: 2px solid var(--green-400); transform: rotate(-45deg);
 }
-.auth-card-foot a { color: var(--green); font-weight: 500; }
+.auth-brand-foot { font-size: 13px; color: #959b8e; }
 
+.auth-card {
+  align-self: center; justify-self: center; width: 100%; max-width: 420px;
+  padding: clamp(28px, 5vw, 48px) var(--s6); display: grid; gap: var(--s5);
+}
+.auth-card-head h2 { font-size: 26px; margin-bottom: var(--s2); }
+.auth-card-head p { font-size: 14px; color: var(--text-2); }
+.auth-card .pw-field input { padding-right: 44px; }
+.auth-card-foot { border-top: 1px solid var(--border-2); padding-top: var(--s4); display: grid; gap: var(--s2); font-size: 13px; color: var(--text-2); text-align: center; }
+.auth-card-foot a { color: var(--green); font-weight: 600; }
+body.auth-page { background: var(--surface); }
+
+@media (max-width: 860px) {
+  .auth-split { grid-template-columns: 1fr; }
+  .auth-brand { padding: 24px 20px 22px; gap: var(--s4); }
+  .auth-brand h1 { font-size: 26px; margin-bottom: var(--s2); }
+  .auth-brand-copy p { font-size: 14px; }
+  .auth-points, .auth-brand-foot { display: none; }
+  .auth-card { align-self: start; padding: var(--s6) 20px var(--s8); }
+}
 
 /* ── Console nav ── */
 .cnav {
@@ -261,57 +278,51 @@ body.auth-page { background: var(--grey-50); }
      AUTH SCREEN  (shown until session established)
 ══════════════════════════════════════════════ -->
 <div id="auth-screen" class="auth-wrap">
-  <div class="auth-card">
-    <div class="auth-card-head">
-      <div class="brand">Plot<span>line</span></div>
-      <!-- Mode tabs: Sign in / Create account -->
-      <div style="display:flex;gap:0;margin:var(--s4) 0 0;border-bottom:1px solid var(--border-2)">
-        <button id="tab-signin" class="auth-mode-tab active"
-          style="flex:1;padding:10px;border:0;border-bottom:2px solid var(--green);background:none;font-weight:600;font-size:14px;color:var(--green);cursor:pointer">Sign in</button>
-        <button id="tab-signup" class="auth-mode-tab"
-          style="flex:1;padding:10px;border:0;border-bottom:2px solid transparent;background:none;font-weight:500;font-size:14px;color:var(--text-2);cursor:pointer">Create account</button>
+  <div class="auth-split">
+    <!-- Brand side: who this console is for -->
+    <aside class="auth-brand" aria-hidden="false">
+      <a href="./" class="auth-lockup"><img src="icon.svg" alt="" width="28" height="28"><span>Plot<span>line</span></span></a>
+      <div class="auth-brand-copy">
+        <span class="auth-eyebrow">Registry console</span>
+        <h1>Review the evidence.<br><span>Sign the decision.</span></h1>
+        <p>For approved verifiers and the registry operator. Every decision you make here is signed with your key and written to the public log.</p>
+        <ul class="auth-points">
+          <li>Submissions queue with GPS, fire and vegetation evidence</li>
+          <li>Signed approve / reject decisions</li>
+          <li>Issuance, market and reconciliation for operators</li>
+        </ul>
       </div>
-    </div>
+      <p class="auth-brand-foot">Farmers don't sign in here — the field app works without an account.</p>
+    </aside>
 
-    <!-- Sign in form -->
-    <div id="panel-signin" class="auth-card-body">
-      <form id="login-form" class="stack">
-        <label>Email or Username
-          <input id="login-user" autocomplete="username" placeholder="Email or username" required>
+    <!-- Form side -->
+    <section class="auth-card" aria-label="Sign in">
+      <div class="auth-card-head">
+        <h2>Sign in to the console</h2>
+        <p>Use the verifier account the operator approved for you, or the operator account.</p>
+      </div>
+      <div id="auth-notice" class="alert-box amber text-sm" role="status" hidden></div>
+      <form id="login-form" class="stack" novalidate>
+        <label>Email or username
+          <input id="login-user" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="e.g. ada-obi or ada@coop.ng" required>
         </label>
         <label>Password
-          <input id="login-pass" type="password" autocomplete="current-password" placeholder="Your password" required>
+          <span class="pw-field">
+            <input id="login-pass" type="password" autocomplete="current-password" placeholder="Your password" required>
+              <button type="button" class="pw-toggle" data-pw-for="login-pass" aria-pressed="false" aria-label="Show password" title="Show password">
+                <svg class="pw-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="pw-eye-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M2 12s3.5-6 10-6c1.9 0 3.5.5 5 1.3L21 2M2 22 22 2M9 19.7c.95.2 1.95.3 3 .3 6.5 0 10-6 10-6a17 17 0 0 0-3-3.6"/></svg>
+              </button>
+          </span>
         </label>
-        <div id="login-err" class="alert-box red text-sm" hidden></div>
-        <button id="login-btn" class="primary wide" type="submit">Sign in →</button>
+        <div id="login-err" class="alert-box red text-sm" role="alert" hidden></div>
+        <button id="login-btn" class="primary wide lg" type="submit">Sign in →</button>
       </form>
-    </div>
-
-    <!-- Sign up form -->
-    <div id="panel-signup" class="auth-card-body" hidden>
-      <form id="signup-form" class="stack">
-        <label>Full name
-          <input id="signup-name" required maxlength="80" placeholder="Your full name">
-        </label>
-        <label>Email address
-          <input id="signup-email" type="email" required maxlength="120" placeholder="you@example.com">
-        </label>
-        <label>Username
-          <input id="signup-user" required maxlength="32" placeholder="lowercase letters, numbers, dashes" autocomplete="username">
-          <span class="hint">2–32 characters: a–z, 0–9, dash</span>
-        </label>
-        <label>Password
-          <input id="signup-pass" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters">
-        </label>
-        <div id="signup-err" class="alert-box red text-sm" hidden></div>
-        <button id="signup-btn" class="primary wide" type="submit">Create account →</button>
-      </form>
-    </div>
-
-    <div class="auth-card-foot">
-      <span id="auth-foot-signin">Don't have an account? <a href="#" id="go-signup">Create one</a> &nbsp;·&nbsp; <a href="app.html">Farmer app →</a></span>
-      <span id="auth-foot-signup" hidden>Already have an account? <a href="#" id="go-signin">Sign in</a> &nbsp;·&nbsp; <a href="app.html">Farmer app →</a></span>
-    </div>
+      <div class="auth-card-foot">
+        <p>Not a verifier yet? <a href="app.html">Apply in the app →</a></p>
+        <p><a href="app.html">Farmer app</a> · <a href="./">Plotline home</a></p>
+      </div>
+    </section>
   </div>
 </div>
 

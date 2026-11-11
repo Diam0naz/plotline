@@ -34,27 +34,8 @@ async function authApi(path, opts = {}) { return api(path, { ...opts, base: 'api
 const fail = (r) => toast(r.json?.error || r.json?.message || `Request failed (${r.status})`);
 
 /* ══════════════════════════════════════════════
-   AUTH SCREEN — unified login + signup
+   AUTH SCREEN — sign in (accounts are created in the app)
 ══════════════════════════════════════════════ */
-
-// Mode toggle: sign-in ↔ create account
-function setAuthMode(mode) {
-  const isSignin = mode === 'signin';
-  $('#panel-signin').hidden  = !isSignin;
-  $('#panel-signup').hidden  =  isSignin;
-  $('#auth-foot-signin').hidden = !isSignin;
-  $('#auth-foot-signup').hidden =  isSignin;
-  const tabIn  = $('#tab-signin');
-  const tabUp  = $('#tab-signup');
-  const active = 'border-bottom:2px solid var(--green);color:var(--green);font-weight:600';
-  const idle   = 'border-bottom:2px solid transparent;color:var(--text-2);font-weight:500';
-  tabIn.style.cssText  = tabIn.style.cssText.replace(/border-bottom:[^;]+;color:[^;]+;font-weight:[^;]+/, isSignin ? active : idle);
-  tabUp.style.cssText  = tabUp.style.cssText.replace(/border-bottom:[^;]+;color:[^;]+;font-weight:[^;]+/, !isSignin ? active : idle);
-}
-$('#tab-signin').addEventListener('click', () => setAuthMode('signin'));
-$('#tab-signup').addEventListener('click', () => setAuthMode('signup'));
-$('#go-signup')?.addEventListener('click',  (e) => { e.preventDefault(); setAuthMode('signup'); });
-$('#go-signin')?.addEventListener('click',  (e) => { e.preventDefault(); setAuthMode('signin'); });
 
 // Role-based redirection upon successful authentication
 function handleRoleRedirection(s) {
@@ -66,10 +47,37 @@ function handleRoleRedirection(s) {
     enterConsole();
     activatePanel('verify'); // route verifier to the submissions queue
   } else {
-    // Standard users: route to standard app view
-    window.location.href = 'app.html';
+    // Not an approved verifier (yet): the console has nothing for this account.
+    notApproved(s);
   }
 }
+
+// A signed-in account without verifier or operator rights stays on the sign-in
+// screen with an explanation, instead of being bounced somewhere unexpected.
+function notApproved(s) {
+  showAuthScreen();
+  const box = $('#auth-notice');
+  box.innerHTML = `<div><b>${esc(s?.username || 'This account')}</b> is not an approved verifier yet. `
+    + `The console opens once the operator approves your application and you activate it with the code they send. `
+    + `<a href="app.html">Apply or enter your code in the app →</a></div>`;
+  box.hidden = false;
+}
+
+// Password reveal toggle (same control as the app gateway).
+$$('.pw-toggle').forEach((btn) => {
+  const input = document.getElementById(btn.dataset.pwFor);
+  if (!input) return;
+  btn.addEventListener('click', () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.setAttribute('aria-pressed', String(show));
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    btn.title = btn.getAttribute('aria-label');
+    btn.querySelector('.pw-eye').hidden = show;
+    btn.querySelector('.pw-eye-off').hidden = !show;
+    input.focus({ preventScroll: true });
+  });
+});
 
 // Sign-in
 $('#login-form').addEventListener('submit', async (e) => {
@@ -78,6 +86,10 @@ $('#login-form').addEventListener('submit', async (e) => {
   btn.disabled = true; btn.textContent = 'Signing in…';
   const errBox = $('#login-err');
   errBox.hidden = true;
+  $('#auth-notice').hidden = true;
+  const user = $('#login-user'), pass = $('#login-pass');
+  const problem = !user.value.trim() ? ['Enter your email or username.', user] : !pass.value ? ['Enter your password.', pass] : null;
+  if (problem) { errBox.textContent = problem[0]; errBox.hidden = false; problem[1].focus(); btn.disabled = false; btn.textContent = 'Sign in →'; return; }
   try {
     const res = await fetch('api/auth/login', {
       method: 'POST', credentials: 'same-origin',
@@ -85,36 +97,16 @@ $('#login-form').addEventListener('submit', async (e) => {
       body: JSON.stringify({ username: $('#login-user').value.trim(), password: $('#login-pass').value }),
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) { errBox.textContent = json.error || 'Sign-in failed.'; errBox.hidden = false; return; }
+    if (!res.ok) {
+      errBox.textContent = res.status === 429 ? 'Too many attempts — wait a minute and try again.'
+        : res.status === 401 ? 'That email/username and password do not match a console account.'
+        : json.error || 'Sign-in failed.';
+      errBox.hidden = false; pass.select(); return;
+    }
     $('#login-pass').value = '';
     session = json.session;
     handleRoleRedirection(session);
   } finally { btn.disabled = false; btn.textContent = 'Sign in →'; }
-});
-
-// Sign-up (restricted to standard users)
-$('#signup-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const btn = $('#signup-btn');
-  btn.disabled = true; btn.textContent = 'Creating account…';
-  const errBox = $('#signup-err');
-  errBox.hidden = true;
-  try {
-    const res = await fetch('api/auth/signup', {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        username: $('#signup-user').value.trim(),
-        password: $('#signup-pass').value,
-        email:    $('#signup-email').value.trim(),
-        name:     $('#signup-name').value.trim(),
-      }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) { errBox.textContent = json.error || 'Sign-up failed.'; errBox.hidden = false; return; }
-    session = json.session;
-    handleRoleRedirection(session);
-  } finally { btn.disabled = false; btn.textContent = 'Create account →'; }
 });
 
 $('#logout-btn').addEventListener('click', async () => {
@@ -129,10 +121,6 @@ async function checkExistingSession() {
     if (r.ok) {
       const j = await r.json();
       session = j.session;
-      if (session?.role === 'user') {
-        window.location.href = 'app.html';
-        return;
-      }
       handleRoleRedirection(session);
       return;
     }
@@ -157,10 +145,7 @@ function exitConsole() {
 ══════════════════════════════════════════════ */
 function enterConsole() {
   const role  = session?.role || 'user';
-  if (role === 'user') {
-    window.location.href = 'app.html';
-    return;
-  }
+  if (role !== 'admin' && role !== 'verifier') { notApproved(session); return; }
 
   document.body.classList.remove('auth-page');
   $('#auth-screen').hidden    = true;

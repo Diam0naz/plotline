@@ -1929,8 +1929,15 @@ body:not(.site):not(.console) textarea:focus {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.auth-gateway .pw-toggle { color: rgba(255,255,255,0.45); }
-.auth-gateway .pw-toggle:hover { color: #fff; background: rgba(255,255,255,0.08); }
+/* The gateway's form card is white: the reveal toggle uses the light-surface
+   greys (it was 45%-white from the all-dark era, i.e. invisible). */
+.auth-gateway .pw-toggle { color: var(--grey-500); }
+.auth-gateway .pw-toggle:hover { color: var(--grey-800); background: var(--grey-100); }
+.pw-toggle:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+/* The global button padding/min-height left a 0px-wide content box, so the
+   flex child (the eye icon) shrank to nothing on every password field. */
+.pw-toggle { padding: 0; min-height: 0; min-width: 0; box-shadow: none; }
+.pw-toggle svg { flex: none; }
 
 /* ── Leaf scatter across the dark gateway too ── */
 .auth-gateway::before {
@@ -2035,3 +2042,9 @@ body:not(.site):not(.console) textarea:focus {
 /* Destructive full-width action on the gateway (replace an existing identity). */
 button.gw-danger { background: var(--red); border-color: var(--red); color: #fff; }
 button.gw-danger:hover:not(:disabled) { background: #8a2f28; border-color: #8a2f28; }
+
+/* Stacked gateway: the white form side fills the rest of the screen, so a
+   short form never leaves the dark page background showing underneath. */
+@media (max-width: 960px) {
+  .auth-card-half { flex: 1 0 auto; }
+}

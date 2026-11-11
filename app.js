@@ -1535,11 +1535,11 @@ function handleRoleRedirection(s) {
     // Route admin to console/admin dashboard
     window.location.href = 'console.html';
   } else if (role === 'verifier') {
-    // Route verifier to the submissions queue
-    updateAuthUI();
-    ensureVerifierKey();
-    showTab('submissions');
+    // An approved (activated) verifier works in the registry console.
+    window.location.href = 'console.html';
   } else {
+    // Signed in, but not an approved verifier: stay in the app, on the
+    // application — the console only opens once the operator approves it.
     // Standard user: land on the dashboard — unless they came here to apply
     // as a verifier, then land straight on the application.
     updateAuthUI();
@@ -1552,6 +1552,7 @@ function handleRoleRedirection(s) {
       toast('Account ready — submit your verifier application below.');
     } else if (currentSession) {
       showTab('profile');
+      toast('Signed in. The console opens once your verifier application is approved and activated.');
     } else {
       showTab('dashboard');
     }
@@ -1793,10 +1794,9 @@ function wireAuthEvents() {
       updateAuthUI();
       await ensureVerifierKey();
       if (codeInput) codeInput.value = '';
-      toast('Verifier access activated! Unlocking submissions queue…');
-
-      // Route directly to submissions queue
-      showTab('submissions');
+      toast('Verifier access activated — opening the registry console…');
+      // Approved and activated: verifier work happens in the console.
+      setTimeout(() => { window.location.href = 'console.html'; }, 900);
     } catch (err) {
       if (resultBox) {
         resultBox.innerHTML = `<div class="alert-box red text-sm" style="margin-top:var(--s2)">${esc(err.message || 'Network error')}</div>`;
