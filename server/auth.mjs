@@ -150,6 +150,9 @@ export class Accounts {
 // ---------- sessions (data/sessions.json, mode 0600) ----------
 
 // Only sha256(token) is ever stored; the raw token exists only in the user's cookie.
+// Map files are written as [[key, value], ...]; older files may be a plain object.
+export const entryMap = (j) => new Map(Array.isArray(j) ? j : Object.entries(j ?? {}));
+
 export class Sessions {
   constructor(dir, { ttlMs = 12 * 3600_000, now = () => new Date(), max = 200, store = null } = {}) {
     this.file = join(dir, 'sessions.json');
@@ -159,7 +162,7 @@ export class Sessions {
     this.now = now;
     this.max = max;
     this.sbyHash = existsSync(this.file) ? (() => {
-      try { return new Map(Object.entries(JSON.parse(readFileSync(this.file, 'utf8')))); }
+      try { return entryMap(JSON.parse(readFileSync(this.file, 'utf8'))); }
       catch { return new Map(); }
     })() : new Map();
     this.purge();

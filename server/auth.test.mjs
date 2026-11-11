@@ -309,3 +309,57 @@ test('unified auth flow: standard signup, unified login, verifier application an
     await cleanup(b);
   }
 });
+
+test('activation: only an approved, unused code upgrades the signed-in caller', async () => {
+  const b = await boot();
+  const jUser = jar();
+  const jAdmin = jar();
+  try {
+    await post(b.base, '/api/auth/signup', { username: 'mallory', password: 'mypassword123', email: 'm@example.com', name: 'M' }, { jar: jUser });
+    await post(b.base, '/api/auth/login', { username: 'admin', password: 'op' }, { jar: jAdmin });
+
+    // A well-formed code nobody issued, or no session at all, gets nothing.
+    assert.equal((await post(b.base, '/api/auth/activate', { code: 'VERIFY-AAAA' }, { jar: jUser })).status, 400);
+    assert.equal((await post(b.base, '/api/auth/activate', { code: 'VACT-DEADBEEF', username: 'mallory' })).status, 401);
+
+    // An application id is a public receipt, not a code.
+    const { json: { id } } = await status(await post(b.base, '/api/auth/apply', { name: 'Mallory', email: 'm@example.com', reason: 'I would like to review agroforestry plots.' }, { jar: jUser }));
+    assert.equal((await post(b.base, '/api/auth/activate', { code: id }, { jar: jUser })).status, 400);
+
+    const { json: { activationCode } } = await status(await post(b.base, `/api/auth/apply/${id}/approve`, {}, { jar: jAdmin }));
+    const ok = await post(b.base, '/api/auth/activate', { code: activationCode.toLowerCase() }, { jar: jUser });
+    assert.equal(ok.status, 200);
+    // The new role survives a restart because the rotated session was persisted.
+    const again = createApp({ dataDir: b.dir, adminToken: 'op', now: NOW });
+    const res = await new Promise((resolve) => again.server.listen(0, '127.0.0.1', () => resolve(again.server.address().port)))
+      .then((port) => fetch(`http://127.0.0.1:${port}/api/auth/session`, { headers: { cookie: jUser.header() } }));
+    assert.equal((await res.json()).session.role, 'verifier');
+    again.server.closeAllConnections?.(); await new Promise((r) => again.server.close(r));
+
+    // One use only.
+    assert.equal((await post(b.base, '/api/auth/activate', { code: activationCode }, { jar: jUser })).status, 400);
+    // A decided application cannot be approved again (that would mint a second account).
+    assert.equal((await post(b.base, `/api/auth/apply/${id}/approve`, {}, { jar: jAdmin })).status, 409);
+  } finally {
+    await cleanup(b);
+  }
+});
+
+test('approving an application never takes over an existing verifier id', async () => {
+  const b = await boot();
+  const jAdmin = jar();
+  try {
+    await post(b.base, '/api/auth/login', { username: 'admin', password: 'op' }, { jar: jAdmin });
+    const ids = [];
+    for (let i = 0; i < 2; i++) {
+      const { json: { id } } = await status(await post(b.base, '/api/auth/apply', { name: 'Ada Obi', email: `a${i}@example.com`, reason: 'I would like to review agroforestry plots.' }));
+      ids.push((await status(await post(b.base, `/api/auth/apply/${id}/approve`, {}, { jar: jAdmin }))).json);
+    }
+    assert.equal(ids[0].username, 'ada-obi');
+    assert.equal(ids[1].username, 'ada-obi-2');
+    // The first account still signs in with its own password.
+    assert.equal((await post(b.base, '/api/auth/login', { username: 'ada-obi', password: ids[0].password })).status, 200);
+  } finally {
+    await cleanup(b);
+  }
+});

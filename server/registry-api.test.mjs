@@ -167,3 +167,29 @@ test('projects and serials: a credit belongs to a registered project and anyone 
     assert.equal(mismatch.json.error, 'project_methodology_mismatch');
   } finally { await a.close(); }
 });
+
+test('verifier list carries real key fingerprints, accreditation survives a restart, renew is routed', async () => {
+  const a = await boot();
+  try {
+    const farmer = await makeFarmer();
+    assert.equal((await a.call('/api/registry/verifiers', { method: 'POST', token: 'secret-token', body: { id: 'ver-9', pub: farmer.pub } })).status, 201);
+    assert.equal((await a.call('/api/registry/verifiers/accredit', { method: 'POST', token: 'secret-token', body: { id: 'ver-9', standard: 'ISO 14065', expiresAt: '2099-01-01' } })).status, 200);
+    const { json } = await a.call('/api/registry/projects');
+    assert.match(json.verifiers[0].key, /^[0-9a-f]{16}$/, 'a fingerprint, not a serialised Promise');
+
+    // /api/renew reaches the registry (a validation error, not "unknown endpoint").
+    const renew = await a.call('/api/renew', { method: 'POST', body: { priorSubId: 'SUB-9999' } });
+    assert.notEqual(renew.json.error, 'unknown endpoint');
+  } finally {
+    await a.close();
+  }
+  const again = createApp({ dataDir: a.dir, adminToken: 'secret-token' });
+  await new Promise((r) => again.server.listen(0, r));
+  try {
+    const res = await fetch(`http://127.0.0.1:${again.server.address().port}/api/registry/verifiers`, { headers: { authorization: 'Bearer secret-token' } });
+    const v = (await res.json()).verifiers.find((x) => x.id === 'ver-9');
+    assert.equal(v.accreditation?.standard, 'ISO 14065');
+  } finally {
+    await new Promise((r) => again.server.close(r));
+  }
+});

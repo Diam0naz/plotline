@@ -15,7 +15,7 @@ import { clampMonths as clampWindowMonths } from './geo.mjs';
 import { rainEvidence, RAIN_DEFAULTS } from './rain.mjs';
 import { classifyScoutPhotos, normalizeImages, classifyConfigured, CLASSIFY_MAX_BODY } from './classify.mjs';
 import { publishHead } from './anchor-publish.mjs';
-import { Accounts, LOGIN_FAILED, Sessions, cookieOriginOk, clearSessionCookie, parseCookies, sameOrigin, sessionCookie, sessionToken, verifyPassword } from './auth.mjs';
+import { Accounts, LOGIN_FAILED, entryMap, Sessions, cookieOriginOk, clearSessionCookie, parseCookies, sameOrigin, sessionCookie, sessionToken, verifyPassword } from './auth.mjs';
 import { createCache } from './cache.mjs';
 import { fingerprint } from '../core.js';
 import { methodologyById } from './methodology.mjs';
@@ -63,7 +63,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
   const verifiersAccredFile = join(dataDir, 'verifiers-accred.json');
   const verifiers = existsSync(verifiersFile) ? JSON.parse(readFileSync(verifiersFile, 'utf8')) : {};
   const verifiersAccred = existsSync(verifiersAccredFile) ? (() => {
-    try { return new Map(Object.entries(JSON.parse(readFileSync(verifiersAccredFile, 'utf8')))); }
+    try { return entryMap(JSON.parse(readFileSync(verifiersAccredFile, 'utf8'))); }
     catch { return new Map(); }
   })() : new Map();
   const registry = new Registry({ file: join(dataDir, 'registry.jsonl'), privateFile: join(dataDir, 'private.json'), verifiers, verifiersAccred, now });
@@ -171,6 +171,8 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     const recent = (hits.get(k) || []).filter((x) => t - x < rate.windowMs);
     recent.push(t);
     hits.set(k, recent);
+    // Drop idle buckets now and then so one-off clients don't accumulate forever.
+    if (hits.size > 5000) for (const [key, ts] of hits) if (t - ts[ts.length - 1] > 10 * 60_000) hits.delete(key);
     return recent.length > rate.max;
   };
 
@@ -436,6 +438,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       catch { apps = []; }
       const idx = apps.findIndex((a) => a.id === appId);
       if (idx === -1) return send(res, 404, { error: 'application not found' });
+      if (apps[idx].status !== 'pending') return send(res, 409, { error: `application is already ${apps[idx].status}` });
       if (action === 'reject') {
         apps[idx].status = 'rejected';
         apps[idx].reviewedAt = now().toISOString();
@@ -445,8 +448,10 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       // approve: generate activation code and create a verifier account
       // The username is derived from the application id or a slug of the name
       const app = apps[idx];
-      const slug = app.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || `ver-${Date.now()}`;
-      const username = slug;
+      // Never reuse an existing id: setVerifier would silently reset that account's password.
+      const slug = app.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'ver';
+      let username = slug.length >= 2 ? slug : `ver-${slug}`;
+      for (let n = 2; verifiers[username] || accounts.find('verifier', username); n++) username = `${slug}-${n}`;
       const password = randomBytes(10).toString('base64url'); // 14-char URL-safe
       const activationCode = `VACT-${randomBytes(4).toString('hex').toUpperCase()}`;
       // The verifier key must already exist on the approved list for setVerifier to work.
@@ -470,28 +475,28 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
 
     // ── Verifier activation via off-band code ────────────────────────────
     if (path === '/api/auth/activate' && req.method === 'POST') {
+      if (limited(clientIp(req), 'activate', { windowMs: 60_000, max: 5 })) {
+        return send(res, 429, { error: 'too many activation attempts, wait a minute' });
+      }
+      // Activation upgrades the CALLER's own session, so it needs one. The username
+      // always comes from the session, never from the body.
       const token = sessionToken(req);
       const s = sessions.get(token);
-      const data = await jsonBody(req, res, 512).catch(() => undefined);
-      if (!data || typeof data.code !== 'string') {
-        return send(res, 400, { error: 'activation code is required' });
-      }
-      const code = data.code.trim();
+      if (!s || !cookieOriginOk(req)) return send(res, 401, { error: 'must be signed in to activate verifier status' });
+      const data = await jsonBody(req, res, 512);
+      if (data === undefined) return;
+      const code = typeof data.code === 'string' ? data.code.trim().toUpperCase() : '';
       if (!code) return send(res, 400, { error: 'activation code is required' });
-
-      const username = s?.username || (typeof data.username === 'string' ? data.username.trim() : null);
-      if (!username) return send(res, 401, { error: 'must be signed in to activate verifier status' });
+      const { username } = s;
 
       const appsFile = join(dataDir, 'applications.json');
       let apps = [];
       try { apps = existsSync(appsFile) ? JSON.parse(readFileSync(appsFile, 'utf8')) : []; } catch {}
-
-      const appMatch = apps.find(a => (a.activationCode && a.activationCode.toUpperCase() === code.toUpperCase()) || (a.id && a.id === code));
-      const isFormatValid = /^VACT-[A-Z0-9]{4,24}$/i.test(code) || /^VERIFY-[A-Z0-9]{4,24}$/i.test(code);
-
-      if (!appMatch && !isFormatValid) {
-        return send(res, 400, { error: 'invalid activation code' });
-      }
+      // Only a code the operator issued on approval counts, and only once.
+      const appMatch = apps.find((a) => a.status === 'approved' && typeof a.activationCode === 'string'
+        && a.activationCode.length === code.length
+        && timingSafeEqual(Buffer.from(a.activationCode.toUpperCase()), Buffer.from(code)));
+      if (!appMatch) return send(res, 400, { error: 'invalid or already used activation code' });
 
       const usersFile = join(dataDir, 'users.json');
       let users = {};
@@ -500,32 +505,28 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
         users[username].role = 'verifier';
         writeFileSync(usersFile, JSON.stringify(users, null, 2), { mode: 0o600 });
       }
-
       if (!verifiers[username]) {
         verifiers[username] = `pending:${users[username]?.email || username}`;
         writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
       }
 
-      if (s) {
-        s.role = 'verifier';
-      }
+      appMatch.status = 'activated';
+      appMatch.activatedAt = now().toISOString();
+      appMatch.activatedBy = username;
+      writeFileSync(appsFile, JSON.stringify(apps, null, 2));
 
-      if (appMatch) {
-        appMatch.status = 'activated';
-        appMatch.activatedAt = now().toISOString();
-        appMatch.activatedBy = username;
-        writeFileSync(appsFile, JSON.stringify(apps, null, 2));
-      }
-
-      console.log(`verifier activated: ${username} with code ${code}`);
+      // Rotate the session: a privilege change gets a fresh token, and the new role persists.
+      sessions.end(token);
+      const next = sessions.create('verifier', username);
+      console.log(`verifier activated: ${username} (application ${appMatch.id})`);
       return send(res, 200, {
         ok: true,
-        session: { role: 'verifier', username, expiresAt: s?.expiresAt },
+        session: { role: 'verifier', username, expiresAt: next.session.expiresAt },
         message: 'verifier status activated successfully',
-      });
+      }, { 'set-cookie': sessionCookie(next.token, { secure: isSecure(req), maxAgeSeconds: Math.floor(sessionTtlMs / 1000) }) });
     }
 
-    if (path.startsWith('/api/registry/') || path === '/api/submit') return await registryApi(req, res, path);
+    if (path.startsWith('/api/registry/') || path === '/api/submit' || path === '/api/renew') return await registryApi(req, res, path);
 
     // ── Neon services ─────────────────────────────────────────────────────
     // Live service status: Postgres reachability, Auth tenant JWKS, the deployed
@@ -603,8 +604,6 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       }
     }
 
-    if (path.startsWith('/api/registry/') || path === '/api/submit') return await registryApi(req, res, path);
-
     // ── AI: scout photo classification (OpenAI ↔ Gemini failover) ─────────
     // Best-effort suggestion for the record the scout is writing; the report
     // never depends on it. Rate-limited because every call costs model tokens.
@@ -668,9 +667,10 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const c = registry.certificate(m[1]);
       return c ? send(res, 200, c) : send(res, 404, { error: 'no retirement certificate for this order' });
     }
-    if (get && path === '/api/registry/projects') return send(res, 200, await cached('projects', 3, () => ({
-        projects: registry.projectsList(), verifiers: Object.entries(verifiers).map(([id, pub]) => ({
-          id, key: fingerprint(pub), accreditation: verifiersAccred?.get(id) ? { standard: verifiersAccred.get(id).standard, scope: verifiersAccred.get(id).scope, expiresAt: verifiersAccred.get(id).expiresAt, methodologyId: verifiersAccred.get(id).methodologyId } : null,
+    if (get && path === '/api/registry/projects') return send(res, 200, await cached('projects', 3, async () => ({
+        projects: registry.projectsList(), verifiers: await Promise.all(Object.entries(verifiers).map(async ([id, pub]) => {
+          const a = verifiersAccred?.get(id);
+          return { id, key: await fingerprint(pub), accreditation: a ? { standard: a.standard, scope: a.scope, expiresAt: a.expiresAt, methodologyId: a.methodologyId } : null };
         })),
       })));
     if (get && path === '/api/registry/retirements') return send(res, 200, await cached('retirements', 3, () => ({ retirements: registry.retirements() })));
@@ -711,7 +711,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (data === undefined) return;
       const result = await registry.decide(data ?? {});
       if (result.ok) await cache?.invalidate();
-      if (result.ok) logEvent('decision', { id: data?.verifier ?? null, submission: result?.submission ?? null });
+      if (result.ok) logEvent('decision', { id: data?.verifierId ?? null, submission: data?.subId ?? null, decision: data?.decision ?? null });
       return answer(res, result);
     }
 
