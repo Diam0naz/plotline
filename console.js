@@ -407,14 +407,14 @@ function renderDetail() {
       <dl class="kv">
         <dt>Submission ID</dt><dd class="mono">${esc(s.subId)}</dd>
         <dt>Farmer key</dt><dd class="mono">${esc(s.farmerKey)}</dd>
-        <dt>Trees planted</dt><dd>${s.treesPlanted ?? '—'}</dd>
-        <dt>Alive (sample)</dt><dd>${s.treesAlive ?? '—'} / ${s.sampleSize ?? '—'}</dd>
+        <dt>Trees planted</dt><dd>${s.trees ?? '—'}</dd>
+        <dt>Alive (sample)</dt><dd>${s.alive ?? '—'} / ${s.sample ?? '—'}</dd>
         <dt>Area</dt><dd>${s.areaHa ? s.areaHa.toFixed(3) + ' ha' : '—'}</dd>
         <dt>Credits</dt><dd>${s.units} tCO₂e</dd>
-        <dt>Methodology</dt><dd>${esc(s.methodologyId||'—')}</dd>
+        <dt>Methodology</dt><dd>${esc(s.methodology||'—')}</dd>
         <dt>Project</dt><dd>${esc(s.projectId||'—')}</dd>
       </dl>
-      ${flags.length ? `<div class="alert-box amber"><div><b>${flags.length} check flag(s)</b><br>${flags.map(f=>`<div class="text-sm" style="margin-top:4px">· ${esc(f)}</div>`).join('')}</div></div>` : ''}
+      ${flags.length ? `<div class="alert-box amber"><div><b>${flags.length} check flag(s)</b><br>${flags.map(f=>`<div class="text-sm" style="margin-top:4px">· ${esc(f?.text ?? f)}</div>`).join('')}</div></div>` : ''}
       <div id="fire-box" class="muted small">Fire check loading…</div>
       ${s.status==='pending' ? decisionForm(s) : s.decision ? decisionRecord(s.decision) : ''}
     </div>`;
@@ -437,8 +437,8 @@ function decisionForm(s) {
 
 function decisionRecord(d) {
   return `<div class="alert-box ${d.decision==='approve'?'green':'red'}">
-    <b>${d.decision==='approve'?'Approved':'Rejected'}</b> by ${esc(d.verifier)} · ${esc(when(d.decidedAt))}
-    ${d.reason ? `<div class="text-sm" style="margin-top:4px">"${esc(d.reason)}"</div>` : ''}
+    <b>${d.decision==='approve'?'Approved':'Rejected'}</b> by ${esc(d.by)} · ${esc(when(d.ts))}
+    ${d.note ? `<div class="text-sm" style="margin-top:4px">"${esc(d.note)}"</div>` : ''}
   </div>`;
 }
 
@@ -452,12 +452,20 @@ async function decide(s, action) {
   const reason = $('#dec-reason')?.value?.trim() || '';
   const msg = $('#dec-msg');
   if (msg) msg.textContent = 'Signing…';
+  const verifierId = session?.role === 'verifier' ? session.username : null;
+  if (!verifierId) { if (msg) msg.textContent = 'Sign in with a verifier account to sign decisions.'; return; }
+  // An approved verifier whose slot is still pending binds this browser's key first.
+  const bind = await authApi('verifier-key', { method: 'POST', body: { pub: V.keys.pub } });
+  if (!bind.ok) { if (msg) msg.textContent = ''; fail(bind); return; }
+  // Sign exactly the body registry.decide() rebuilds: field names, the note cap,
+  // and the fire evidence as the server normalised it (it is signed in).
+  const body = { subId: s.subId, decision: action, note: reason.slice(0, 500), verifierId, ts: new Date().toISOString() };
   const fireEntry = fires.get(s.subId);
-  const payload = { subId: s.subId, decision: action, reason, verifier: V.fp, fireEvidence: fireEntry?.evidence ?? null };
-  const sig = await C.sign(V.keys.priv, JSON.stringify(payload));
-  const r = await api('decide', { method: 'POST', body: { ...payload, sig, pub: V.keys.pub } });
+  if (fireEntry?.fromServer && fireEntry.evidence) body.fire = fireEntry.evidence;
+  const { sig } = await C.signBody(body, V.keys.priv);
+  const r = await api('decide', { method: 'POST', body: { ...body, sig } });
   if (r.ok) { toast(`Submission ${action}d.`); loadAll(); selected = null; }
-  else fail(r);
+  else { if (msg) msg.textContent = ''; fail(r); }
 }
 
 /* ── Fire check ── */
@@ -472,7 +480,7 @@ async function loadFireCheck(force=false) {
   paintFire(s);
   const c = centroid(s.polygon||[]);
   const r = await api(`fires?lat=${c.lat.toFixed(6)}&lon=${c.lon.toFixed(6)}&radiusKm=5&days=30`);
-  fires.set(s.subId, { loading: false, evidence: r.ok ? r.json : { status:'unavailable', error:`http_${r.status}` } });
+  fires.set(s.subId, { loading: false, fromServer: r.ok, evidence: r.ok ? r.json : { status:'unavailable', error:`http_${r.status}` } });
   paintFire(s);
 }
 function paintFire(s) {

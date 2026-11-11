@@ -44,6 +44,13 @@ const SUBMIT_MAX_BODY = 65536; // three signed records and a farm boundary
 const SUBMIT_RATE = { windowMs: 60_000, max: 10 };
 const LOGIN_RATE = { windowMs: 60_000, max: 10 };
 const FP = /^[0-9a-f]{16}$/;
+// A P-256 public JWK as browsers export it: 32-byte coordinates, base64url.
+const B64URL32 = /^[A-Za-z0-9_-]{43}$/;
+const cleanPub = (p) => (p && p.kty === 'EC' && p.crv === 'P-256' && B64URL32.test(p.x ?? '') && B64URL32.test(p.y ?? '')
+  ? { kty: 'EC', crv: 'P-256', x: p.x, y: p.y } : null);
+// Approved-but-keyless verifiers hold a 'pending:<contact>' placeholder until
+// their signing key is bound; a placeholder never verifies a signature.
+const isPendingKey = (k) => typeof k === 'string';
 
 /** The `db` the Realtime connection binds to: the connection string's dbname. */
 const dbName = (url) => {
@@ -66,6 +73,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     try { return entryMap(JSON.parse(readFileSync(verifiersAccredFile, 'utf8'))); }
     catch { return new Map(); }
   })() : new Map();
+  const saveVerifiers = () => writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
   const registry = new Registry({ file: join(dataDir, 'registry.jsonl'), privateFile: join(dataDir, 'private.json'), verifiers, verifiersAccred, now });
 
   // ---------- roles: admin (operator), verifier, user (farmer, device-local) ----------
@@ -177,6 +185,11 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
   };
 
   // Industry-standard headers for every response: the API and the static shell share them.
+  // The console's live feed opens a WebSocket to Neon Realtime: allow exactly that origin.
+  const realtimeOrigin = (() => {
+    try { const u = new URL(process.env.NEON_REALTIME_URL || ''); return /^wss?:$/.test(u.protocol) ? ` ${u.origin}` : ''; }
+    catch { return ''; }
+  })();
   const SEC_HEADERS = {
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
@@ -184,10 +197,11 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     // 'no-referrer': OSM's tile policy requires a valid Referer on requests
     // to tile.openstreetmap.org, which 'no-referrer' stripped everywhere.
     'referrer-policy': 'strict-origin-when-cross-origin',
+    'permissions-policy': 'geolocation=(self)',
     'content-security-policy':
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
       "font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; " +
-      "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://tile.openstreetmap.org https://*.tile.openstreetmap.org; " +
+      `connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://tile.openstreetmap.org https://*.tile.openstreetmap.org${realtimeOrigin}; ` +
       "base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
   };
 
@@ -459,7 +473,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (!verifiers[username]) {
         // register a pending placeholder key so the account can be created
         verifiers[username] = `pending:${app.email}`;
-        writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
+        saveVerifiers();
       }
       if (!accounts.setVerifier(username, password)) {
         return send(res, 500, { error: 'could not create verifier account' });
@@ -505,9 +519,13 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
         users[username].role = 'verifier';
         writeFileSync(usersFile, JSON.stringify(users, null, 2), { mode: 0o600 });
       }
-      if (!verifiers[username]) {
-        verifiers[username] = `pending:${users[username]?.email || username}`;
-        writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
+      // Bind the caller's signing key now when it came along; otherwise the slot
+      // stays pending until POST /api/auth/verifier-key.
+      const pub = cleanPub(data.pub);
+      if (!verifiers[username] || (pub && isPendingKey(verifiers[username]))) {
+        verifiers[username] = pub || `pending:${users[username]?.email || username}`;
+        saveVerifiers();
+        await cache?.invalidate();
       }
 
       appMatch.status = 'activated';
@@ -524,6 +542,29 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
         session: { role: 'verifier', username, expiresAt: next.session.expiresAt },
         message: 'verifier status activated successfully',
       }, { 'set-cookie': sessionCookie(next.token, { secure: isSecure(req), maxAgeSeconds: Math.floor(sessionTtlMs / 1000) }) });
+    }
+
+    // A signed-in verifier whose approved slot is still a placeholder binds the
+    // key their browser signs with — once. A slot that already holds a key only
+    // ever answers whether the caller's key is that one.
+    if (path === '/api/auth/verifier-key' && req.method === 'POST') {
+      const s = sessions.get(sessionToken(req));
+      if (s?.role !== 'verifier' || !cookieOriginOk(req)) return send(res, 401, { error: 'sign in as a verifier first' });
+      const data = await jsonBody(req, res, 1024);
+      if (data === undefined) return;
+      const pub = cleanPub(data.pub);
+      if (!pub) return send(res, 400, { error: 'send pub: a P-256 public key (JWK)' });
+      const have = verifiers[s.username];
+      if (have && !isPendingKey(have)) {
+        return (await fingerprint(have)) === (await fingerprint(pub))
+          ? send(res, 200, { ok: true, bound: false, key: await fingerprint(pub) })
+          : send(res, 409, { error: 'a different signing key is registered for this verifier: use the browser that holds it, or ask the operator to rotate it' });
+      }
+      verifiers[s.username] = pub;
+      saveVerifiers();
+      await cache?.invalidate();
+      console.log(`verifier key bound: ${s.username} → ${await fingerprint(pub)}`);
+      return send(res, 201, { ok: true, bound: true, key: await fingerprint(pub) });
     }
 
     if (path.startsWith('/api/registry/') || path === '/api/submit' || path === '/api/renew') return await registryApi(req, res, path);
@@ -670,7 +711,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     if (get && path === '/api/registry/projects') return send(res, 200, await cached('projects', 3, async () => ({
         projects: registry.projectsList(), verifiers: await Promise.all(Object.entries(verifiers).map(async ([id, pub]) => {
           const a = verifiersAccred?.get(id);
-          return { id, key: await fingerprint(pub), accreditation: a ? { standard: a.standard, scope: a.scope, expiresAt: a.expiresAt, methodologyId: a.methodologyId } : null };
+          return { id, key: isPendingKey(pub) ? null : await fingerprint(pub), accreditation: a ? { standard: a.standard, scope: a.scope, expiresAt: a.expiresAt, methodologyId: a.methodologyId } : null };
         })),
       })));
     if (get && path === '/api/registry/retirements') return send(res, 200, await cached('retirements', 3, () => ({ retirements: registry.retirements() })));
@@ -711,7 +752,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (data === undefined) return;
       const result = await registry.decide(data ?? {});
       if (result.ok) await cache?.invalidate();
-      if (result.ok) logEvent('decision', { id: data?.verifierId ?? null, submission: data?.subId ?? null, decision: data?.decision ?? null });
+      if (result.ok) logEvent('decision', { verifier: data?.verifierId ?? null, submission: data?.subId ?? null, decision: data?.decision ?? null });
       return answer(res, result);
     }
 
@@ -765,8 +806,11 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       return send(res, 200, result);
     }
 
+    // ----- evidence lookups: the reviewers (verifiers and operators) -----
+    const evidenceRoute = get && (path === '/api/registry/fires' || path === '/api/registry/ndvi');
+    if (evidenceRoute && !isVerifier(req)) return send(res, 401, { error: 'operator token, or a signed-in verifier, required' });
     // ----- operator only -----
-    if (!isAdmin(req)) return send(res, 401, { error: 'operator token required' });
+    if (!evidenceRoute && !isAdmin(req)) return send(res, 401, { error: 'operator token required' });
     if (get && path === '/api/registry/fires') {
       // Fire evidence for one plot, fetched live from the public VIIRS layer.
       const q = new URL(req.url, 'http://x').searchParams;
@@ -816,7 +860,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const out = [];
       for (const [id, pub] of Object.entries(verifiers)) {
         const k = verifiersAccred?.get(id);
-        out.push({ id, key: await fingerprint(pub), accreditation: k ? { standard: k.standard, scope: k.scope, expiresAt: k.expiresAt } : null });
+        out.push({ id, key: isPendingKey(pub) ? null : await fingerprint(pub), accreditation: k ? { standard: k.standard, scope: k.scope, expiresAt: k.expiresAt } : null });
       }
       return send(res, 200, { verifiers: out });
     }
@@ -828,7 +872,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       }
       if (verifiers[data.id]) return send(res, 409, { error: 'verifier id already exists' });
       verifiers[data.id] = { kty: 'EC', crv: 'P-256', x: data.pub.x, y: data.pub.y };
-      writeFileSync(verifiersFile, JSON.stringify(verifiers, null, 2));
+      saveVerifiers();
       await cache?.invalidate();
       return send(res, 201, { id: data.id, key: await fingerprint(verifiers[data.id]) });
     }

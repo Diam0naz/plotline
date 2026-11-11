@@ -129,8 +129,10 @@ async function flushNow() {
   const json = JSON.stringify(S);
   lastSavedBytes = new Blob([json]).size;
   let idbDone = false, lsDone = false;
-  if (storeRef) { try { await storeRef.setJson(json); idbDone = true; } catch { /* ride on the shadow */ } }
+  // Shadow first: it is synchronous, so it lands even if the page is hidden
+  // (and the IndexedDB transaction abandoned) while the await below is pending.
   try { localStorage.setItem(KEY, json); lsDone = true; } catch { /* quota: the primary holds */ }
+  if (storeRef) { try { await storeRef.setJson(json); idbDone = true; } catch { /* ride on the shadow */ } }
   if (!idbDone && !lsDone) {
     if (!storageWarned) { storageWarned = true; toast('Storage is unavailable — records will not persist'); }
     return;
@@ -1740,11 +1742,12 @@ function wireAuthEvents() {
     if (resultBox) resultBox.innerHTML = '';
 
     try {
+      const vk = await ensureVerifierKey();
       const res = await fetch('api/auth/activate', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code, username: currentSession.username }),
+        body: JSON.stringify({ code, pub: vk.keys.pub }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1881,12 +1884,12 @@ function renderSubmissionDetail(sub) {
     <div class="muted small" style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-bottom:var(--s3)">
       <span>ID:</span><code class="mono">${esc(sub.subId)}</code>
       <span>Farmer:</span><code class="mono">${esc(short(sub.farmerKey, 16))}</code>
-      <span>Trees:</span><span>${sub.treesPlanted ?? '—'} (alive: ${sub.treesAlive ?? '—'} / ${sub.sampleSize ?? '—'})</span>
+      <span>Trees:</span><span>${sub.trees ?? '—'} (alive: ${sub.alive ?? '—'} / ${sub.sample ?? '—'})</span>
       <span>Area:</span><span>${sub.areaHa ? sub.areaHa.toFixed(3) + ' ha' : '—'}</span>
       <span>Units:</span><span>${sub.units ?? 0} tCO₂e</span>
     </div>
-    ${flags.length ? `<div class="alert-box amber text-sm" style="margin-bottom:var(--s3)"><b>${flags.length} flag(s):</b><br>${flags.map(f => `· ${esc(f)}`).join('<br>')}</div>` : ''}
-    ${sub.decision ? `<div class="alert-box ${sub.decision.decision === 'approve' ? 'green' : 'red'} text-sm" style="margin-bottom:var(--s3)"><b>Decided: ${esc(sub.decision.decision)}</b> by ${esc(sub.decision.verifier || sub.decision.verifierId || 'verifier')} · ${esc(fmtTime(sub.decision.decidedAt))}${sub.decision.reason ? `<br>"${esc(sub.decision.reason)}"` : ''}</div>` : ''}
+    ${flags.length ? `<div class="alert-box amber text-sm" style="margin-bottom:var(--s3)"><b>${flags.length} flag(s):</b><br>${flags.map(f => `· ${esc(f?.text ?? f)}`).join('<br>')}</div>` : ''}
+    ${sub.decision ? `<div class="alert-box ${sub.decision.decision === 'approve' ? 'green' : 'red'} text-sm" style="margin-bottom:var(--s3)"><b>Decided: ${esc(sub.decision.decision)}</b> by ${esc(sub.decision.by || 'verifier')} · ${esc(fmtTime(sub.decision.ts))}${sub.decision.note ? `<br>"${esc(sub.decision.note)}"` : ''}</div>` : ''}
   `;
 
   const isPending = sub.status === 'pending';
@@ -1915,16 +1918,14 @@ async function handleDecision(action) {
 
   try {
     const vk = await ensureVerifierKey();
+    const bind = await fetch('api/auth/verifier-key', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pub: vk.keys.pub }),
+    });
+    if (!bind.ok) throw new Error((await bind.json().catch(() => ({}))).error || `Could not register this device's verifier key (${bind.status})`);
     const verifierId = currentSession.username;
     const nowTs = new Date().toISOString();
-    const payload = {
-      subId: vSelected.subId,
-      verifierId,
-      verifier: vk.fp,
-      decision: action,
-      note,
-      ts: nowTs,
-    };
     const bodyToSign = {
       subId: vSelected.subId,
       decision: action,
@@ -1939,7 +1940,7 @@ async function handleDecision(action) {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...payload, sig, pub: vk.keys.pub }),
+      body: JSON.stringify({ ...bodyToSign, sig }),
     });
     const json = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -1949,7 +1950,7 @@ async function handleDecision(action) {
       const updated = vsubs.find(s => s.subId === vSelected.subId);
       if (updated) renderSubmissionDetail(updated);
     } else {
-      const err = json.error || `Decision failed (${res.status})`;
+      const err = json.message || json.error || `Decision failed (${res.status})`;
       if (msgEl) msgEl.textContent = err;
       toast(err);
     }

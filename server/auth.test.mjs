@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from './server.mjs';
 import { hashPassword, verifyPassword } from './auth.mjs';
+import { makeFarmer, makeSubmission, signDecision, square } from './testkit.mjs';
 
 const NOW = () => new Date('2026-11-15T12:00:00.000Z');
 
@@ -359,6 +360,65 @@ test('approving an application never takes over an existing verifier id', async 
     assert.equal(ids[1].username, 'ada-obi-2');
     // The first account still signs in with its own password.
     assert.equal((await post(b.base, '/api/auth/login', { username: 'ada-obi', password: ids[0].password })).status, 200);
+  } finally {
+    await cleanup(b);
+  }
+});
+
+test('an activated app verifier binds a key once and their signed decision counts', async () => {
+  const fireCheck = async () => ({ status: 'ok', count: 0, radiusKm: 5, days: 30, checkedAt: '2026-11-15T12:00:00.000Z' });
+  const b = await boot({ fireCheck });
+  const jUser = jar();
+  const jAdmin = jar();
+  try {
+    await post(b.base, '/api/auth/signup', { username: 'joe', password: 'mypassword123', email: 'j@example.com', name: 'Joe' }, { jar: jUser });
+    await post(b.base, '/api/auth/login', { username: 'admin', password: 'op' }, { jar: jAdmin });
+    const { json: { id } } = await status(await post(b.base, '/api/auth/apply', { name: 'Joe', email: 'j@example.com', reason: 'I would like to review agroforestry plots.' }, { jar: jUser }));
+    const { json: { activationCode } } = await status(await post(b.base, `/api/auth/apply/${id}/approve`, {}, { jar: jAdmin }));
+
+    // Activation brings the device key along and binds the slot.
+    const device = await makeFarmer();
+    assert.equal((await post(b.base, '/api/auth/activate', { code: activationCode, pub: device.pub }, { jar: jUser })).status, 200);
+    // The same key is acknowledged; a different one is refused.
+    assert.equal((await post(b.base, '/api/auth/verifier-key', { pub: device.pub }, { jar: jUser })).status, 200);
+    const other = await makeFarmer();
+    assert.equal((await post(b.base, '/api/auth/verifier-key', { pub: other.pub }, { jar: jUser })).status, 409);
+    // Without a verifier session there is nothing to bind.
+    assert.equal((await post(b.base, '/api/auth/verifier-key', { pub: other.pub })).status, 401);
+
+    // Verifiers read the fire evidence they sign into a decision.
+    const fires = await fetch(b.base + '/api/registry/fires?lat=9.9&lon=8.9', { headers: { cookie: jUser.header() } });
+    assert.equal(fires.status, 200);
+    const fire = await fires.json();
+
+    const farmer = await makeFarmer();
+    const sub = await status(await post(b.base, '/api/submit', await makeSubmission(farmer, { polygon: square(9.9, 8.9, 100) })));
+    assert.equal(sub.status, 201);
+    const d = await status(await post(b.base, '/api/registry/decide',
+      await signDecision(device, { subId: sub.json.subId, decision: 'approve', note: 'Checked on site', verifierId: 'joe', ts: NOW().toISOString(), fire })));
+    assert.equal(d.status, 200, JSON.stringify(d.json));
+    assert.equal(d.json.status, 'approved');
+  } finally {
+    await cleanup(b);
+  }
+});
+
+test('an approved verifier with a still-pending slot binds its key on first use', async () => {
+  const b = await boot();
+  const jAdmin = jar();
+  const jVer = jar();
+  try {
+    await post(b.base, '/api/auth/login', { username: 'admin', password: 'op' }, { jar: jAdmin });
+    const { json: { id } } = await status(await post(b.base, '/api/auth/apply', { name: 'Kemi', email: 'k@example.com', reason: 'I would like to review agroforestry plots.' }));
+    const { json: { username, password } } = await status(await post(b.base, `/api/auth/apply/${id}/approve`, {}, { jar: jAdmin }));
+    assert.equal((await post(b.base, '/api/auth/login', { username, password }, { jar: jVer })).status, 200);
+    // The public listing shows no fingerprint for a placeholder.
+    const before = (await (await fetch(b.base + '/api/registry/projects')).json()).verifiers.find((v) => v.id === username);
+    assert.equal(before.key, null);
+    const key = await makeFarmer();
+    const r = await status(await post(b.base, '/api/auth/verifier-key', { pub: key.pub }, { jar: jVer }));
+    assert.equal(r.status, 201);
+    assert.equal(r.json.key, key.fp);
   } finally {
     await cleanup(b);
   }
