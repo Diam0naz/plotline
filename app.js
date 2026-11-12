@@ -1160,6 +1160,7 @@ function renderTrees() {
   $('#tr-step-1').classList.toggle('hidden', !!ev.planting);
   $('#tr-step-2').classList.toggle('hidden', !ev.planting || !!ev.survival);
   $('#tr-step-3').classList.toggle('hidden', !ev.survival || !!ev.sent);
+  renderPractices(f);
   $('#tr-msisdn').value = $('#tr-msisdn').value || S.msisdn || '';
   $('#tr-outbox').textContent = S.outbox.length ? `${S.outbox.length} submission waiting for a connection. It will send automatically.` : '';
 
@@ -1179,6 +1180,36 @@ function renderTrees() {
     : '<div class="muted empty">No payouts yet. They appear after a buyer purchases units from verified plots.</div>';
   gnStag($('#tr-list')); gnStag($('#tr-pay'));
 }
+
+// ---------- soil practice log ----------
+// A signed, located log of what was done on the farm this season. It is the
+// practice history a soil-carbon programme asks for; no credit is issued from it.
+function renderPractices(farm) {
+  const opts = $('#pr-opts');
+  if (!opts) return;
+  if (!opts.children.length) {
+    opts.innerHTML = Object.entries(C.PRACTICES)
+      .map(([id, label]) => `<label><input type="checkbox" value="${esc(id)}">${esc(label)}</label>`).join('');
+  }
+  $('#pr-save-btn').disabled = !farm;
+  const logs = farm ? S.records.filter((r) => r.body.kind === 'practice' && r.body.farmId === farm.id) : [];
+  $('#pr-list').innerHTML = logs.length
+    ? [...logs].reverse().slice(0, 10).map((r) => `<div class="item"><span>${esc(C.practiceSummary(r.body.data.practices))}<br><span class="sub">${esc(fmtTime(r.body.ts))}${r.body.data.note ? ' · ' + esc(r.body.data.note) : ''} · ${r.batchId ? 'sealed' : 'not sealed yet'}</span></span></div>`).join('')
+    : '<div class="muted empty">No practices logged for this farm yet.</div>';
+}
+$('#pr-save-btn')?.addEventListener('click', async () => {
+  const practices = C.cleanPractices($$('#pr-opts input:checked').map((i) => i.value));
+  if (!practices.length) return toast('Tick at least one practice you used');
+  const data = { practices, season: new Date().getFullYear() };
+  const note = $('#pr-note').value.trim();
+  if (note) data.note = note;
+  const before = S.records.length;
+  await captureTreeRecord('practice', data, $('#pr-save-btn'), 'Save practice log');
+  if (S.records.length > before) { // saved: clear the form for the next log
+    $$('#pr-opts input').forEach((i) => { i.checked = false; });
+    $('#pr-note').value = '';
+  }
+});
 
 async function refreshTrees() {
   if (!navigator.onLine || !S.fp) return renderTrees();
@@ -1268,7 +1299,7 @@ function renderRecords() {
       // are not stored in time order).
       ? [...S.records].sort((a, b) => Date.parse(b.body.ts) - Date.parse(a.body.ts)).slice(0, 100).map((r) => {
           const b = r.body, q = b.quality.score;
-          const label = b.kind === 'farm' ? `Farm: ${b.data.name}` : b.kind === 'planting' ? `Planted ${b.data.count} trees` : b.kind === 'survival' ? `Survival: ${b.data.alive} of ${b.data.sampleSize} alive` : TYPES[b.data.type] || b.data.type;
+          const label = b.kind === 'farm' ? `Farm: ${b.data.name}` : b.kind === 'planting' ? `Planted ${b.data.count} trees` : b.kind === 'survival' ? `Survival: ${b.data.alive} of ${b.data.sampleSize} alive` : b.kind === 'practice' ? `Practices: ${C.practiceSummary(b.data.practices)}` : TYPES[b.data.type] || b.data.type;
           return `<button class="item" data-rec="${esc(b.id)}"><span>${esc(label)}<br><span class="sub">${esc(fmtTime(b.ts))} · ${r.batchId ? 'sealed' : 'not sealed yet'}</span></span><span class="badge ${q >= 80 ? 'good' : q >= 50 ? 'ok' : 'bad'}" title="GPS quality score (out of 100)" aria-label="GPS quality ${q} of 100">${q}</span></button>`;
         }).join('')
       : '<div class="muted empty">No records yet.</div>';
@@ -2013,6 +2044,7 @@ function dashLabel(rec) {
     scout: TYPES[rec.data?.type] ? `Scout: ${TYPES[rec.data.type]}` : 'Scout report',
     planting: 'Trees planted',
     survival: 'Survival check',
+    practice: 'Soil practices logged',
   };
   return kinds[rec.body.kind] || rec.body.kind;
 }

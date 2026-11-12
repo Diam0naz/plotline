@@ -93,7 +93,7 @@ Decisions in the review queue are signed with the verifier's browser-local ECDSA
 
 ## Pitch deck
 
-`pitch-deck.html` is a self-contained 14-slide deck (no dependencies, same offline-first rules as the app). Open it directly in a browser, present full-screen (F11) with →/space, or serve it with the app at [`/pitch-deck.html`](http://localhost:8123/pitch-deck.html). Ctrl+P prints one slide per landscape A4 page. Everything on it is either verified against the codebase or marked with a `——` placeholder to fill in before presenting.
+`pitch-deck.html` is a self-contained 15-slide deck (no dependencies, same offline-first rules as the app). Open it directly in a browser, present full-screen (F11) with →/space, or serve it with the app at [`/pitch-deck.html`](http://localhost:8123/pitch-deck.html). Ctrl+P prints one slide per landscape A4 page. Everything on it is either verified against the codebase or marked with a `——` placeholder to fill in before presenting.
 
 ## AI photo check (best-effort, offline-first)
 
@@ -120,6 +120,7 @@ Decisions in the review queue are signed with the verifier's browser-local ECDSA
 | Scout | Geotagged, signed field reports (pest, disease, water stress, weeds, nutrient, healthy) with a GNSS quality score. Up to 3 photos are hashed into the record, and an optional "Check with AI" runs the photos through a vision model to suggest a diagnosis — a suggestion the scout confirms, never an auto-label. |
 | Scout › Outbreaks | Heat map of reports and outbreak alerts (3+ reports of one problem within 1 km in 14 days). Reports with quality under 50 are left out. |
 | Trees | Record planting and a survival check, send them for verification, see status and payouts. |
+| Trees › Soil practices | Log the season's practices (reduced tillage, residue kept, cover crop, organic fertiliser) as a signed, located record. It builds the practice history a soil-carbon programme asks for; it issues no credits. |
 | Records | Seal records into a batch (Merkle root), publish it to the ledger, and verify any record. |
 
 ## How records are verified (and free to the farmer)

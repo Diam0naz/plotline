@@ -232,6 +232,17 @@ label {
 }
 label .hint { font-size: 12px; font-weight: 400; color: var(--text-3); }
 
+/* Practice log: tick rows big enough for a thumb in the field */
+.practice-opts { display: flex; flex-direction: column; gap: var(--s2); }
+.practice-opts label {
+  flex-direction: row; align-items: center; gap: var(--s3);
+  min-height: 44px; padding: 8px 12px;
+  border: 1.5px solid var(--border); border-radius: var(--r2);
+  font-size: 14px; color: var(--text); cursor: pointer;
+}
+.practice-opts label:has(input:checked) { border-color: var(--green); background: var(--green-50); }
+.practice-opts input { width: 18px; height: 18px; padding: 0; flex: none; accent-color: var(--green); }
+
 input, select, textarea {
   display: block;
   width: 100%;

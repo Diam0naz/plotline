@@ -744,7 +744,7 @@
   <section id="tab-trees" class="tab">
     <div class="tab-head">
       <h1>Trees</h1>
-      <p>Plant, check survival, and earn verified carbon credits.</p>
+      <p>Plant trees, check survival and log soil practices — the work that can earn.</p>
     </div>
 
     <!-- Status strip -->
@@ -792,6 +792,15 @@
       <button id="tr-send-btn" class="primary wide">Send for verification</button>
       <div id="tr-outbox" class="muted small"></div>
       <p class="muted small">A verifier must approve before credits are issued. Payments are a sandbox simulation.</p>
+    </div>
+
+    <div class="card stack" id="pr-card">
+      <h2>Soil practices this season</h2>
+      <p class="muted small">Tick what you did on this farm. Each log is signed and located like every other record. It builds the history a carbon programme asks for. It does not earn credits yet.</p>
+      <div id="pr-opts" class="practice-opts"></div>
+      <label>Note (optional)<input id="pr-note" maxlength="120" placeholder="e.g. cowpea cover after maize"></label>
+      <button id="pr-save-btn" class="primary wide">Save practice log</button>
+      <div id="pr-list" class="list"></div>
     </div>
 
     <div class="card">

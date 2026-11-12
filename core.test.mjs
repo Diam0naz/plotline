@@ -115,3 +115,9 @@ test('weak-quality reports are kept out of outbreak alerts', () => {
   assert.equal(C.findClusters(C.usableReports(good), { now }).length, 1);
   assert.equal(C.usableReports([mk(1, 50), mk(2, 49)]).length, 1);
 });
+
+test('practice logs keep only known practices in a fixed order', () => {
+  assert.deepEqual(C.cleanPractices(['cover_crop', 'made_up', 'reduced_tillage', 'cover_crop']), ['reduced_tillage', 'cover_crop']);
+  assert.deepEqual(C.cleanPractices(null), []);
+  assert.equal(C.practiceSummary(['organic_fertiliser', 'residue_kept']), 'Crop residue left on the field, Organic fertiliser or manure used');
+});

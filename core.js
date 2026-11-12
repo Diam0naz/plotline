@@ -122,6 +122,24 @@ export const CROPS = {
   tomato:  { label: 'Tomato',  rowCm: 60,  plantCm: 50,  seedKgHa: 0.3, npkKgHa: 300, ureaKgHa: 100 },
 };
 
+// Soil practices a farmer can log for a season. These are the practice changes
+// soil-carbon programmes pay for; here they are a signed log, not a credit.
+export const PRACTICES = {
+  reduced_tillage: 'Reduced or no tillage',
+  residue_kept: 'Crop residue left on the field',
+  cover_crop: 'Cover crop planted',
+  organic_fertiliser: 'Organic fertiliser or manure used',
+};
+
+// Keep only known practice ids, once each, in the catalogue's order — the
+// signed record must not depend on the order boxes were ticked.
+export function cleanPractices(ids) {
+  const picked = new Set(Array.isArray(ids) ? ids : []);
+  return Object.keys(PRACTICES).filter((id) => picked.has(id));
+}
+
+export const practiceSummary = (ids) => cleanPractices(ids).map((id) => PRACTICES[id]).join(', ');
+
 export function inputPlan(areaHa, p) {
   const spacingM2 = (p.rowCm / 100) * (p.plantCm / 100);
   const plantsPerHa = spacingM2 > 0 ? 10000 / spacingM2 : 0;
