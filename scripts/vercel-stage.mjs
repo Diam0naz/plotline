@@ -14,7 +14,7 @@ const OUT = join(ROOT, 'public');
 
 const FILES = [
   // app shell + pages
-  'index.html', 'site.css',
+  'index.html', 'site.css', '404.html',
   'app.html', 'app.js', 'style.css', 'core.js',
   'console.html', 'console.js', 'console.css',
   'pitch-deck.html', 'pitch-deck.js',

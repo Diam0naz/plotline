@@ -945,6 +945,19 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     return send(res, 404, { error: 'unknown endpoint' });
   }
 
+  // A missing page gets the branded 404 when a browser asked for a page; assets,
+  // scripts and anything else that is not a navigation keep the plain text answer.
+  async function notFound(req, res) {
+    if (/\btext\/html\b/.test(req.headers.accept || '')) {
+      try {
+        const body = await readFile(join(ROOT, '404.html'));
+        res.writeHead(404, { 'content-type': TYPES['.html'], 'cache-control': 'no-cache', ...SEC_HEADERS });
+        return res.end(req.method === 'HEAD' ? undefined : body);
+      } catch { /* no 404 page on disk: fall through to text */ }
+    }
+    return send(res, 404, 'Not found');
+  }
+
   async function serveStatic(req, res, path) {
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
     let rel;
@@ -954,11 +967,11 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     const inside = file === ROOT || file.startsWith(ROOT + sep);
     const top = file.slice(ROOT.length + 1).split(sep)[0];
     if (!inside || HIDDEN.has(top) || /\.test\.mjs$/.test(file) || top.startsWith('.') || top === 'package.json') {
-      return send(res, 404, 'Not found');
+      return notFound(req, res);
     }
     try {
       const s = await stat(file);
-      if (!s.isFile()) return send(res, 404, 'Not found');
+      if (!s.isFile()) return notFound(req, res);
       const body = await readFile(file);
       res.writeHead(200, {
         'content-type': TYPES[extname(file)] || 'application/octet-stream',
@@ -968,7 +981,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       });
       res.end(req.method === 'HEAD' ? undefined : body);
     } catch {
-      send(res, 404, 'Not found');
+      await notFound(req, res);
     }
   }
 

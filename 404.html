@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Page not found — Plotline</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#476633">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- Absolute paths: this page is served for any missing URL, at any depth. -->
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/site.css">
+<style>
+  body.site.lost { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+  .lost main { flex: 1; display: flex; align-items: center; }
+  .lost .hero { width: 100%; }
+  /* The landing page's hero leaf would sit over the fine print here. */
+  .lost .hero-copy::after { display: none; }
+
+  .plot { width: 100%; max-width: 440px; margin: 0 auto; display: block; }
+  .plot .ground { fill: var(--green-50); stroke: var(--green-200); stroke-width: 1.5; }
+  .plot .grid { stroke: var(--green-100); stroke-width: 1; }
+  .plot .walked { fill: none; stroke: var(--green); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .plot .gap { fill: none; stroke: var(--green-500); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 2 9; }
+  .plot .corner { fill: #fff; stroke: var(--green); stroke-width: 3; }
+  .plot .missing { fill: #fff; stroke: var(--green-500); stroke-width: 2.5; stroke-dasharray: 3 4; }
+  .plot .code { font-family: var(--font-display); font-weight: 700; font-size: 76px; letter-spacing: -0.04em; fill: var(--green-800); }
+  .plot .tag { font-family: 'Roboto Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.04em; fill: var(--green-700); }
+  @media (prefers-reduced-motion: no-preference) {
+    .plot .gap { animation: gap-walk 1.6s linear infinite; }
+    @keyframes gap-walk { to { stroke-dashoffset: -22; } }
+  }
+  @media (max-width: 800px) { .plot { max-width: 320px; } }
+</style>
+</head>
+<body class="site lost">
+
+<header class="top site-nav">
+  <a class="brand brand-with-logo" href="/"><span class="brand-word">Plot<span>line</span></span><img src="/icon.svg" alt="" class="brand-logo" width="24" height="24" aria-hidden="true"></a>
+  <nav aria-label="Site">
+    <a href="/">Home</a>
+    <a class="nav-cta" href="/app.html">Open the app</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">Error 404</p>
+      <h1>This page isn't<br><span>on the map.</span></h1>
+      <p class="lede">We couldn't find the page at this address. The link may be old or mistyped.</p>
+      <div class="cta-row">
+        <a class="cta primary" href="/app.html">Open the app</a>
+        <a class="cta" href="/">Go to the home page</a>
+      </div>
+      <p class="fine">Your farms and records are untouched. They stay on your phone.</p>
+    </div>
+
+    <svg class="plot" viewBox="0 0 440 340" role="img" aria-label="A farm boundary with one corner missing">
+      <rect class="ground" x="6" y="6" width="428" height="328" rx="20"></rect>
+      <path class="grid" d="M6 90H434M6 174H434M6 258H434M113 6V334M220 6V334M327 6V334"></path>
+      <!-- three sides walked, the fourth corner never recorded -->
+      <polyline class="walked" points="86,236 104,84 318,62"></polyline>
+      <path class="gap" d="M318 62 L352 250 L86 236"></path>
+      <circle class="corner" cx="86" cy="236" r="7"></circle>
+      <circle class="corner" cx="104" cy="84" r="7"></circle>
+      <circle class="corner" cx="318" cy="62" r="7"></circle>
+      <circle class="missing" cx="352" cy="250" r="8"></circle>
+      <text class="code" x="216" y="184" text-anchor="middle">404</text>
+      <text class="tag" x="352" y="282" text-anchor="middle">no fix here</text>
+    </svg>
+  </section>
+</main>
+
+</body>
+</html>
