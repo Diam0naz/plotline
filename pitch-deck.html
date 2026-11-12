@@ -13,7 +13,7 @@ Served at /pitch-deck.html by `npm start`. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 
-<title>Plotline — carbon-ready smallholder farms, offline first</title>
+<title>Plotline — provable smallholder farms, offline first</title>
 <style>
   :root {
     --bg: #141612;          /* deep field green */
@@ -139,29 +139,29 @@ Served at /pitch-deck.html by `npm start`. -->
 <section class="slide active leafed">
   <div class="kicker">Seed deck · November 2026</div>
   <h1 class="brand" style="font-size:clamp(44px,7.5vw,96px); gap:.25em"><img src="icon.svg" alt="" style="width:.8em;height:.8em"><span>Plot<span class="accent">line</span></span></h1>
-  <p style="max-width:26em;margin-top:2.5vh">Carbon-ready smallholder farms, <b class="accent">offline&nbsp;first</b>. The farmer's phone is the monitoring instrument — boundaries, scouting records and harvest evidence become issuance-grade carbon registry entries.</p>
-  <p class="dim small" style="margin-top:4vh">Offline PWA app · hash-chained registry · verifier marketplace · Nigeria</p>
+  <p style="max-width:26em;margin-top:2.5vh">Provable smallholder farms, <b class="accent">offline&nbsp;first</b>. The farmer's phone is the measuring instrument — walked boundaries, signed field records and satellite cross-checks become proof that exporters, tree programmes and carbon buyers can pay against.</p>
+  <p class="dim small" style="margin-top:4vh">Offline PWA app · hash-chained registry · independent verifiers · Nigeria</p>
 </section>
 
 <!-- 2 ▪ PROBLEM -->
 <section class="slide">
   <div class="kicker">The problem</div>
-  <h2>Smallholders can't reach carbon money. The wall is measurement, not trees.</h2>
+  <h2>Money that needs proof can't reach smallholders. The wall is evidence, not effort.</h2>
   <div class="cards">
     <div class="card">
-      <h3>MRV costs eat the credit</h3>
-      <p class="small">Field surveys, flights, paperwork — measuring, reporting and verification can consume most of a small project's credit value. Below ~<span class="todo">X ha</span> the maths never works.</p>
+      <h3>Buyers must now prove origin</h3>
+      <p class="small">The EU deforestation rule asks cocoa importers for the location of every plot they buy from. A farm nobody has mapped gets dropped from the supply chain <span class="todo">(confirm current enforcement dates)</span>.</p>
     </div>
     <div class="card">
-      <h3>500m farms, no reliable map</h3>
-      <p class="small">The world's ~500 million smallholder farm <span class="todo">(verify)</span> plots are largely unmapped and un-monitored, so buyers can't trust or even find the tonnes they'd pay for.</p>
+      <h3>Funders pay for trees they can't count</h3>
+      <p class="small">Tree-planting and restoration programmes owe donors survival figures. Today that means paid enumerators, paper forms and numbers nobody can re-check.</p>
     </div>
     <div class="card">
-      <h3>Integrity rules are tightening</h3>
-      <p class="small">ICVCM and national schemes now demand real reconciliation, leakage and additionality checks — exactly the work that is hand-buildable only at big-project scale.</p>
+      <h3>Proof costs more than the farm earns</h3>
+      <p class="small">A field survey per plot can cost more than a smallholder's loan, premium or carbon payment is worth. Below ~<span class="todo">X ha</span> the maths never works.</p>
     </div>
   </div>
-  <p class="dim small" style="margin-top:3vh">Meanwhile the buyers exist: corporate net-zero demand, voluntary and compliance markets, and donors funding resilience programmes. The bottleneck is trustable, cheap MRV at the bottom of the pyramid.</p>
+  <p class="dim small" style="margin-top:3vh">The payers exist — exporters, programme funders, lenders, carbon buyers. All are blocked by the same missing thing: cheap field evidence they can trust.</p>
 </section>
 
 <!-- 3 ▪ INSIGHT -->
@@ -189,13 +189,13 @@ Served at /pitch-deck.html by `npm start`. -->
 <!-- 4 ▪ PRODUCT -->
 <section class="slide">
   <div class="kicker">Product · today, running</div>
-  <h2>From a walk round the farm to a retired credit.</h2>
+  <h2>From a walk round the farm to proof someone pays for.</h2>
   <div class="flow">
     <div class="step"><span class="n">1</span><p class="small"><b>Map</b> — farmer walks the boundary; the phone logs GNSS points into a polygon. Works offline, offline maps included.</p></div>
     <div class="step"><span class="n">2</span><p class="small"><b>Record</b> — scouting observations, planting and harvest notes, signed by the phone's ES256 key as they're created.</p></div>
     <div class="step"><span class="n">3</span><p class="small"><b>Submit</b> — a batch with evidence: farm snapshot, satellite checks for PAN and recent fire, NDVI history. Bundled over any connection.</p></div>
     <div class="step"><span class="n">4</span><p class="small"><b>Verify</b> — accredited verifiers review the queue and sign approve/reject decisions with their own keys; a credit score gates what they can sign.</p></div>
-    <div class="step"><span class="n">5</span><p class="small"><b>Issue &amp; retire</b> — lots get serials (<span class="small">PL-NG-XXXXXXXX</span>), buyers place orders, retirements carry a certificate.</p></div>
+    <div class="step"><span class="n">5</span><p class="small"><b>Use</b> — one verified record backs a traceability file, a tree-survival report, or later a serialised carbon lot (<span class="small">PL-NG-XXXXXXXX</span>) with a retirement certificate.</p></div>
   </div>
   <p class="dim small" style="margin-top:2.5vh">The farmer's view is one screen: my farm, my records, my payments. The operator console adds market, orders, reconciliation and verifier management.</p>
 </section>
@@ -216,7 +216,7 @@ registry server
         ▼
 public views
   market data, serial lookup, retirement certificates — anyone can verify the chain</div>
-  <p class="dim small" style="margin-top:2vh">Ledger is ours and append-only; the <b>head is anchored</b> externally (Solana) so nobody, including us, can rewrite history unilaterally. Farmer records stay private; only derived, aggregated carbon claims enter the public registry.</p>
+  <p class="dim small" style="margin-top:2vh">Ledger is ours and append-only; the <b>head is anchored</b> externally (Solana) so nobody, including us, can rewrite history unilaterally. Farmer records stay private; only derived, aggregated claims enter the public registry.</p>
 </section>
 
 <!-- 6 ▪ WHY IT'S DEFENSIBLE -->
@@ -243,49 +243,75 @@ public views
 <!-- 7 ▪ MARKET -->
 <section class="slide">
   <div class="kicker">Market</div>
-  <h2><span class="todo">$X bn</span> compliance-adjacent demand pointed at an unmapped supply.</h2>
+  <h2>Three buyers already need this proof. Carbon is the third, not the first.</h2>
   <div class="cards">
     <div class="card">
-      <div class="stat big">500m</div>
-      <p class="small">smallholder farms worldwide are the theoretical supply base <span class="todo">(world-bank sourced? verify)</span></p>
+      <div class="stat big"><span class="todo">N</span> farms</div>
+      <h3>Now · export traceability</h3>
+      <p class="small">Cocoa exporters and cooperatives need a located plot for every farm they buy from. Smallholder cocoa farms in Nigeria: <span class="todo">number + source</span>.</p>
+    </div>
+    <div class="card">
+      <div class="stat big"><span class="todo">₦X</span> / visit</div>
+      <h3>Now · tree programmes</h3>
+      <p class="small">NGOs and funders already pay enumerators to count surviving trees. That visit cost is the budget we replace <span class="todo">get one real quote</span>.</p>
     </div>
     <div class="card">
       <div class="stat big"><span class="todo">X</span> t</div>
-      <p class="small">national AFOLU / cookstove / agriculture credit demand, buyer pipeline under LOI <span class="todo">replace with real numbers</span></p>
-    </div>
-    <div class="card">
-      <div class="stat big"><span class="todo">₦X / t</span></div>
-      <p class="small">assumed floor for high-integrity agriculture tonnes; our take-rate modelled on issued tonnes</p>
+      <h3>Later · carbon</h3>
+      <p class="small">Developers aggregating smallholders need field monitoring. We supply it under their registered methodology <span class="todo">named partner / LOI</span>.</p>
     </div>
   </div>
-  <p class="dim small" style="margin-top:3vh">Beachhead: <span class="todo">region / state</span> co-operatives and aggregators with <span class="todo">N</span> farms under management. Land use programmes (domestic compliance + Article 6 adjacencies) follow.</p>
+  <p class="dim small" style="margin-top:3vh">Beachhead: one cooperative or tree programme in <span class="todo">region / state</span>, <span class="todo">50–200</span> farms, before anything else.</p>
 </section>
 
 <!-- 8 ▪ BUSINESS MODEL -->
 <section class="slide">
   <div class="kicker">Business model</div>
-  <h2>We sell issued, verified tonnes — not software seats.</h2>
+  <h2>Businesses pay per verified farm. Farmers never pay.</h2>
   <div class="cols">
     <div>
       <ul>
-        <li><b>Issuance fee</b> — <span class="todo">x%</span> of every checked-in credit lot that passes verification.</li>
-        <li><b>Retirement fee</b> — flat <span class="todo">₦X</span> per retired tonne certificate.</li>
-        <li><b>Data reuse</b> — anonymised boundary + practice-change datasets for buyers insist on parking, <span class="todo">richest line: optional / discuss internally</span>.</li>
+        <li><b>Verified-farm fee</b> — <span class="todo">₦X</span> per farm per year, paid by the exporter, cooperative or programme that needs the proof.</li>
+        <li><b>Verification fee</b> — <span class="todo">₦X</span> per signed field check, shared with the independent verifier who did it.</li>
+        <li><b>Carbon take rate, later</b> — a share of each credit sale once a registered methodology is in place (10% in the current demo split).</li>
       </ul>
     </div>
     <div>
       <table>
         <tr><th></th><th class="todo">Y1 pilot</th><th class="todo">Y2</th><th class="todo">Y3</th></tr>
-        <tr><td>Farms onboarded</td><td class="todo">—</td><td class="todo">—</td><td class="todo">—</td></tr>
-        <tr><td>Tonnes issued</td><td class="todo">—</td><td class="todo">—</td><td class="todo">—</td></tr>
+        <tr><td>Verified farms</td><td class="todo">—</td><td class="todo">—</td><td class="todo">—</td></tr>
+        <tr><td>Paying partners</td><td class="todo">—</td><td class="todo">—</td><td class="todo">—</td></tr>
         <tr><td>Revenue</td><td class="todo">—</td><td class="todo">—</td><td class="todo">—</td></tr>
       </table>
-      <p class="dim small" style="margin-top:1.5vh">Unit economics: MRV cost per farm near zero; aggregator revenue share funds rural sales force.</p>
+      <p class="dim small" style="margin-top:1.5vh">Unit economics: the farmer does the measuring, so the cost of a farm is verifier time plus a few satellite calls.</p>
     </div>
   </div>
 </section>
 
-<!-- 9 ▪ STATUS -->
+<!-- 9 ▪ WHO EARNS -->
+<section class="slide">
+  <div class="kicker">Who earns, and when</div>
+  <h2>Carbon is the upside, not the promise.</h2>
+  <div class="cols">
+    <div>
+      <table>
+        <tr><th></th><th>Now</th><th>Next</th><th>Later</th></tr>
+        <tr><td><b>Farmer</b></td><td>Keeps the export buyer; owns the farm record</td><td>Input credit and insurance on that record</td><td>Carbon payout to mobile money</td></tr>
+        <tr><td><b>Verifier</b></td><td colspan="3">Paid per signed field check — local, skilled work for young people</td></tr>
+        <tr><td><b>Plotline</b></td><td>Per-farm fee</td><td>Per-farm fee, more partners</td><td>Plus a share of credit sales</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="card">
+        <h3>The honest carbon number</h3>
+        <p class="small">A farmer keeping 100 trees alive earns about <b class="accent">₦11,700 a year</b> from carbon on our demo assumptions: 18&nbsp;kg CO₂e per tree-year, ₦12,000 per tonne, a 10% buffer, 60% to the farmer.</p>
+        <p class="small" style="margin-top:1.6vh">Real money, but small and slow. So it sits on top of income that arrives sooner. These factors are placeholders, not a registered methodology.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 ▪ STATUS -->
 <section class="slide">
   <div class="kicker">Where we are</div>
   <h2>Working product, not a mock.</h2>
@@ -312,10 +338,10 @@ public views
   </div>
 </section>
 
-<!-- 10 ▪ COMPETITION -->
+<!-- 11 ▪ COMPETITION -->
 <section class="slide">
   <div class="kicker">Landscape</div>
-  <h2>We're not competing with registries. We're their missing arm.</h2>
+  <h2>We don't compete with registries or exporters. We're their field evidence.</h2>
   <table>
     <tr><th></th><th>Offline field work</th><th>Farmer-held keys</th><th>Registry-grade lineage</th><th>Cost per farm</th></tr>
     <tr><td>Manual MRV consultancies</td><td class="dim">✓</td><td class="dim">—</td><td class="dim">partial</td><td class="dim">high</td></tr>
@@ -323,22 +349,22 @@ public views
     <tr><td>Token-first carbon platforms</td><td class="dim">—</td><td class="dim">✓</td><td class="dim">check</td><td class="dim">medium</td></tr>
     <tr><td><b class="accent">Plotline</b></td><td class="accent">✓ native</td><td class="accent">✓ device keys</td><td class="accent">✓ hash-chained + anchored</td><td class="accent">≈ device-only</td></tr>
   </table>
-  <p class="dim small" style="margin-top:2.5vh">Structure: we plug into existing registries/standards bodies (mutual accreditation), we don't mint another meta-registry.</p>
+  <p class="dim small" style="margin-top:2.5vh">Structure: we plug into exporters' traceability files and existing registries and standards bodies. We don't mint another meta-registry.</p>
 </section>
 
-<!-- 11 ▪ ROADMAP -->
+<!-- 12 ▪ ROADMAP -->
 <section class="slide">
   <div class="kicker">Roadmap</div>
-  <h2>From pilot to registry-grade issuance.</h2>
+  <h2>From a first paying pilot to registry-grade issuance.</h2>
   <ul>
-    <li><b class="accent">Now</b> — farmer app + registry console live, with NDVI snapshot and CHIRPS daily-rainfall evidence per plot via Google Earth Engine (per-month NDVI trend when Sentinel Hub recovers); pilot farm set <span class="todo">N farms, region</span>.</li>
-    <li><b class="accent">Next</b> — first aggregated submission batch passes full verification; accreditation from <span class="todo">standards body</span>; first buyer retirement.</li>
-    <li><b class="accent">Then</b> — agronomic manuals (fallow/cover-crop/agroforestry) with named methodologies; public landing page with live market table; payment rails.</li>
-    <li><b class="accent">Later</b> — country compliance scheme plugins; anchoring to multiple notarisation backends; verifier marketplace UI.</li>
+    <li><b class="accent">Now</b> — farmer app, verifier queue and registry console live, with rainfall, NDVI and fire evidence per plot; pilot farm set <span class="todo">N farms, region</span>.</li>
+    <li><b class="accent">0–12 months</b> — first paying partner (a cooperative, exporter or tree programme) with <span class="todo">50–200</span> farms; payouts through a licensed mobile-money partner.</li>
+    <li><b class="accent">12–24 months</b> — verified records open input credit and rainfall-index insurance with <span class="todo">lender / insurer</span>; more partners, more states.</li>
+    <li><b class="accent">24 months on</b> — carbon: an aggregated batch under a partner's registered methodology, an accredited verifier, first buyer retirement; ledger head anchored externally.</li>
   </ul>
 </section>
 
-<!-- 12 ▪ TEAM -->
+<!-- 13 ▪ TEAM -->
 <section class="slide">
   <div class="kicker">Team</div>
   <h2><span class="todo">Names here.</span></h2>
@@ -349,7 +375,7 @@ public views
   </div>
 </section>
 
-<!-- 13 ▪ ASK -->
+<!-- 14 ▪ ASK -->
 <section class="slide">
   <div class="kicker">The ask</div>
   <h2><span class="todo">$X</span> to put the first <span class="todo">N,000</span> farms on the register.</h2>
@@ -357,10 +383,10 @@ public views
     <div>
       <ul>
         <li><b>Field &amp; launch</b> — enumerators, launch kits, partner co-ops across <span class="todo">region</span>.</li>
-        <li><b>Verification &amp; standards</b> — accreditation, methodology authoring, an external security and ledger audit.</li>
+        <li><b>Verification &amp; standards</b> — verifier training and fees, a methodology partner, an external security and ledger audit.</li>
         <li><b>Satellite &amp; cloud</b> — Sentinel-Hub / Planet data budget; hosted backend scaled to <span class="todo">N</span> farms.</li>
       </ul>
-      <p class="dim small">Milestones at 12 months: first credits issued, <span class="todo">N</span> farm-years of auditable records, signed buyer pipeline.</p>
+      <p class="dim small">Milestones at 12 months: first paying partner, <span class="todo">N</span> verified farms with a year of auditable records, a carbon methodology partner signed.</p>
     </div>
     <div>
       <div class="card">

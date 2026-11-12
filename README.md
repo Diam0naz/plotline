@@ -93,7 +93,7 @@ Decisions in the review queue are signed with the verifier's browser-local ECDSA
 
 ## Pitch deck
 
-`pitch-deck.html` is a self-contained 13-slide deck (no dependencies, same offline-first rules as the app). Open it directly in a browser, present full-screen (F11) with →/space, or serve it with the app at [`/pitch-deck.html`](http://localhost:8123/pitch-deck.html). Ctrl+P prints one slide per landscape A4 page. Everything on it is either verified against the codebase or marked with a `——` placeholder to fill in before presenting.
+`pitch-deck.html` is a self-contained 14-slide deck (no dependencies, same offline-first rules as the app). Open it directly in a browser, present full-screen (F11) with →/space, or serve it with the app at [`/pitch-deck.html`](http://localhost:8123/pitch-deck.html). Ctrl+P prints one slide per landscape A4 page. Everything on it is either verified against the codebase or marked with a `——` placeholder to fill in before presenting.
 
 ## AI photo check (best-effort, offline-first)
 
