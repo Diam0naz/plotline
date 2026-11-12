@@ -692,6 +692,16 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
   const answer = (res, r, okCode = 200) => send(res, r.ok === false ? 400 : okCode, r);
   // Read-through cache. Without Redis this is a direct call.
   const cached = (key, ttl, fn) => (cache ? cache.wrap(key, ttl, fn) : fn());
+  // Satellite evidence: keep a good answer for the full window, but a provider
+  // failure only briefly, so one outage does not blank a plot's panel for hours.
+  const cachedEvidence = async (key, ttl, fn) => {
+    if (!cache) return fn();
+    const hit = await cache.get(key);
+    if (hit !== null) return hit;
+    const value = await fn();
+    await cache.set(key, value, value?.status === 'ok' ? ttl : Math.min(ttl, 60));
+    return value;
+  };
 
   async function registryApi(req, res, path) {
     const ip = clientIp(req);
@@ -786,7 +796,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (!norm.ok) return send(res, 400, { error: norm.error });
       const ringKey = norm.geojson.coordinates[0].map((p) => p.join(',')).join('|');
       const key = `ndvi-series:${createHash('sha256').update(ringKey + '#' + months).digest('hex').slice(0, 24)}`;
-      const result = await cached(key, 21_600, () =>
+      const result = await cachedEvidence(key, 21_600, () =>
         ndviSeriesEvidence({ polygon: data.polygon, months, env: process.env, now }));
       return send(res, 200, result);
     }
@@ -805,7 +815,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (!norm.ok) return send(res, 400, { error: norm.error });
       const ringKey = norm.geojson.coordinates[0].map((p) => p.join(',')).join('|');
       const key = `rain:${createHash('sha256').update(ringKey + '#' + months).digest('hex').slice(0, 24)}`;
-      const result = await cached(key, 21_600, () =>
+      const result = await cachedEvidence(key, 21_600, () =>
         rainEvidence({ polygon: data.polygon, months, env: process.env, now }));
       return send(res, 200, result);
     }

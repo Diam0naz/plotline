@@ -552,6 +552,24 @@ test('ndvi series: provider failure and no-data are reported, never fabricated',
   assert.equal(nopixels.error, 'no_valid_pixels');
 });
 
+test('ndvi series: a Sentinel Hub outage falls back to Earth Engine when both are configured', async () => {
+  const env = { ...GEE_ENV, GEE_PROJECT_ID: GEE_ENV.GEE_PROJECT_ID + ' ', COPERNICUS_TOKEN: 't' };
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (String(url).includes('dataspace.copernicus.eu')) return { ok: false, status: 503, json: async () => ({}), text: async () => '' };
+    if (String(url).includes('oauth2')) return GEE_TOKEN;
+    return GEE_OK(GEE_STATS);
+  };
+  const out = await ndviSeriesEvidence({ polygon: PLOT, env, fetchImpl, now: NOW });
+  assert.equal(out.status, 'ok');
+  assert.equal(out.source, NDVI_GEE_SOURCE);
+  assert.ok(!urls.some((u) => u.includes('%20')), 'a trailing space in the project id is trimmed');
+
+  const pinned = await ndviSeriesEvidence({ polygon: PLOT, env: { ...env, NDVI_PROVIDER: 'sentinel-hub' }, fetchImpl, now: NOW });
+  assert.equal(pinned.error, 'provider_error', 'an explicit provider choice is never overridden');
+});
+
 test('ndvi series: the GEE fallback is one honest average, explicitly not a series', async () => {
   let sentBody = null;
   const fetchImpl = async (url, opts) => {

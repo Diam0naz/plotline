@@ -170,7 +170,7 @@ export function geeServiceAccount(env = {}) {
   return {
     clientEmail,
     privateKey,
-    projectId: env.GEE_PROJECT_ID || 'earthengine-legacy',
+    projectId: String(env.GEE_PROJECT_ID || '').trim() || 'earthengine-legacy', // a pasted trailing space breaks the EE parent name
   };
 }
 
@@ -405,7 +405,23 @@ export function parseNdviStats(data) {
  * @param {{ lat: number, lon: number, bufferKm?: number, dateFrom?: string, dateTo?: string,
  *           cloudMaxPct?: number, env?: object, fetchImpl?: Function, now?: () => Date }} opts
  */
-export async function ndviEvidence({
+// When the Sentinel Hub / Copernicus side is down or refuses the credential and
+// an Earth Engine service account is also configured, answer from Earth Engine
+// instead of showing the farmer nothing. NDVI_PROVIDER=sentinel-hub opts out.
+// A request the provider understood (bad_request, no_valid_pixels) is kept as is.
+async function withGeeFallback(args, primary) {
+  const out = await primary(args);
+  const env = args.env ?? process.env;
+  if (out.status !== 'unavailable' || (out.error !== 'provider_error' && out.error !== 'auth_failed')) return out;
+  if (env.NDVI_PROVIDER || ndviProvider(env) !== 'sentinel-hub' || !geeServiceAccount(env)) return out;
+  const alt = await primary({ ...args, env: { ...env, NDVI_PROVIDER: 'gee' } });
+  return alt.status === 'ok' ? alt : out;
+}
+
+export const ndviEvidence = (args = {}) => withGeeFallback(args, ndviEvidencePrimary);
+export const ndviSeriesEvidence = (args = {}) => withGeeFallback(args, ndviSeriesPrimary);
+
+async function ndviEvidencePrimary({
   lat,
   lon,
   bufferKm = NDVI_DEFAULTS.bufferKm,
@@ -622,7 +638,7 @@ export function ndviTrend(series) {
  *           cloudMaxPct?: number, env?: object, fetchImpl?: Function,
  *           now?: () => Date }} opts
  */
-export async function ndviSeriesEvidence({
+async function ndviSeriesPrimary({
   polygon,
   months = NDVI_SERIES_DEFAULTS.months,
   cloudMaxPct = NDVI_DEFAULTS.cloudMaxPct,
