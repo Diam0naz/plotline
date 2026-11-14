@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --ground: #141612; --panel: #1d211a; --line: #363a31; --ink: #f5f6f3; --dim: #b3b8ad;
+        --acc: #9dbb80; --ndvi: #7FB800; --gold: #E8B04B; --gold-deep: #d9a54f; --ochre: #B5651D;
+        --blue: #2E6F9E; --green: #476633; --card-ink: #1e2e12; --card-dim: #55604c;
+        --font-display: "Space Grotesk", sans-serif; --font-human: "Fraunces", serif;
+        --font-body: "Inter", sans-serif; --font-mono: "Roboto Mono", monospace;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--ground); }
+      #root { position: relative; width: 1920px; height: 1080px; background: var(--ground); color: var(--ink); font-family: var(--font-body); }
+
+      /* ---------- PLANE 1: background (satellite terrain, farthest) ---------- */
+      #bg { position: absolute; left: -150px; top: -170px; width: 2220px; height: 1420px; z-index: 0; transform-origin: 50% 50%; will-change: transform;
+        background:
+          radial-gradient(1200px 820px at 68% 30%, rgba(71,102,51,0.55), rgba(20,22,18,0) 60%),
+          radial-gradient(900px 700px at 22% 78%, rgba(181,101,29,0.30), rgba(20,22,18,0) 62%),
+          radial-gradient(1400px 1000px at 50% 50%, rgba(46,111,158,0.14), rgba(20,22,18,0) 70%),
+          linear-gradient(160deg, #10130e 0%, #171a13 45%, #0f120d 100%); }
+      #bg .grid { position: absolute; inset: 0; opacity: 0.5; }
+      #bg .sheen { position: absolute; inset: 0; mix-blend-mode: screen; opacity: 0.22;
+        background: radial-gradient(700px 480px at 60% 38%, rgba(127,184,0,0.5), rgba(0,0,0,0) 60%); }
+
+      /* ---------- PLANE 3: foreground (glow orbs, vignette, grain, nearest) ---------- */
+      #fg { position: absolute; inset: -60px; z-index: 5; pointer-events: none; will-change: transform; }
+      #fg .vignette { position: absolute; inset: 0; background: radial-gradient(120% 120% at 50% 45%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.62) 100%); }
+      #fg .grain { position: absolute; inset: 0; opacity: 0.06; mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>"); }
+      .orb { position: absolute; border-radius: 50%; filter: blur(42px); mix-blend-mode: screen; }
+      #glow-a { width: 760px; height: 760px; left: 980px; top: 70px; background: radial-gradient(circle, rgba(127,184,0,0.55), rgba(0,0,0,0) 68%); }
+      #glow-b { width: 620px; height: 620px; left: 120px; top: 560px; background: radial-gradient(circle, rgba(232,176,75,0.42), rgba(0,0,0,0) 68%); }
+      #glow-c { width: 540px; height: 540px; left: 1320px; top: 640px; background: radial-gradient(circle, rgba(46,111,158,0.40), rgba(0,0,0,0) 70%); }
+
+      /* ---------- PLANE 2: scenes (midground content) ---------- */
+      #scenes { position: absolute; inset: 0; z-index: 10; }
+      .scene { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; padding: 0 160px; display: flex; align-items: center; }
+      .center { flex-direction: column; justify-content: center; align-items: flex-start; }
+      .split { justify-content: space-between; gap: 90px; }
+      .copy { width: 760px; }
+
+      .kicker { font-family: var(--font-mono); font-size: 30px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--acc); margin-bottom: 26px; }
+      h1 { font-family: var(--font-human); font-weight: 600; letter-spacing: -0.02em; line-height: 1.0; font-size: 120px; color: var(--ink); }
+      h2 { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.03em; line-height: 1.04; font-size: 82px; color: var(--ink); }
+      .sub { font-family: var(--font-display); font-weight: 500; font-size: 56px; letter-spacing: -0.02em; color: var(--dim); margin-top: 26px; }
+      .sub b { color: var(--ink); }
+      .body { font-size: 38px; line-height: 1.35; color: var(--dim); margin-top: 24px; }
+      .mono { font-family: var(--font-mono); font-size: 30px; color: var(--dim); letter-spacing: 0.02em; }
+
+      /* hero number */
+      .huge { font-family: var(--font-display); font-weight: 700; font-size: 300px; line-height: 0.9; letter-spacing: -0.04em;
+        color: var(--gold); text-shadow: 0 0 60px rgba(232,176,75,0.45); }
+      .huge-label { font-family: var(--font-display); font-weight: 600; font-size: 52px; color: var(--ink); margin-top: 4px; }
+      .slam { font-family: var(--font-human); font-weight: 700; font-style: italic; font-size: 96px; color: var(--ink); margin-top: 28px; }
+      .slam b { color: var(--gold); font-style: normal; }
+
+      .chip { display: inline-flex; align-items: center; gap: 12px; padding: 14px 26px; border-radius: 999px; border: 2px solid var(--line); background: rgba(29,33,26,0.75); font-size: 30px; font-weight: 500; color: var(--ink); }
+      .chip .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 14px var(--acc); }
+      .steps { display: flex; gap: 16px; margin-bottom: 30px; }
+      .step { font-family: var(--font-mono); font-size: 30px; letter-spacing: 0.08em; text-transform: uppercase; padding: 10px 20px; border-radius: 10px; border: 2px solid var(--line); color: var(--dim); }
+      .step.on { color: var(--card-ink); background: var(--acc); border-color: var(--acc); }
+
+      /* plot */
+      .plot { flex: none; width: 720px; height: 620px; border-radius: 34px; background: rgba(29,33,26,0.85); border: 2px solid var(--line); position: relative; overflow: hidden; box-shadow: 0 40px 100px rgba(0,0,0,0.5); }
+      .plot svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+      .readout { position: absolute; left: 24px; right: 24px; bottom: 26px; padding: 20px 10px; white-space: nowrap; border-radius: 16px; background: #f5f6f3; color: var(--card-ink); font-family: var(--font-mono); font-size: 28px; font-weight: 500; text-align: center; }
+      .plot .off { position: absolute; left: 24px; top: 24px; }
+
+      /* white product cards */
+      .card { flex: none; width: 760px; border-radius: 30px; background: #ffffff; color: var(--card-ink); padding: 40px 44px; box-shadow: 0 40px 100px rgba(0,0,0,0.55); }
+      .card h3 { font-family: var(--font-display); font-size: 34px; font-weight: 600; color: var(--card-ink); margin-bottom: 18px; }
+      .row { display: flex; align-items: center; gap: 20px; padding: 18px 24px; border-radius: 16px; border: 2px solid #dfe5d6; font-size: 31px; font-weight: 500; color: var(--card-ink); margin-top: 14px; }
+      .row.on { border-color: var(--green); background: #edf5e5; }
+      .mark { flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; }
+      .serial { margin-top: 20px; padding: 18px 24px; border-radius: 14px; background: var(--card-ink); color: #f5f6f3; font-family: var(--font-mono); font-size: 34px; font-weight: 500; text-align: center; letter-spacing: 0.04em; }
+      .kv { display: flex; justify-content: space-between; align-items: center; padding: 16px 4px; border-bottom: 2px solid #eef1e8; font-size: 30px; }
+      .kv .k { color: var(--card-dim); } .kv .v { font-weight: 600; color: var(--card-ink); font-family: var(--font-mono); }
+      .statuschip { display: inline-block; padding: 8px 18px; border-radius: 999px; font-size: 30px; font-weight: 700; }
+      .statuschip.sold { background: var(--green); color: #fff; }
+      .badge-free { display: inline-flex; align-items: center; gap: 12px; margin-top: 22px; padding: 14px 24px; border-radius: 999px; background: #edf5e5; border: 2px solid var(--green); color: #23360f; font-size: 30px; font-weight: 700; }
+
+      /* ndvi chart */
+      .chart { display: block; width: 100%; margin-top: 8px; }
+
+      /* wallet / payout */
+      .amount { font-family: var(--font-display); font-weight: 700; font-size: 120px; color: var(--card-ink); line-height: 1; }
+      .amount small { font-family: var(--font-body); font-weight: 600; font-size: 34px; color: var(--card-dim); }
+      .splitbar { display: flex; height: 40px; border-radius: 10px; overflow: hidden; margin-top: 22px; border: 2px solid #dfe5d6; }
+      .splitbar i { height: 100%; }
+      .splitlabels { display: flex; gap: 16px; margin-top: 14px; font-size: 30px; color: var(--card-dim); font-weight: 600; }
+      .toast { margin-top: 24px; padding: 18px 26px; border-radius: 999px; background: var(--card-ink); color: #f5f6f3; font-size: 30px; font-weight: 600; text-align: center; }
+      .gold-dot { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 20px var(--gold); }
+
+      /* logo / close */
+      .logo-row { display: flex; align-items: center; gap: 36px; }
+      .logo { width: 150px; height: 150px; border-radius: 34px; filter: drop-shadow(0 18px 44px rgba(0,0,0,0.5)); }
+      .word { font-family: var(--font-display); font-weight: 700; font-size: 168px; letter-spacing: -0.04em; color: var(--ink); }
+      .word span { color: var(--acc); }
+      .honest { margin-top: 36px; font-family: var(--font-mono); font-size: 30px; color: var(--dim); letter-spacing: 0.02em; }
+
+      /* ---------- PLANE 4: captions ---------- */
+      #cap { position: absolute; left: 0; right: 0; bottom: 100px; z-index: 40; display: flex; justify-content: center; pointer-events: none; }
+      .capline { position: absolute; max-width: 1480px; text-align: center; font-family: var(--font-display); font-weight: 500;
+        font-size: 44px; line-height: 1.25; color: #f5f6f3; padding: 20px 40px; border-radius: 18px;
+        background: rgba(10,11,9,0.46); text-shadow: 0 2px 18px rgba(0,0,0,0.65); }
+      .capline b { color: var(--gold); font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="32.7" data-width="1920" data-height="1080">
+
+      <!-- PLANE 1 — background terrain (parallax, slow orbit zoom) -->
+      <div id="bg" data-start="0" data-duration="32.7" data-track-index="2">
+        <svg class="grid" viewBox="0 0 2220 1420" preserveAspectRatio="none" aria-hidden="true">
+          <g stroke="#2a2f25" stroke-width="2">
+            <path d="M0 236H2220M0 473H2220M0 710H2220M0 947H2220M0 1184H2220" />
+            <path d="M277 0V1420M555 0V1420M832 0V1420M1110 0V1420M1387 0V1420M1665 0V1420M1942 0V1420" />
+          </g>
+          <path d="M560 980 L720 430 L1320 360 L1500 760 L1180 1040 Z" fill="none" stroke="#9dbb80" stroke-opacity="0.35" stroke-width="4" />
+        </svg>
+        <div class="sheen"></div>
+      </div>
+
+      <!-- PLANE 2 — scenes -->
+      <div id="scenes">
+
+        <!-- Scene 1 — HOOK -->
+        <section id="sc1" class="scene split clip" data-start="0" data-duration="9.7" data-track-index="0">
+          <div class="copy">
+            <div id="s1-k" class="kicker">Kaduna State · Nigeria</div>
+            <div id="s1-num" class="huge">0</div>
+            <div id="s1-lab" class="huge-label">tree-years kept alive</div>
+            <div id="s1-slam" class="slam">and she was <b>paid nothing.</b></div>
+          </div>
+          <div id="s1-plot" class="plot">
+            <svg viewBox="0 0 720 620" aria-hidden="true">
+              <path d="M0 155H720M0 310H720M0 465H720M180 0V620M360 0V620M540 0V620" stroke="#2a2f25" stroke-width="2" />
+              <path id="s1-fill" d="M150 430 L240 150 L540 120 L510 410 Z" fill="#9dbb80" fill-opacity="0.18" stroke="#f5f6f3" stroke-width="7" stroke-linejoin="round" />
+              <circle cx="150" cy="430" r="17" fill="#9dbb80" stroke="#141612" stroke-width="5" />
+              <circle cx="240" cy="150" r="17" fill="#9dbb80" stroke="#141612" stroke-width="5" />
+              <circle cx="540" cy="120" r="17" fill="#9dbb80" stroke="#141612" stroke-width="5" />
+              <circle cx="510" cy="410" r="17" fill="#9dbb80" stroke="#141612" stroke-width="5" />
+            </svg>
+            <div class="off chip"><span class="dot"></span> 212 Faidherbia trees</div>
+          </div>
+        </section>
+
+        <!-- Scene 2 — THESIS -->
+        <section id="sc2" class="scene center clip" data-start="9.7" data-duration="5.55" data-track-index="0">
+          <div id="s2-k" class="kicker">The whole idea</div>
+          <h2 id="s2-h" style="font-size:116px; max-width:1500px">Money moves on evidence.</h2>
+          <p id="s2-s" class="sub">So Plotline turns her trees into <b>proof.</b></p>
+        </section>
+
+        <!-- Scene 3 — THE CHAIN -->
+        <section id="sc3" class="scene split clip" data-start="15.25" data-duration="7.75" data-track-index="0">
+          <div class="copy">
+            <div class="steps">
+              <span id="s3-st1" class="step">Walk</span>
+              <span id="s3-st2" class="step">Verify</span>
+              <span id="s3-st3" class="step">Issue</span>
+            </div>
+            <h2 id="s3-h">One living tree,<br />made provable.</h2>
+            <div id="s3-off" class="chip" style="margin-top:28px"><span class="dot"></span> walked offline — signed on the phone</div>
+            <div id="s3-serial" class="serial">PL-NG-00000001 · issued</div>
+          </div>
+          <div id="s3-card" class="card">
+            <h3>Verifier review</h3>
+            <svg class="chart" viewBox="0 0 680 150" aria-hidden="true">
+              <polyline id="s3-ndvi" points="10,120 110,104 210,78 310,56 410,44 510,52 610,40 670,44" fill="none" stroke="#476633" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <div style="font-size:30px;color:var(--card-dim);margin-top:4px">NDVI trend · healthy through the season</div>
+            <div id="s3-sig" class="row on"><span class="mark">✓</span><span>Signed against satellite data</span></div>
+          </div>
+        </section>
+
+        <!-- Scene 4 — THE WOW: public trace -->
+        <section id="sc4" class="scene split clip" data-start="23.0" data-duration="3.3" data-track-index="0">
+          <div class="copy">
+            <div id="s4-k" class="kicker">Public registry</div>
+            <h2 id="s4-h">Trace one tonne.<br />End to end.</h2>
+            <div id="s4-badge" class="badge-free"><span class="dot" style="background:var(--green);box-shadow:0 0 14px var(--green)"></span> no login — anyone can check</div>
+          </div>
+          <div id="s4-card" class="card">
+            <h3>Certificate · PL-NG-00000001</h3>
+            <div id="s4-k1" class="kv"><span class="k">Project</span><span class="v">PRJ-0001</span></div>
+            <div id="s4-k2" class="kv"><span class="k">Vintage</span><span class="v">2026</span></div>
+            <div id="s4-k3" class="kv"><span class="k">Verifier signature</span><span class="v">a1f3…9e4b ✓</span></div>
+            <div id="s4-k4" class="kv" style="border-bottom:none"><span class="k">Status</span><span class="v"><span class="statuschip sold">sold · retired</span></span></div>
+          </div>
+        </section>
+
+        <!-- Scene 5 — PAID -->
+        <section id="sc5" class="scene split clip" data-start="26.3" data-duration="2.2" data-track-index="0">
+          <div class="copy">
+            <div id="s5-k" class="kicker">Straight to the farmer</div>
+            <h2 id="s5-h">Paid per tonne.<br />To her phone.</h2>
+          </div>
+          <div id="s5-card" class="card" style="position:relative;overflow:hidden">
+            <div id="s5-dot1" class="gold-dot" style="left:60px;top:40px"></div>
+            <div id="s5-dot2" class="gold-dot" style="left:300px;top:30px"></div>
+            <div id="s5-dot3" class="gold-dot" style="left:540px;top:48px"></div>
+            <h3>Farmer payout</h3>
+            <div class="amount"><span id="s5-amt">₦0</span> <small>of ₦12,000 / credit</small></div>
+            <div class="splitbar">
+              <i style="width:60%;background:var(--green)"></i><i style="width:25%;background:var(--acc)"></i><i style="width:5%;background:var(--blue)"></i><i style="width:10%;background:var(--gold)"></i>
+            </div>
+            <div class="splitlabels"><span>60% farmer</span><span>25% community</span><span>5% verifier</span><span>10% Plotline</span></div>
+            <div id="s5-toast" class="toast">Paid to Amina · split in whole kobo</div>
+          </div>
+        </section>
+
+        <!-- Scene 6 — CLOSE -->
+        <section id="sc6" class="scene center clip" data-start="28.5" data-duration="4.2" data-track-index="0">
+          <div id="s6-logo" class="logo-row">
+            <svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" fill="#38502A" /><path d="M150 340 L210 170 L370 140 L350 330 Z" fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linejoin="round" /><g fill="#8FAF73"><circle cx="150" cy="340" r="26" /><circle cx="210" cy="170" r="26" /><circle cx="370" cy="140" r="26" /><circle cx="350" cy="330" r="26" /></g></svg>
+            <div class="word">Plot<span>line</span></div>
+          </div>
+          <p id="s6-l" class="sub" style="color:var(--ink);font-size:62px">Proven climate work, paid to the farmer.</p>
+          <div id="s6-h" class="honest">issuance &amp; payouts simulated — pending accreditation</div>
+        </section>
+
+      </div>
+
+      <!-- PLANE 3 — foreground glow + atmosphere -->
+      <div id="fg" data-start="0" data-duration="32.7" data-track-index="2">
+        <div id="glow-a" class="orb"></div>
+        <div id="glow-b" class="orb"></div>
+        <div id="glow-c" class="orb"></div>
+        <div class="grain"></div>
+        <div class="vignette"></div>
+      </div>
+
+      <!-- PLANE 4 — captions (synced to the narration lines) -->
+      <div id="cap">
+        <div id="cap1" class="capline clip" data-start="0.5" data-duration="9.0" data-track-index="1">Amina kept 212 trees alive for three years. 636 tree-years of climate work — <b>paid nothing.</b></div>
+        <div id="cap2" class="capline clip" data-start="9.95" data-duration="5.1" data-track-index="1"><b>Money moves on evidence.</b> Plotline turns her trees into proof.</div>
+        <div id="cap3" class="capline clip" data-start="15.5" data-duration="7.3" data-track-index="1">She walks the plot offline. A <b>verifier signs</b> it against satellite data. A <b>credit is issued.</b></div>
+        <div id="cap4" class="capline clip" data-start="23.2" data-duration="3.0" data-track-index="1">Anyone can trace that credit — <b>with no login.</b></div>
+        <div id="cap5" class="capline clip" data-start="26.3" data-duration="2.1" data-track-index="1">And the payment <b>lands on her phone.</b></div>
+        <div id="cap6" class="capline clip" data-start="28.6" data-duration="3.9" data-track-index="1"><b>Proven climate work, paid to the farmer.</b></div>
+      </div>
+
+      <!-- voiceover (ElevenLabs, silence-trimmed) on their own tracks -->
+      <audio id="vo1" data-start="0.35" data-duration="9.273" data-track-index="3" data-volume="1" src="assets/vo/01t.mp3"></audio>
+      <audio id="vo2" data-start="9.95" data-duration="5.224" data-track-index="4" data-volume="1" src="assets/vo/02t.mp3"></audio>
+      <audio id="vo3" data-start="15.5" data-duration="7.367" data-track-index="3" data-volume="1" src="assets/vo/03t.mp3"></audio>
+      <audio id="vo4" data-start="23.2" data-duration="4.911" data-track-index="4" data-volume="1" src="assets/vo/04t.mp3"></audio>
+      <audio id="vo5" data-start="28.75" data-duration="3.762" data-track-index="3" data-volume="1" src="assets/vo/05t.mp3"></audio>
+      <!-- music bed, ducked low under the narration -->
+      <audio id="music" data-start="0" data-duration="32.7" data-track-index="5" data-volume="0.06" data-fade-in="0.6" data-fade-out="2.5" src="assets/music/bed.mp3"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      // springy entrance helpers
+      const inn = (sel, at, y = 26) => tl.fromTo(sel, { opacity: 0, y }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, at);
+      const pop = (sel, at) => tl.fromTo(sel, { opacity: 0, scale: 0.4, transformOrigin: "50% 50%" }, { opacity: 1, scale: 1, duration: 0.42, ease: "back.out(2.4)" }, at);
+      const spring = (sel, at) => tl.fromTo(sel, { opacity: 0, scale: 0.7, y: 20 }, { opacity: 1, scale: 1, y: 0, duration: 0.7, ease: "elastic.out(1,0.55)" }, at);
+      const out = (sel, at) => tl.to(sel, { opacity: 0, duration: 0.3, ease: "power2.in" }, at);
+      function countUp(sel, end, at, dur, fmt) {
+        const el = document.querySelector(sel); const o = { v: 0 };
+        tl.to(o, { v: end, duration: dur, ease: "power2.out", onUpdate: () => { el.textContent = fmt ? fmt(o.v) : Math.round(o.v); } }, at);
+      }
+
+      /* ---- parallax planes across the whole film (3-plane depth) ---- */
+      tl.fromTo("#bg", { scale: 1.04, x: 0, y: 0 }, { scale: 1.18, x: -60, y: -30, duration: 32.7, ease: "none" }, 0);
+      tl.fromTo("#fg", { x: 0, y: 0 }, { x: 40, y: -24, duration: 32.7, ease: "none" }, 0);
+      /* finite, seek-safe glow breathing */
+      tl.fromTo("#glow-a", { opacity: 0.45, scale: 0.92 }, { opacity: 0.85, scale: 1.08, duration: 16.35, ease: "sine.inOut" }, 0);
+      tl.to("#glow-a", { opacity: 0.5, scale: 0.96, duration: 16.35, ease: "sine.inOut" }, 16.35);
+      tl.fromTo("#glow-b", { opacity: 0.4, scale: 1.05 }, { opacity: 0.8, scale: 0.92, duration: 16.35, ease: "sine.inOut" }, 0);
+      tl.to("#glow-b", { opacity: 0.45, scale: 1.04, duration: 16.35, ease: "sine.inOut" }, 16.35);
+      tl.fromTo("#glow-c", { opacity: 0.35 }, { opacity: 0.7, duration: 11, ease: "sine.inOut" }, 5);
+      tl.to("#glow-c", { opacity: 0.4, duration: 14, ease: "sine.inOut" }, 16);
+
+      /* ---- Scene 1 — hook (0.0–9.7) ---- */
+      tl.fromTo("#s1-k", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 0);
+      tl.fromTo("#s1-plot", { opacity: 1, scale: 0.96 }, { scale: 1, duration: 0.9, ease: "power3.out" }, 0);
+      tl.fromTo("#s1-fill", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 1.2);
+      tl.fromTo("#s1-num", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(2)" }, 0.8);
+      countUp("#s1-num", 636, 1.2, 4.0);
+      inn("#s1-lab", 1.4);
+      spring("#s1-slam", 8.1);
+      out("#sc1", 9.4);
+      out("#cap1", 9.3);
+
+      /* ---- Scene 2 — thesis (9.7–15.25) ---- */
+      inn("#s2-k", 9.85);
+      spring("#s2-h", 10.0);
+      inn("#s2-s", 11.7);
+      out("#sc2", 15.0);
+
+      /* ---- Scene 3 — chain (15.25–23.0) ---- */
+      inn("#s3-h", 15.5);
+      tl.fromTo("#s3-card", { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.55, ease: "power3.out" }, 15.6);
+      pop("#s3-st1", 15.9);
+      tl.fromTo("#s3-off", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 16.1);
+      tl.fromTo("#s3-ndvi", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 16.9);
+      pop("#s3-st2", 18.3);
+      spring("#s3-sig", 18.6);
+      pop("#s3-st3", 20.6);
+      spring("#s3-serial", 20.9);
+      out("#sc3", 22.85);
+
+      /* ---- Scene 4 — public trace (23.0–26.3) ---- */
+      inn("#s4-h", 23.2);
+      tl.fromTo("#s4-card", { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 23.3);
+      inn("#s4-k1", 23.6, 14);
+      inn("#s4-k2", 23.85, 14);
+      inn("#s4-k3", 24.1, 14);
+      tl.fromTo("#s4-k4", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 24.2);
+      spring("#s4-badge", 24.45);
+      out("#sc4", 26.1);
+
+      /* ---- Scene 5 — paid (26.3–28.5) ---- */
+      inn("#s5-h", 26.45);
+      tl.fromTo("#s5-card", { opacity: 0, x: 40 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 26.5);
+      tl.fromTo("#s5-dot1", { opacity: 0, y: -40, x: 260 }, { opacity: 1, y: 0, x: 0, duration: 0.45, ease: "power2.in" }, 26.7);
+      tl.fromTo("#s5-dot2", { opacity: 0, y: -40, x: 40 }, { opacity: 1, y: 0, x: 0, duration: 0.45, ease: "power2.in" }, 26.8);
+      tl.fromTo("#s5-dot3", { opacity: 0, y: -40, x: -180 }, { opacity: 1, y: 0, x: 0, duration: 0.45, ease: "power2.in" }, 26.9);
+      tl.to(["#s5-dot1", "#s5-dot2", "#s5-dot3"], { opacity: 0, duration: 0.3 }, 27.35);
+      countUp("#s5-amt", 7200, 26.9, 1.0, (v) => "₦" + Math.round(v).toLocaleString("en-US"));
+      spring("#s5-toast", 27.6);
+      out("#sc5", 28.2);
+
+      /* ---- Scene 6 — close (28.5–32.7) ---- */
+      spring("#s6-logo", 28.7);
+      inn("#s6-l", 29.5);
+      inn("#s6-h", 30.3);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
