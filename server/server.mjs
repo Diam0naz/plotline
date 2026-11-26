@@ -7,6 +7,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { resolve, sep, extname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Ledger } from './ledger.mjs';
+import { AnchorReceipts, verifyAnchors } from './anchors.mjs';
 import { Registry } from './registry.mjs';
 import { verifyEvents } from './chainlog.mjs';
 import { cleanFireEvidence, recentFires, FIRE_DEFAULTS } from './fire.mjs';
@@ -65,6 +66,7 @@ const dbName = (url) => {
 export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date(), adminToken = process.env.ADMIN_TOKEN || randomBytes(12).toString('hex'), fireCheck = recentFires, cache = null, sessionTtlMs = 12 * 3600_000 } = {}) {
   mkdirSync(dataDir, { recursive: true });
   const ledger = new Ledger(join(dataDir, 'ledger.jsonl'));
+  const anchors = new AnchorReceipts(join(dataDir, 'anchors.jsonl'));
   // Approved verifiers (id -> public key). Only an operator can add one.
   const verifiersFile = join(dataDir, 'verifiers.json');
   const verifiersAccredFile = join(dataDir, 'verifiers-accred.json');
@@ -237,6 +239,21 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     if (path === '/api/ledger' && req.method === 'GET') {
       const from = Math.max(1, parseInt(new URL(req.url, 'http://x').searchParams.get('from') || '1', 10) || 1);
       return send(res, 200, { head: ledger.head(), entries: ledger.list(from) });
+    }
+
+    // Public proof-of-immutability: the chain is internally sound AND still carries
+    // every head that was anchored externally. No auth — anyone can audit it.
+    if (path === '/api/anchor/verify' && req.method === 'GET') {
+      const chain = ledger.verify();
+      const av = verifyAnchors(ledger.entries, anchors.list());
+      return send(res, 200, {
+        head: ledger.head(),
+        chain: chain.ok ? { ok: true, length: chain.length } : { ok: false, at: chain.at, reason: chain.reason },
+        anchorsIntact: av.intact,
+        lastAnchored: anchors.last(),
+        lastLiveAnchored: anchors.lastLive(),
+        anchors: av.checks,
+      });
     }
 
     const m = path.match(/^\/api\/anchor\/([^/]+)$/);
@@ -675,7 +692,16 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const result = await publishHead(ledger.head(), {
         dryRun: opts.dryRun !== false && !process.env.SOLANA_RPC_URL, // default dry-run unless RPC is configured
       });
-      return send(res, result.ok ? 200 : 502, result);
+      // Remember what we anchored, so /api/anchor/verify can later prove the live
+      // chain still carries this exact head. An empty head (seq 0) is not recorded.
+      const recorded = result.ok && result.head.seq > 0;
+      if (recorded) {
+        anchors.record({
+          seq: result.head.seq, hash: result.head.hash, mode: result.mode,
+          ts: result.ts, memo: result.memo, signature: result.signature, explorer: result.explorer,
+        });
+      }
+      return send(res, result.ok ? 200 : 502, { ...result, recorded });
     }
 
     return send(res, 404, { error: 'unknown endpoint' });

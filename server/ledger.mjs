@@ -49,6 +49,11 @@ export class Ledger {
     return last ? { seq: last.seq, hash: last.hash } : { seq: 0, hash: ZERO };
   }
 
+  // Re-verify the whole chain on demand (the constructor already does this at load).
+  verify() {
+    return verifyChain(this.entries);
+  }
+
   find(root) {
     return this.byRoot.get(root) || null;
   }
