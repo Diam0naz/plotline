@@ -11,7 +11,9 @@
     "start": "node server/server.mjs",
     "dev": "node --watch --watch-preserve-output server/server.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint .",
+    "voiceover": "node --env-file=.env.local scripts/voiceover.mjs"
   },
   "dependencies": {
     "@neon/config": "^1.11.3",
@@ -20,5 +22,11 @@
     "pg": "^8.23.1",
     "redis": "^6.3.1",
     "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.78.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0"
   }
 }

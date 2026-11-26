@@ -101,7 +101,7 @@ async function bootLoad() {
     return;
   }
   await bootStorage();
-  let raw = null;
+  let raw;
   try { raw = await storeRef.getJson(); } catch { raw = null; }
   if (raw) {
     try { applyState(raw); }
