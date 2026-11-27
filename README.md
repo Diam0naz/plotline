@@ -219,12 +219,13 @@ Setup: import the repo at `vercel.com/new`. No paths or framework questions — 
 ## Next steps
 
 - Replace the placeholder tree-year factor with measured biomass and a sampled baseline.
-- Give sold credits a buyer dispute path (reversal already consumes buffer for unsold/held units).
 - Let a farmer back up and recover the device signing key so clearing site data doesn't lose their identity.
 - Replace the sandbox payout with a licensed mobile-money partner.
 - Move the species and conversion factors to a registered methodology.
 
 Done since v0.1: the registry log head can be published and publicly verified against Solana
 (`/api/anchor/verify`); verifier accreditation (standard, scope, expiry, revocation) is now a logged,
-replayable registry event rather than a hand-maintained side file, so it rides the same tamper-evident,
+replayable registry event rather than a hand-maintained side file; and a buyer **dispute** path lets the
+buffer pool cover affected sold credits (`/api/registry/dispute` → `/dispute/resolve`, resolved `covered`
+or `rejected`) so the buyer stays whole and the books stay balanced — all on the same tamper-evident,
 anchorable chain as issuances.

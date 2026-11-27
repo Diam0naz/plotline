@@ -754,6 +754,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
         })),
       })));
     if (get && path === '/api/registry/retirements') return send(res, 200, await cached('retirements', 3, () => ({ retirements: registry.retirements() })));
+    if (get && path === '/api/registry/disputes') return send(res, 200, await cached('disputes', 3, () => ({ disputes: registry.disputesList() })));
     m = path.match(/^\/api\/registry\/serial\/(PL-NG-\d{8})$/);
     if (get && m) {
       const info = registry.serialInfo(m[1]);
@@ -967,6 +968,20 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const result = registry.reverse(data ?? {});
       if (result.ok) await cache?.invalidate();
       return answer(res, result, 201);
+    }
+    if (post && path === '/api/registry/dispute') {
+      const data = await jsonBody(req, res, 2048);
+      if (data === undefined) return;
+      const result = registry.openDispute(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 201);
+    }
+    if (post && path === '/api/registry/dispute/resolve') {
+      const data = await jsonBody(req, res, 2048);
+      if (data === undefined) return;
+      const result = registry.resolveDispute(data ?? {});
+      if (result.ok) await cache?.invalidate();
+      return answer(res, result, 200);
     }
     if (post && path === '/api/registry/authorize') {
       const data = await jsonBody(req, res, 2048);
