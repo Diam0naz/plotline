@@ -121,3 +121,37 @@ test('practice logs keep only known practices in a fixed order', () => {
   assert.deepEqual(C.cleanPractices(null), []);
   assert.equal(C.practiceSummary(['organic_fertiliser', 'residue_kept']), 'Crop residue left on the field, Organic fertiliser or manure used');
 });
+
+test('key backup: a passphrase-encrypted export round-trips and still signs', async () => {
+  const keys = await C.generateKeys();
+  const backup = await C.encryptKeypair(keys, 'correct horse battery staple');
+
+  // the backup never carries the private key in the clear
+  const blob = JSON.stringify(backup);
+  assert.ok(!blob.includes(keys.priv.d), 'private scalar must not appear in the backup');
+  assert.equal(backup.version, C.KEY_BACKUP_VERSION);
+  assert.equal(backup.fp, await C.fingerprint(keys.pub), 'backup names the identity it belongs to');
+
+  const restored = await C.decryptKeypair(backup, 'correct horse battery staple');
+  assert.deepEqual(restored, keys, 'the exact key pair comes back');
+
+  // the restored key can still produce a valid signature
+  const { hash, sig } = await C.signBody({ hello: 'world' }, restored.priv);
+  assert.equal(await C.verifySig(hash, sig, restored.pub), true);
+});
+
+test('key backup: wrong passphrase, tampered ciphertext and bad format are all rejected', async () => {
+  const keys = await C.generateKeys();
+  const backup = await C.encryptKeypair(keys, 'right-passphrase');
+
+  await assert.rejects(C.decryptKeypair(backup, 'wrong-passphrase'), /Wrong passphrase or corrupted backup/);
+
+  const flipped = backup.ciphertext[0] === 'A' ? 'B' : 'A';
+  const tampered = { ...backup, ciphertext: flipped + backup.ciphertext.slice(1) };
+  await assert.rejects(C.decryptKeypair(tampered, 'right-passphrase'), /Wrong passphrase or corrupted backup/);
+
+  await assert.rejects(C.decryptKeypair({ ...backup, version: 99 }, 'right-passphrase'), /Unrecognised backup format/);
+  await assert.rejects(C.decryptKeypair(null, 'right-passphrase'), /Unrecognised backup format/);
+  await assert.rejects(C.encryptKeypair(keys, ''), /Passphrase must not be empty/);
+  await assert.rejects(C.encryptKeypair({ pub: null }, 'x'), /No key pair to export/);
+});

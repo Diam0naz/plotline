@@ -203,7 +203,7 @@ Setup: import the repo at `vercel.com/new`. No paths or framework questions — 
 - **Self-reported survival counts are sampled, not measured.** The registry catches inconsistent or implausible counts and double registration, but an honest-looking false count still needs the verifier's judgment or a site visit. Random re-inspection would be a further control.
 - **Overlap detection compares registered plots by grid sampling.** It will not catch land registered under a slightly different boundary beyond the thresholds, or boundaries drawn wrongly on purpose.
 - **GNSS from a browser is a plausibility check, not proof.** Browsers expose position and accuracy only, not raw satellite data or a mock-location flag. The quality score checks accuracy, impossible jumps, clock drift, round coordinates and the farm boundary. A determined spoofer can defeat it. A native Android build with raw GNSS measurements would be stronger.
-- **The ledger is tamper-evident, and becomes immutable only when its head is published somewhere the operator cannot edit** (a blockchain memo, a public post). That step is not built. Anchoring the head on Solana is the natural next one.
+- **The ledger is tamper-evident, and becomes immutable only when its head is published somewhere the operator cannot edit** (a blockchain memo, a public post). The publishing path is now built: `POST /api/anchor/publish` (operator-only) publishes the head to a Solana memo and records a receipt, and the public `GET /api/anchor/verify` proves the live chain still carries every head that was anchored. It runs in dry-run (no transaction submitted) until `SOLANA_RPC_URL` and `SOLANA_PAYER_KEYPAIR_JSON` are configured, so until the operator runs a live publish on a real RPC the head is recorded but not yet externally immutable.
 - **The anchor endpoint is unauthenticated** (limited to 30 writes/min per IP). Production needs authentication and quotas.
 - **The signing key lives in the browser's local storage.** Clearing site data loses it; there is no key backup yet. Exports contain the public key only.
 - **Reversals only reach unsold credits.** Once a credit is sold or retired, the registry refuses to cancel it rather than clawing it back; a real system needs buffer retirement, replacement units and a dispute process. There are also no monitoring-period renewals: the vintage is the year the submission was received, not a re-measured period.
@@ -219,8 +219,14 @@ Setup: import the repo at `vercel.com/new`. No paths or framework questions — 
 ## Next steps
 
 - Replace the placeholder tree-year factor with measured biomass and a sampled baseline.
-- Let a reversal consume buffer credits when sold credits are affected, with replacement and a dispute path.
-- Add accredited-verifier records (standard, scope, expiry) instead of a hand-maintained key list.
-- Publish the registry log head on Solana so history cannot be rewritten quietly.
 - Replace the sandbox payout with a licensed mobile-money partner.
 - Move the species and conversion factors to a registered methodology.
+
+Done since v0.1: the registry log head can be published and publicly verified against Solana
+(`/api/anchor/verify`); verifier accreditation (standard, scope, expiry, revocation) is now a logged,
+replayable registry event rather than a hand-maintained side file; a buyer **dispute** path lets the
+buffer pool cover affected sold credits (`/api/registry/dispute` → `/dispute/resolve`, resolved `covered`
+or `rejected`) so the buyer stays whole and the books stay balanced — all on the same tamper-evident,
+anchorable chain as issuances; and a farmer can **back up and restore the device signing key** as a
+passphrase-encrypted file (PBKDF2-SHA-256 + AES-GCM-256), so clearing site data no longer loses their
+identity — restore runs from the login screen before any identity exists on a fresh phone.

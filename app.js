@@ -101,7 +101,7 @@ async function bootLoad() {
     return;
   }
   await bootStorage();
-  let raw = null;
+  let raw;
   try { raw = await storeRef.getJson(); } catch { raw = null; }
   if (raw) {
     try { applyState(raw); }
@@ -2578,7 +2578,6 @@ async function continueInit() {
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-const KEY_BACKUP_VERSION = 1;
 const PBKDF2_ITERATIONS = 310_000;
 
 /**
@@ -2611,20 +2610,9 @@ const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
  * @returns {Promise<object>} - JSON-serialisable backup object
  */
 async function exportEncryptedKey(passphrase) {
-  if (!S.keys) throw new Error('No key pair to export');
-  if (!passphrase || passphrase.length < 1) throw new Error('Passphrase must not be empty');
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const wrapKey = await deriveWrapKey(passphrase, salt);
-  const plaintext = new TextEncoder().encode(JSON.stringify(S.keys));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, wrapKey, plaintext);
-  return {
-    version: KEY_BACKUP_VERSION,
-    fp: S.fp,
-    salt: toHex(salt),
-    iv: toHex(iv),
-    ciphertext: toB64(ciphertext),
-  };
+  // The backup format and crypto live in core.js (shared + unit-tested); this just
+  // hands it the current device key pair.
+  return C.encryptKeypair(S.keys, passphrase);
 }
 
 /**
@@ -2635,19 +2623,7 @@ async function exportEncryptedKey(passphrase) {
  * @returns {Promise<{ pub: object, priv: object }>} - decrypted key pair
  */
 async function importEncryptedKey(backup, passphrase) {
-  if (!backup || backup.version !== KEY_BACKUP_VERSION) throw new Error('Unrecognised backup format');
-  const salt = fromHex(backup.salt);
-  const iv = fromHex(backup.iv);
-  const wrapKey = await deriveWrapKey(passphrase, salt);
-  let plaintext;
-  try {
-    plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, wrapKey, fromB64(backup.ciphertext));
-  } catch {
-    throw new Error('Wrong passphrase or corrupted backup');
-  }
-  const keys = JSON.parse(new TextDecoder().decode(plaintext));
-  if (!keys?.pub?.x || !keys?.priv?.d) throw new Error('Backup does not contain a valid key pair');
-  return keys;
+  return C.decryptKeypair(backup, passphrase);
 }
 
 // ── UI wiring for key backup ─────────────────────────────────────────────────

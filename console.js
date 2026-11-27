@@ -687,14 +687,36 @@ async function renderLog() {
     if (prev && e.prev !== prev) { broken = true; break; }
     prev = e.hash;
   }
-  if (check) check.innerHTML = broken
-    ? '<div class="alert-box red">⚠ Chain integrity check FAILED — an entry has been modified.</div>'
-    : `<div class="alert-box green">✓ Chain intact · ${(r.entries||[]).length} entries · head ${esc(r.head?.hash?.slice(0,12)||'—')}</div>`;
+  if (check) {
+    const chainHtml = broken
+      ? '<div class="alert-box red">⚠ Chain integrity check FAILED — an entry has been modified.</div>'
+      : `<div class="alert-box green">✓ Chain intact · ${(r.entries||[]).length} entries · head ${esc(r.head?.hash?.slice(0,12)||'—')}</div>`;
+    check.innerHTML = chainHtml + await anchorStatusHtml();
+  }
   box.innerHTML = (r.entries||[]).slice().reverse().map(e=>`
     <div class="item" style="cursor:default">
       <div class="lead"><strong>#${e.seq} · ${esc(e.root?.slice(0,12))}…</strong><span class="sub">${e.count} records · ${esc(when(e.ts))}</span></div>
       <span class="mono text-sm">${esc(e.hash?.slice(0,10))}…</span>
     </div>`).join('');
+}
+
+// External-anchoring status: has the ledger head been published somewhere the
+// operator cannot edit, and does the live chain still carry every anchored head?
+async function anchorStatusHtml() {
+  const v = await fetch('api/anchor/verify').then(r => r.json()).catch(() => null);
+  if (!v) return '';
+  const la = v.lastAnchored;
+  if (!la) {
+    return '<div class="alert-box" style="margin-top:var(--s2)">○ Not yet anchored externally — publish the head to make the history tamper-proof.</div>';
+  }
+  if (!v.anchorsIntact) {
+    return '<div class="alert-box red" style="margin-top:var(--s2)">⚠ A previously anchored head is missing — history may have been rewound.</div>';
+  }
+  const live = v.lastLiveAnchored;
+  const link = live && /^https:\/\//.test(live.explorer || '')
+    ? ` · <a href="${esc(live.explorer)}" target="_blank" rel="noopener">view on-chain ↗</a>` : '';
+  const tag = live ? 'live on Solana' : 'dry-run — not yet on-chain';
+  return `<div class="alert-box green" style="margin-top:var(--s2)">⚓ Anchored: head #${la.seq} · ${esc(tag)} · ${esc(when(la.ts))}${link}</div>`;
 }
 
 /* ══════════════════════════════════════════════

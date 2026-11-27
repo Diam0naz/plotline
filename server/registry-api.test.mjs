@@ -193,3 +193,41 @@ test('verifier list carries real key fingerprints, accreditation survives a rest
     await new Promise((r) => again.server.close(r));
   }
 });
+
+test('accreditation over HTTP: accredit is a chain-log event, revoke blocks a decision', async () => {
+  const a = await boot();
+  try {
+    const verifier = await makeFarmer();
+    await a.call('/api/registry/verifiers', { method: 'POST', token: 'secret-token', body: { id: 'ver-1', pub: verifier.pub } });
+
+    // accreditation is operator-only
+    assert.equal((await a.call('/api/registry/verifiers/accredit', { method: 'POST', body: { id: 'ver-1', standard: 'ISO 14065' } })).status, 401);
+    assert.equal((await a.call('/api/registry/verifiers/accredit', { method: 'POST', token: 'secret-token', body: { id: 'ver-1', standard: 'ISO 14065', scope: 'full' } })).status, 200);
+
+    // it was recorded as a registry chain event — not an off-chain side file
+    const logText = readFileSync(join(a.dir, 'registry.jsonl'), 'utf8');
+    assert.ok(logText.includes('verifier_accredited'), 'accreditation rides the hash-chained log');
+
+    // a submission a verifier could decide today...
+    const farmer = await makeFarmer();
+    const sub = await makeSubmission(farmer, { polygon: square(9.9, 8.9, 300), trees: 6000, sample: 60, alive: 51 });
+    const s = await a.call('/api/submit', { method: 'POST', body: sub });
+    assert.equal(s.status, 201);
+
+    // ...is blocked once accreditation is revoked (operator-only, needs a reason)
+    assert.equal((await a.call('/api/registry/verifiers/revoke', { method: 'POST', token: 'secret-token', body: { id: 'ver-1', reason: 'bad' } })).status, 400);
+    assert.equal((await a.call('/api/registry/verifiers/revoke', { method: 'POST', token: 'secret-token', body: { id: 'ver-1', reason: 'accreditation suspended pending audit' } })).status, 200);
+    assert.ok(readFileSync(join(a.dir, 'registry.jsonl'), 'utf8').includes('verifier_revoked'));
+
+    const d = await a.call('/api/registry/decide', { method: 'POST', body: await signDecision(verifier, { subId: s.json.subId, decision: 'approve', note: 'Looks fine' }) });
+    assert.equal(d.status, 400);
+    assert.equal(d.json.error, 'verifier_accreditation_revoked');
+
+    // revoking a verifier with no live accreditation is a 404
+    assert.equal((await a.call('/api/registry/verifiers/revoke', { method: 'POST', token: 'secret-token', body: { id: 'ver-1', reason: 'already revoked once' } })).status, 404);
+
+    // the public verifier list shows the revocation
+    const list = (await a.call('/api/registry/verifiers', { token: 'secret-token' })).json.verifiers.find((x) => x.id === 'ver-1');
+    assert.equal(list.accreditation.revoked, true);
+  } finally { await a.close(); }
+});

@@ -59,6 +59,7 @@ export class Registry {
     this.pools = { community: 0, verifier: 0, platform: 0 };
     this.nextSerial = 1;
     this.renewals = new Map(); // renewalId -> renewal record
+    this.disputes = new Map(); // disputeId -> buyer dispute over sold credits
   }
 
   // ---------- replay: the only place state changes ----------
@@ -100,15 +101,58 @@ export class Registry {
       case 'reversed': {
         const iss = this.issuances.find((i) => i.id === d.issuanceId);
         if (iss) {
-          iss.saleableTo = Math.max(iss.next - 1, (iss.saleableTo ?? iss.to) - d.units);
+          // Only the general (non-buffer) serials shrink the saleable range; buffer serials
+          // retired by the reversal are tracked separately so reconcile's buffer count
+          // (bufferUnits − bufferReversed) doesn't double-count them against `reversed`.
+          const bufRetired = d.bufferUnitsRetired ?? 0;
+          iss.saleableTo = Math.max(iss.next - 1, (iss.saleableTo ?? iss.to) - (d.units - bufRetired));
           iss.reversed = (iss.reversed ?? 0) + d.units;
+          iss.bufferReversed = (iss.bufferReversed ?? 0) + bufRetired;
           iss.cancellations = [...(iss.cancellations ?? []), { from: d.from, to: d.to, reason: d.reason, at: e.ts }];
+        }
+        break;
+      }
+      case 'dispute_opened':
+        this.disputes.set(d.disputeId, { ...d, status: 'open', openedAt: e.ts });
+        break;
+      case 'dispute_resolved': {
+        const dp = this.disputes.get(d.disputeId);
+        if (dp) { dp.status = d.resolution; dp.note = d.note ?? null; dp.resolvedAt = e.ts; dp.cover = d.cover ?? null; }
+        const order = this.orders.get(d.orderId);
+        if (d.resolution === 'covered') {
+          // The buffer pool absorbs the loss: buffer serials are retired as cover, so the
+          // buyer's claim stays whole while the affected credits are permanently withdrawn.
+          for (const c of d.cover ?? []) {
+            const iss = this.issuances.find((i) => i.id === c.issuanceId);
+            if (!iss) continue;
+            iss.bufferReversed = (iss.bufferReversed ?? 0) + c.units;
+            iss.reversed = (iss.reversed ?? 0) + c.units;
+            iss.cancellations = [...(iss.cancellations ?? []), { from: c.from, to: c.to, reason: `buffer retired to cover dispute ${d.disputeId}`, at: e.ts, dispute: d.disputeId }];
+          }
+          if (order) order.dispute = { disputeId: d.disputeId, status: 'covered', units: d.units, cover: d.cover ?? [], at: e.ts };
+        } else if (order) {
+          order.dispute = { disputeId: d.disputeId, status: d.resolution, units: d.units, at: e.ts };
         }
         break;
       }
       case 'authorized': {
         const iss = this.issuances.find((i) => i.id === d.issuanceId);
         if (iss) iss.authorization = { scope: d.scope, authority: d.authority, reference: d.reference, correspondingAdjustment: d.correspondingAdjustment, at: e.ts };
+        break;
+      }
+      case 'verifier_accredited':
+        // Accreditation is now a logged, replayable event, so the history of who was
+        // accredited (and when, under what standard/scope) rides the same hash-chained,
+        // anchorable ledger as everything else — not a hand-maintained side file.
+        this.verifiersAccred.set(d.id, {
+          standard: d.standard, scope: d.scope,
+          methodologyId: d.methodologyId ?? null, expiresAt: d.expiresAt ?? null,
+          accreditedAt: e.ts,
+        });
+        break;
+      case 'verifier_revoked': {
+        const a = this.verifiersAccred.get(d.id) ?? {};
+        this.verifiersAccred.set(d.id, { ...a, revoked: true, revokedReason: d.reason ?? null, revokedAt: e.ts });
         break;
       }
       case 'sold': {
@@ -286,7 +330,12 @@ export class Registry {
     // If the operator has recorded accreditation for this verifier, check that
     // it covers the methodology and has not expired.
     const accred = this.verifiersAccred?.get(verifierId);
-    if (accred) {
+    if (accred?.revoked) {
+      return fail('verifier_accreditation_revoked',
+        `Verifier ${verifierId} accreditation was revoked${accred.revokedAt ? ` at ${accred.revokedAt}` : ''}` +
+        `${accred.revokedReason ? ` (${accred.revokedReason})` : ''}. Re-accredit the verifier before accepting decisions.`);
+    }
+    if (accred && !accred.revoked) {
       // Expiry check
       if (accred.expiresAt && new Date(accred.expiresAt) < this.now()) {
         return fail('verifier_accreditation_expired',
@@ -333,6 +382,37 @@ export class Registry {
       return { ok: true, status: 'approved', issuance };
     }
     return { ok: true, status: 'rejected' };
+  }
+
+  // ---------- 2b. verifier accreditation: logged, replayable, anchorable ----------
+  // Replaces the hand-maintained side file. accredit/revoke are chain-log events, so the
+  // registry's accreditation history is as tamper-evident (and on-chain anchorable) as its issuances.
+  accreditVerifier({ id, standard, scope = 'full', methodologyId = null, expiresAt = null }) {
+    if (!/^[a-z0-9-]{2,32}$/.test(id ?? '')) return fail('bad_verifier_id', 'send a verifier id (a-z, 0-9, dash; 2-32 chars)');
+    const s = String(standard ?? '').trim();
+    if (s.length < 2 || s.length > 80) return fail('bad_standard', 'send a standard or scheme name (2-80 characters)');
+    if (!['full', 'validation-only', 'review-only'].includes(scope)) {
+      return fail('bad_scope', 'scope must be full, validation-only or review-only');
+    }
+    if (methodologyId && !methodologyById(methodologyId)) return fail('unknown_methodology', `no methodology ${methodologyId}`);
+    const exp = expiresAt ? (Number.isFinite(Date.parse(expiresAt)) ? new Date(expiresAt).toISOString() : null) : null;
+    if (expiresAt && !exp) return fail('bad_expiry', 'expiresAt must be a valid date');
+    this.emit('verifier_accredited', { id, standard: s, scope, methodologyId: methodologyId ?? null, expiresAt: exp });
+    return { ok: true, id, accreditation: this.verifiersAccred.get(id) };
+  }
+
+  revokeVerifier({ id, reason }) {
+    const a = this.verifiersAccred.get(id);
+    if (!a || a.revoked) return fail('no_active_accreditation', 'no active accreditation on record for this verifier');
+    const text = String(reason ?? '').trim();
+    if (text.length < 5 || text.length > 300) return fail('bad_reason', 'give a reason (5-300 characters)');
+    this.emit('verifier_revoked', { id, reason: text });
+    return { ok: true, id, accreditation: this.verifiersAccred.get(id) };
+  }
+
+  // Current accreditation view for the audit/verify surfaces.
+  accreditationList() {
+    return [...this.verifiersAccred.entries()].map(([id, a]) => ({ id, ...a }));
   }
 
   // ---------- 3. issuance: unique serial range, once per approved submission ----------
@@ -446,15 +526,13 @@ export class Registry {
 
     const from = iss.from ?? 1;
     const to = iss.to ?? from;
-    const total = to - from + 1;
     const bufUnits = iss.bufferUnits ?? 0;
-    const currentReversed = iss.reversed ?? 0;
     // Serials that have been sold/transferred out of this issuance.
     const soldUnits = (iss.next ?? from) - from;
-    // Unsold outside the buffer that we can cancel directly.
-    const unsoldOutside = Math.max(0, total - bufUnits - soldUnits - currentReversed);
-    // Buffer serials still available (not already used in a prior reversal).
-    const bufferAvailable = Math.max(0, bufUnits - Math.max(0, currentReversed - unsoldOutside));
+    // Unsold general serials still on the market (saleable, not yet sold).
+    const unsoldOutside = Math.max(0, (iss.saleableTo ?? to) - (iss.next ?? from) + 1);
+    // Buffer serials not yet retired (by a prior reversal or a dispute cover).
+    const bufferAvailable = Math.max(0, bufUnits - (iss.bufferReversed ?? 0));
 
     const requested = units === undefined ? unsoldOutside + bufferAvailable : Number(units);
     if (!Number.isInteger(requested) || requested < 1) {
@@ -480,9 +558,9 @@ export class Registry {
     // Serial ranges: general unsold start at iss.from + soldUnits.
     const gFrom = from + soldUnits;
     const gTo = gFrom + generalTake - 1;
-    // Buffer serials come after the general range.
+    // Buffer serials come after the general range, taken from where the last retirement left off.
     const bufStart = iss.bufferFrom ?? (to - bufUnits + 1);
-    const bFrom = bufStart + Math.max(0, currentReversed - unsoldOutside);
+    const bFrom = bufStart + (iss.bufferReversed ?? 0);
     const bTo = bFrom + bufTake - 1;
 
     const rFrom = generalTake > 0 ? gFrom : bFrom;
@@ -513,6 +591,77 @@ export class Registry {
         bufferUnitsRetired: bufTake,
       },
     };
+  }
+
+  // ---------- 4d. buyer disputes: cover affected sold credits from the buffer pool ----------
+  // A buyer claims some of their sold credits are affected (e.g. the plot was later reversed).
+  // Resolving "covered" retires buffer serials as cover — the buyer's claim stays whole and the
+  // affected credits are permanently withdrawn, mirroring how a real buffer/insurance pool works.
+  openDispute({ orderId, units, reason, evidence = null }) {
+    const order = this.orders.get(orderId);
+    if (!order) return fail('unknown_order', 'No such order');
+    const text = String(reason ?? '').trim();
+    if (text.length < 5 || text.length > 300) return fail('bad_reason', 'Give a reason (5-300 characters)');
+    if ([...this.disputes.values()].some((x) => x.orderId === orderId && x.status === 'open')) {
+      return fail('dispute_already_open', 'This order already has an open dispute');
+    }
+    const n = units === undefined ? order.units : Number(units);
+    if (!Number.isInteger(n) || n < 1 || n > order.units) {
+      return fail('bad_units', `units must be a whole number between 1 and ${order.units}`);
+    }
+    const disputeId = `DSP-${String(this.disputes.size + 1).padStart(4, '0')}`;
+    this.emit('dispute_opened', { disputeId, orderId, units: n, reason: text, evidence: evidence ? String(evidence).slice(0, 200) : null });
+    return { ok: true, disputeId, dispute: this.disputes.get(disputeId) };
+  }
+
+  resolveDispute({ disputeId, resolution, note }) {
+    const dp = this.disputes.get(disputeId);
+    if (!dp) return fail('unknown_dispute', 'No such dispute');
+    if (dp.status !== 'open') return fail('dispute_not_open', `Dispute is already ${dp.status}`);
+    if (!['covered', 'rejected'].includes(resolution)) return fail('bad_resolution', 'resolution must be covered or rejected');
+    const text = String(note ?? '').trim();
+
+    if (resolution === 'rejected') {
+      if (text.length < 5 || text.length > 300) return fail('note_required', 'Rejecting a dispute needs a note (5-300 characters)');
+      this.emit('dispute_resolved', { disputeId, orderId: dp.orderId, resolution: 'rejected', units: dp.units, note: text });
+      return { ok: true, disputeId, resolution: 'rejected' };
+    }
+
+    // Covered: retire buffer serials from the issuances backing this order, up to dp.units.
+    const order = this.orders.get(dp.orderId);
+    const planned = new Map(); // issuanceId -> units already planned this resolution
+    const cover = [];
+    let need = dp.units;
+    for (const lot of order.lots) {
+      if (need === 0) break;
+      const iss = this.issuances.find((i) => i.id === lot.issuanceId);
+      if (!iss?.bufferFrom) continue;
+      const already = (iss.bufferReversed ?? 0) + (planned.get(iss.id) ?? 0);
+      const avail = Math.max(0, (iss.bufferUnits ?? 0) - already);
+      const take = Math.min(need, avail);
+      if (take < 1) continue;
+      const bFrom = iss.bufferFrom + already;
+      const bTo = bFrom + take - 1;
+      cover.push({ issuanceId: iss.id, units: take, from: bFrom, to: bTo, serialFrom: serial(bFrom), serialTo: serial(bTo) });
+      planned.set(iss.id, (planned.get(iss.id) ?? 0) + take);
+      need -= take;
+    }
+    if (need > 0) {
+      return fail('insufficient_buffer',
+        `Only ${dp.units - need} of ${dp.units} unit(s) can be covered from the buffer of this order's issuances. ` +
+        'A larger loss needs a cross-issuance buffer or an off-registry settlement.');
+    }
+    if (text.length > 300) return fail('bad_note', 'note must be at most 300 characters');
+    this.emit('dispute_resolved', { disputeId, orderId: dp.orderId, resolution: 'covered', units: dp.units, note: text || null, cover });
+    return { ok: true, disputeId, resolution: 'covered', cover };
+  }
+
+  disputesList() {
+    return [...this.disputes.values()].map((d) => ({
+      disputeId: d.disputeId, orderId: d.orderId, units: d.units, reason: d.reason,
+      status: d.status, openedAt: d.openedAt, resolvedAt: d.resolvedAt ?? null,
+      note: d.note ?? null, cover: d.cover ?? null,
+    }));
   }
 
   // ---------- 4c. Article 6: who may claim these units, and are they adjusted? ----------
@@ -669,7 +818,7 @@ export class Registry {
       issuanceId: iss.id, projectId: iss.projectId ?? null, vintage: iss.vintage ?? null,
       methodology: iss.methodology ?? null, baselineId: iss.baselineId ?? null, farmName: iss.farmName,
       buffer: inBuffer, cancellation: cancellation ? { reason: cancellation.reason, at: cancellation.at } : null,
-      sale: order ? { orderId: order.orderId, retired: order.retired ?? null } : null,
+      sale: order ? { orderId: order.orderId, retired: order.retired ?? null, dispute: order.dispute ?? null } : null,
       authorization: iss.authorization ?? null,
     };
   }
@@ -688,7 +837,7 @@ export class Registry {
 
   // ---------- views ----------
   publicOrder(o) {
-    return { orderId: o.orderId, buyer: o.buyer, units: o.units, totalKobo: o.totalKobo, split: o.split, serialFrom: o.serialFrom, serialTo: o.serialTo, soldAt: o.soldAt, retired: o.retired };
+    return { orderId: o.orderId, buyer: o.buyer, units: o.units, totalKobo: o.totalKobo, split: o.split, serialFrom: o.serialFrom, serialTo: o.serialTo, soldAt: o.soldAt, retired: o.retired, dispute: o.dispute ?? null };
   }
 
   publicSub(s) {
@@ -719,7 +868,7 @@ export class Registry {
   market() {
     const lots = this.issuances.map((i) => ({
       id: i.id, farmName: i.farmName, units: i.units, remaining: Math.max(0, (i.saleableTo ?? i.to) - i.next + 1),
-      bufferUnits: i.bufferUnits ?? 0, reversedUnits: i.reversed ?? 0, projectId: i.projectId ?? null, vintage: i.vintage ?? null,
+      bufferUnits: Math.max(0, (i.bufferUnits ?? 0) - (i.bufferReversed ?? 0)), reversedUnits: i.reversed ?? 0, projectId: i.projectId ?? null, vintage: i.vintage ?? null,
       serialFrom: i.serialFrom, serialTo: i.serialTo,
       methodology: i.methodology ?? M.id, methodologyVersion: i.methodologyVersion ?? null,
       authorization: i.authorization ?? null,
@@ -742,7 +891,7 @@ export class Registry {
     const accounted = paid + held + community + verifier + platform;
     const issued = this.issuances.reduce((a, i) => a + i.units, 0);
     const sold = this.issuances.reduce((a, i) => a + (i.next - i.from), 0);
-    const buffered = this.issuances.reduce((a, i) => a + (i.bufferUnits ?? 0), 0);
+    const buffered = this.issuances.reduce((a, i) => a + Math.max(0, (i.bufferUnits ?? 0) - (i.bufferReversed ?? 0)), 0);
     const reversed = this.issuances.reduce((a, i) => a + (i.reversed ?? 0), 0);
     const available = this.available();
     const serialsOk = this.issuances.every((x, i, arr) => (i === 0 ? x.from === 1 : x.from === arr[i - 1].to + 1));

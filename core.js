@@ -264,6 +264,46 @@ export async function verifySig(hash, sig, pubJwk) {
   }
 }
 
+// ---------- passphrase-encrypted backup of the device signing key ----------
+// Lets a farmer carry their identity to a new phone. The key pair is wrapped with a
+// 256-bit AES-GCM key derived from a passphrase (PBKDF2-SHA-256). Pure self-custody:
+// nothing here leaves the device and the operator never holds the key.
+export const KEY_BACKUP_VERSION = 1;
+const KEY_BACKUP_ITERATIONS = 310_000;
+const unhex = (h) => Uint8Array.from(h.match(/.{2}/g).map((b) => parseInt(b, 16)));
+
+async function deriveWrapKey(passphrase, salt) {
+  const base = await subtle().importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  return subtle().deriveKey(
+    { name: 'PBKDF2', salt, iterations: KEY_BACKUP_ITERATIONS, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'],
+  );
+}
+
+export async function encryptKeypair(keys, passphrase) {
+  if (!keys?.pub || !keys?.priv) throw new Error('No key pair to export');
+  if (!passphrase) throw new Error('Passphrase must not be empty');
+  const salt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const wrapKey = await deriveWrapKey(passphrase, salt);
+  const ciphertext = await subtle().encrypt({ name: 'AES-GCM', iv }, wrapKey, enc.encode(JSON.stringify(keys)));
+  return { version: KEY_BACKUP_VERSION, fp: await fingerprint(keys.pub), salt: hex(salt), iv: hex(iv), ciphertext: b64(ciphertext) };
+}
+
+export async function decryptKeypair(backup, passphrase) {
+  if (!backup || backup.version !== KEY_BACKUP_VERSION) throw new Error('Unrecognised backup format');
+  const wrapKey = await deriveWrapKey(passphrase, unhex(backup.salt));
+  let plaintext;
+  try {
+    plaintext = await subtle().decrypt({ name: 'AES-GCM', iv: unhex(backup.iv) }, wrapKey, unb64(backup.ciphertext));
+  } catch {
+    throw new Error('Wrong passphrase or corrupted backup');
+  }
+  const keys = JSON.parse(new TextDecoder().decode(plaintext));
+  if (!keys?.pub?.x || !keys?.priv?.d) throw new Error('Backup does not contain a valid key pair');
+  return keys;
+}
+
 const leafHash = (h) => sha256Hex('leaf:' + h);
 const nodeHash = (l, r) => sha256Hex('node:' + l + r);
 

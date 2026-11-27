@@ -127,6 +127,85 @@ test('buffer and reversal: unsold serials are cancelled and the books still bala
   }
 });
 
+test('buyer dispute: buffer covers affected sold credits and the books stay balanced', async () => {
+  let a = await boot();
+  let b = null;
+  try {
+    const verifier = await addVerifier(a.call);
+    const { issuance } = await submitAndApprove(a.call, verifier);
+    assert.equal(issuance.bufferUnits, 9);
+
+    const order = await a.call('/api/registry/order', { method: 'POST', token: 'op', body: { buyer: 'Acme Ltd', units: 10, key: 'o1' } });
+    assert.equal(order.status, 201);
+    const orderId = order.json.order.orderId;
+    const soldSerial = order.json.order.serialFrom;
+
+    // opening a dispute is operator-only and needs a reason
+    assert.equal((await a.call('/api/registry/dispute', { method: 'POST', body: { orderId, reason: 'no token' } })).status, 401);
+    assert.equal((await a.call('/api/registry/dispute', { method: 'POST', token: 'op', body: { orderId, units: 5, reason: 'x' } })).json.error, 'bad_reason');
+    const opened = await a.call('/api/registry/dispute', { method: 'POST', token: 'op', body: { orderId, units: 5, reason: 'Plot burned after sale; buyer flagged it' } });
+    assert.equal(opened.status, 201, JSON.stringify(opened.json));
+    const disputeId = opened.json.disputeId;
+    assert.equal((await a.call('/api/registry/dispute', { method: 'POST', token: 'op', body: { orderId, units: 1, reason: 'a second open dispute' } })).json.error, 'dispute_already_open');
+
+    // resolve: the buffer pool covers the 5 affected units
+    const resolved = await a.call('/api/registry/dispute/resolve', { method: 'POST', token: 'op', body: { disputeId, resolution: 'covered', note: 'Buffer pool retired to cover' } });
+    assert.equal(resolved.status, 200, JSON.stringify(resolved.json));
+    assert.equal(resolved.json.cover[0].units, 5);
+    assert.equal((await a.call('/api/registry/dispute/resolve', { method: 'POST', token: 'op', body: { disputeId, resolution: 'covered' } })).json.error, 'dispute_not_open');
+
+    // the buyer keeps their full claim; 5 buffer units are retired; the totals balance
+    const rec = (await a.call('/api/registry/reconcile')).json;
+    assert.equal(rec.unitsSold, 10, 'buyer keeps their full claim');
+    assert.equal(rec.unitsReversed, 5);
+    assert.equal(rec.unitsBuffered, 4, '9 buffer minus 5 retired');
+    assert.equal(rec.unitsBalanced, true);
+
+    const info = await a.call(`/api/registry/serial/${soldSerial}`);
+    assert.equal(info.json.status, 'sold');
+    assert.equal(info.json.sale.dispute.status, 'covered');
+    assert.equal((await a.call('/api/registry/market')).json.lots[0].bufferUnits, 4);
+    assert.equal((await a.call('/api/registry/disputes')).json.disputes[0].status, 'covered');
+
+    // replay from the log in a fresh process view
+    const dir = a.dir;
+    await a.close();
+    a = null;
+    b = await boot(dir);
+    assert.equal((await b.call('/api/registry/reconcile')).json.unitsBalanced, true);
+    assert.equal((await b.call('/api/registry/disputes')).json.disputes[0].status, 'covered');
+  } finally {
+    if (a) await a.close().catch(() => {});
+    if (b) await b.close().catch(() => {});
+  }
+});
+
+test('buyer dispute: rejection records a note, and a loss bigger than the buffer is refused', async () => {
+  const a = await boot();
+  try {
+    const verifier = await addVerifier(a.call);
+    await submitAndApprove(a.call, verifier); // issuance carries a 9-unit buffer
+    const order = await a.call('/api/registry/order', { method: 'POST', token: 'op', body: { buyer: 'Acme', units: 20, key: 'o1' } });
+    const orderId = order.json.order.orderId;
+
+    // a loss larger than the available buffer cannot be silently covered
+    const big = await a.call('/api/registry/dispute', { method: 'POST', token: 'op', body: { orderId, units: 15, reason: 'Most of the plot failed' } });
+    assert.equal((await a.call('/api/registry/dispute/resolve', { method: 'POST', token: 'op', body: { disputeId: big.json.disputeId, resolution: 'covered' } })).json.error, 'insufficient_buffer');
+
+    // rejecting needs a note; a rejected dispute moves nothing on the ledger
+    assert.equal((await a.call('/api/registry/dispute/resolve', { method: 'POST', token: 'op', body: { disputeId: big.json.disputeId, resolution: 'rejected' } })).json.error, 'note_required');
+    const rej = await a.call('/api/registry/dispute/resolve', { method: 'POST', token: 'op', body: { disputeId: big.json.disputeId, resolution: 'rejected', note: 'Satellite shows the plot is intact; claim not supported' } });
+    assert.equal(rej.status, 200, JSON.stringify(rej.json));
+    const rec = (await a.call('/api/registry/reconcile')).json;
+    assert.equal(rec.unitsReversed, 0, 'a rejected dispute moves nothing');
+    assert.equal(rec.unitsBalanced, true);
+    assert.equal((await a.call('/api/registry/disputes')).json.disputes[0].status, 'rejected');
+
+    assert.equal((await a.call('/api/registry/dispute', { method: 'POST', token: 'op', body: { orderId: 'ORD-9999', units: 1, reason: 'no such order' } })).json.error, 'unknown_order');
+    assert.equal((await a.call('/api/registry/dispute/resolve', { method: 'POST', token: 'op', body: { disputeId: 'DSP-9999', resolution: 'covered' } })).json.error, 'unknown_dispute');
+  } finally { await a.close(); }
+});
+
 test('Article 6: authorisation is recorded, signed into the certificate, and blocks double claims', async () => {
   const a = await boot();
   try {
