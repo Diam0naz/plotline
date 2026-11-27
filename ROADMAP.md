@@ -53,9 +53,9 @@ Plotline's own README "Next steps" + "Limits to be honest about" are already a b
 - *Deliverable:* anyone can verify the registry's history wasn't rewritten, against an external source — an honest "on‑chain" story with no tokens.
 
 ### Phase 2 — Verification & key integrity · closes real honesty gaps
-- Accredited‑verifier records (standard, scope, expiry) replacing the hand‑maintained key list.
-- Device signing‑key **backup / recovery** (today localStorage‑only; clearing site data loses the farmer's identity — a real risk, flagged in README limits).
-- Reversal **consumes buffer** credits when sold units are affected, with a replacement/dispute path.
+- ✅ **Accredited‑verifier records (standard, scope, expiry) are now logged, replayable chain events** (`verifier_accredited` / `verifier_revoked`), replacing the hand‑maintained `verifiers-accred.json` side file. Accreditation history rides the same tamper‑evident, Solana‑anchorable ledger as issuances; `decide()` rejects a revoked verifier; legacy side files still seed at boot for back‑compat. *(done on `feat/onchain`)*
+- ⏳ Reversal **consumes buffer** credits when unsold/held units are affected — *already built*. Remaining: a **buyer dispute / replacement path** that can reach *sold* credits (today `reverse()` refuses them and points to this process).
+- ⏳ Device signing‑key **backup / recovery** (today localStorage‑only; clearing site data loses the farmer's identity — a real risk, flagged in README limits). Design branches on threat model (passphrase‑encrypted export vs recovery phrase vs operator‑assisted rebind) — decide before building, since it touches the offline‑first, self‑custody client.
 
 ### Phase 3 — Credible measurement · what climate experts will probe
 - Replace the 18 kg/tree‑year placeholder with allometric biomass (IPCC / Chave 2014, wood density, root:shoot) + a **sampled baseline**; versioned, registrable methodology.

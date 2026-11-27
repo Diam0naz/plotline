@@ -111,6 +111,21 @@ export class Registry {
         if (iss) iss.authorization = { scope: d.scope, authority: d.authority, reference: d.reference, correspondingAdjustment: d.correspondingAdjustment, at: e.ts };
         break;
       }
+      case 'verifier_accredited':
+        // Accreditation is now a logged, replayable event, so the history of who was
+        // accredited (and when, under what standard/scope) rides the same hash-chained,
+        // anchorable ledger as everything else — not a hand-maintained side file.
+        this.verifiersAccred.set(d.id, {
+          standard: d.standard, scope: d.scope,
+          methodologyId: d.methodologyId ?? null, expiresAt: d.expiresAt ?? null,
+          accreditedAt: e.ts,
+        });
+        break;
+      case 'verifier_revoked': {
+        const a = this.verifiersAccred.get(d.id) ?? {};
+        this.verifiersAccred.set(d.id, { ...a, revoked: true, revokedReason: d.reason ?? null, revokedAt: e.ts });
+        break;
+      }
       case 'sold': {
         for (const l of d.lots) {
           const iss = this.issuances.find((x) => x.id === l.issuanceId);
@@ -286,7 +301,12 @@ export class Registry {
     // If the operator has recorded accreditation for this verifier, check that
     // it covers the methodology and has not expired.
     const accred = this.verifiersAccred?.get(verifierId);
-    if (accred) {
+    if (accred?.revoked) {
+      return fail('verifier_accreditation_revoked',
+        `Verifier ${verifierId} accreditation was revoked${accred.revokedAt ? ` at ${accred.revokedAt}` : ''}` +
+        `${accred.revokedReason ? ` (${accred.revokedReason})` : ''}. Re-accredit the verifier before accepting decisions.`);
+    }
+    if (accred && !accred.revoked) {
       // Expiry check
       if (accred.expiresAt && new Date(accred.expiresAt) < this.now()) {
         return fail('verifier_accreditation_expired',
@@ -333,6 +353,37 @@ export class Registry {
       return { ok: true, status: 'approved', issuance };
     }
     return { ok: true, status: 'rejected' };
+  }
+
+  // ---------- 2b. verifier accreditation: logged, replayable, anchorable ----------
+  // Replaces the hand-maintained side file. accredit/revoke are chain-log events, so the
+  // registry's accreditation history is as tamper-evident (and on-chain anchorable) as its issuances.
+  accreditVerifier({ id, standard, scope = 'full', methodologyId = null, expiresAt = null }) {
+    if (!/^[a-z0-9-]{2,32}$/.test(id ?? '')) return fail('bad_verifier_id', 'send a verifier id (a-z, 0-9, dash; 2-32 chars)');
+    const s = String(standard ?? '').trim();
+    if (s.length < 2 || s.length > 80) return fail('bad_standard', 'send a standard or scheme name (2-80 characters)');
+    if (!['full', 'validation-only', 'review-only'].includes(scope)) {
+      return fail('bad_scope', 'scope must be full, validation-only or review-only');
+    }
+    if (methodologyId && !methodologyById(methodologyId)) return fail('unknown_methodology', `no methodology ${methodologyId}`);
+    const exp = expiresAt ? (Number.isFinite(Date.parse(expiresAt)) ? new Date(expiresAt).toISOString() : null) : null;
+    if (expiresAt && !exp) return fail('bad_expiry', 'expiresAt must be a valid date');
+    this.emit('verifier_accredited', { id, standard: s, scope, methodologyId: methodologyId ?? null, expiresAt: exp });
+    return { ok: true, id, accreditation: this.verifiersAccred.get(id) };
+  }
+
+  revokeVerifier({ id, reason }) {
+    const a = this.verifiersAccred.get(id);
+    if (!a || a.revoked) return fail('no_active_accreditation', 'no active accreditation on record for this verifier');
+    const text = String(reason ?? '').trim();
+    if (text.length < 5 || text.length > 300) return fail('bad_reason', 'give a reason (5-300 characters)');
+    this.emit('verifier_revoked', { id, reason: text });
+    return { ok: true, id, accreditation: this.verifiersAccred.get(id) };
+  }
+
+  // Current accreditation view for the audit/verify surfaces.
+  accreditationList() {
+    return [...this.verifiersAccred.entries()].map(([id, a]) => ({ id, ...a }));
   }
 
   // ---------- 3. issuance: unique serial range, once per approved submission ----------

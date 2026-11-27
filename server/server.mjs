@@ -19,7 +19,6 @@ import { publishHead } from './anchor-publish.mjs';
 import { Accounts, LOGIN_FAILED, entryMap, Sessions, cookieOriginOk, clearSessionCookie, parseCookies, sameOrigin, sessionCookie, sessionToken, verifyPassword } from './auth.mjs';
 import { createCache } from './cache.mjs';
 import { fingerprint } from '../core.js';
-import { methodologyById } from './methodology.mjs';
 
 const cleanStr = (v, lo, hi) => String(v ?? '').trim().slice(0, hi);
 
@@ -751,7 +750,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
     if (get && path === '/api/registry/projects') return send(res, 200, await cached('projects', 3, async () => ({
         projects: registry.projectsList(), verifiers: await Promise.all(Object.entries(verifiers).map(async ([id, pub]) => {
           const a = verifiersAccred?.get(id);
-          return { id, key: isPendingKey(pub) ? null : await fingerprint(pub), accreditation: a ? { standard: a.standard, scope: a.scope, expiresAt: a.expiresAt, methodologyId: a.methodologyId } : null };
+          return { id, key: isPendingKey(pub) ? null : await fingerprint(pub), accreditation: a ? { standard: a.standard, scope: a.scope, expiresAt: a.expiresAt, methodologyId: a.methodologyId, revoked: !!a.revoked, revokedAt: a.revokedAt ?? null, revokedReason: a.revokedReason ?? null } : null };
         })),
       })));
     if (get && path === '/api/registry/retirements') return send(res, 200, await cached('retirements', 3, () => ({ retirements: registry.retirements() })));
@@ -900,7 +899,7 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       const out = [];
       for (const [id, pub] of Object.entries(verifiers)) {
         const k = verifiersAccred?.get(id);
-        out.push({ id, key: isPendingKey(pub) ? null : await fingerprint(pub), accreditation: k ? { standard: k.standard, scope: k.scope, expiresAt: k.expiresAt } : null });
+        out.push({ id, key: isPendingKey(pub) ? null : await fingerprint(pub), accreditation: k ? { standard: k.standard, scope: k.scope, expiresAt: k.expiresAt, methodologyId: k.methodologyId ?? null, revoked: !!k.revoked, revokedAt: k.revokedAt ?? null, revokedReason: k.revokedReason ?? null } : null });
       }
       return send(res, 200, { verifiers: out });
     }
@@ -921,16 +920,24 @@ export function createApp({ dataDir = join(ROOT, 'data'), now = () => new Date()
       if (data === undefined) return;
       if (!/^[a-z0-9-]{2,32}$/.test(data?.id ?? '')) return send(res, 400, { error: 'send a verifier id' });
       if (!verifiers[data.id]) return send(res, 404, { error: 'verifier id not found' });
-      if (data?.methodologyId && !methodologyById(data.methodologyId)) return send(res, 400, { error: 'unknown methodology' });
-      const method = methodologyById(data.methodologyId ?? null);
-      const scope = ['full', 'validation-only', 'review-only'].includes(data.scope ?? 'full') ? data.scope : 'full';
-      const standard = cleanStr(data.standard, 2, 80);
-      const expiresAt = data.expiresAt ? (isFinite(Date.parse(data.expiresAt)) ? new Date(data.expiresAt).toISOString() : null) : null;
-      if (standard.length < 2) return send(res, 400, { error: 'send a standard or scheme name' });
-      verifiersAccred.set(data.id, { standard, scope, methodologyId: method?.id ?? null, expiresAt });
-      writeFileSync(verifiersAccredFile, JSON.stringify([...verifiersAccred]), { mode: 0o600 });
+      // Accreditation is now recorded as a logged, replayable registry event, so it rides the
+      // same tamper-evident (and anchorable) chain as issuances rather than a side file.
+      const result = registry.accreditVerifier({
+        id: data.id, standard: data.standard, scope: data.scope ?? 'full',
+        methodologyId: data.methodologyId ?? null, expiresAt: data.expiresAt ?? null,
+      });
+      if (!result.ok) return send(res, 400, { error: result.message ?? result.error });
       await cache?.invalidate();
-      return send(res, 200, { id: data.id, accreditation: { standard, scope, methodologyId: method?.id ?? null, expiresAt } });
+      return send(res, 200, { id: result.id, accreditation: result.accreditation });
+    }
+    if (post && path === '/api/registry/verifiers/revoke') {
+      const data = await jsonBody(req, res, 2048);
+      if (data === undefined) return;
+      if (!/^[a-z0-9-]{2,32}$/.test(data?.id ?? '')) return send(res, 400, { error: 'send a verifier id' });
+      const result = registry.revokeVerifier({ id: data.id, reason: data.reason });
+      if (!result.ok) return send(res, result.error === 'no_active_accreditation' ? 404 : 400, { error: result.message ?? result.error });
+      await cache?.invalidate();
+      return send(res, 200, { id: result.id, accreditation: result.accreditation });
     }
     if (post && path === '/api/registry/order') {
       const data = await jsonBody(req, res, 2048);
