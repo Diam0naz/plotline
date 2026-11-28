@@ -569,6 +569,11 @@ body.auth-page { background: var(--surface); }
       </div>
       <div class="card"><div class="section-head"><h2>Issued lots</h2></div><div id="lots" class="list"></div></div>
       <div class="card"><div class="section-head"><h2>Orders &amp; retirements</h2></div><div id="orders" class="list"></div></div>
+      <div class="card">
+        <div class="section-head"><h2>Buyer disputes</h2><button id="disputes-refresh" class="sm quiet">Refresh</button></div>
+        <p class="muted small" style="margin-bottom:var(--s3)">A resolved dispute is a logged, replayable chain event. Covering a claim retires buffer serials so the buyer stays whole; rejecting it moves nothing.</p>
+        <div id="disputes" class="list"></div>
+      </div>
     </section>
 
     <!-- ══ ADMIN: Money ══ -->
@@ -634,6 +639,22 @@ body.auth-page { background: var(--surface); }
     <button id="apply-reject" class="danger">Reject</button>
     <button id="apply-approve" class="primary">Approve &amp; create account</button>
     <button id="apply-close"  class="quiet">Close</button>
+  </div>
+</dialog>
+
+<!-- Buyer dispute dialog (open / cover / reject) -->
+<dialog id="dispute-dialog">
+  <h2 id="dispute-title" style="margin-bottom:var(--s3)">Dispute</h2>
+  <p id="dispute-context" class="muted small" style="margin-bottom:var(--s4)"></p>
+  <div class="stack">
+    <label id="dispute-units-l">Affected credits <input id="dispute-units" type="number" min="1" step="1"></label>
+    <label id="dispute-text-l"><span id="dispute-text-label">Reason</span> <textarea id="dispute-text" rows="3" maxlength="300"></textarea></label>
+    <label id="dispute-evidence-l">Evidence link / reference (optional) <input id="dispute-evidence" maxlength="200" placeholder="e.g. a report URL or case number"></label>
+  </div>
+  <div id="dispute-err" class="alert-box red text-sm" role="alert" hidden style="margin-top:var(--s3)"></div>
+  <div class="row" style="margin-top:var(--s5)">
+    <button id="dispute-go" class="primary">Open dispute</button>
+    <button id="dispute-cancel" class="quiet">Cancel</button>
   </div>
 </dialog>
 

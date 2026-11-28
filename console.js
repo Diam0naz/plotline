@@ -611,27 +611,161 @@ $('#apply-reject')?.addEventListener('click',  () => $('#apply-dialog')?.close()
 /* ══════════════════════════════════════════════
    MARKET
 ══════════════════════════════════════════════ */
-async function loadMarket() {
-  const sr = await api('summary');
-  const box = $('#mk-sum');
-  if (box && sr.ok) box.textContent = `${sr.json.available ?? 0} credits available · ₦${((sr.json.available||0)*12000/100).toLocaleString('en-NG')} notional value`;
+// The market, its orders and its disputes all come from the one public
+// `market` + `disputes` reads, so a dispute action and the orders it touches
+// always refresh together.
+let marketOrders = []; // last-loaded orders, so the dispute dialog can show context
 
-  const lr = await api('lots');
+async function loadMarket() {
+  const [mr, dr] = await Promise.all([api('market'), api('disputes')]);
+  const m = mr.ok ? mr.json : {};
+  const disputes = dr.ok ? (dr.json.disputes || []) : [];
+
+  const box = $('#mk-sum');
+  if (box) box.textContent = `${m.available ?? 0} credits available · ₦${(((m.available||0)*(m.priceKobo||0))/100).toLocaleString('en-NG')} notional value`;
+
   const lots = $('#lots');
-  if (lots && lr.ok) lots.innerHTML = (lr.json.lots||[]).length
-    ? lr.json.lots.map(l=>`<div class="item" style="cursor:default">
-        <div class="lead"><strong>${esc(l.id)}</strong><span class="sub">${l.issued} issued · ${l.available} available · buffer ${l.buffer}</span></div>
-        <span class="badge good">${esc(l.project||'—')}</span></div>`).join('')
+  if (lots) lots.innerHTML = (m.lots||[]).length
+    ? m.lots.map(l=>`<div class="item" style="cursor:default">
+        <div class="lead"><strong>${esc(l.id)}</strong><span class="sub">${l.units} issued · ${l.remaining} available · buffer ${l.bufferUnits}</span></div>
+        <span class="badge good">${esc(l.projectId||'—')}</span></div>`).join('')
     : '<div class="muted small">No lots yet.</div>';
 
-  const or = await api('orders');
+  marketOrders = m.orders || [];
+  // An open dispute isn't reflected on the order record (only resolutions are),
+  // so the per-order status is read from the disputes list, newest first.
+  const latestByOrder = new Map();
+  for (const d of disputes) {
+    const prev = latestByOrder.get(d.orderId);
+    if (!prev || (d.openedAt || '') > (prev.openedAt || '')) latestByOrder.set(d.orderId, d);
+  }
   const orders = $('#orders');
-  if (orders && or.ok) orders.innerHTML = (or.json.orders||[]).length
-    ? or.json.orders.map(o=>`<div class="item" style="cursor:default">
-        <div class="lead"><strong>${esc(o.buyer)}</strong><span class="sub">${o.units} tCO₂e · ${esc(when(o.createdAt))}</span></div>
-        <span class="badge ${o.retiredAt?'good':'ok'}">${o.retiredAt?'retired':'sold'}</span></div>`).join('')
-    : '<div class="muted small">No orders yet.</div>';
+  if (orders) {
+    orders.innerHTML = marketOrders.length
+      ? marketOrders.map(o=>{
+          const d = latestByOrder.get(o.orderId);
+          const open = d && d.status === 'open';
+          const base = o.retired ? '<span class="badge good">retired</span>' : '<span class="badge ok">sold</span>';
+          const dBadge = !d ? ''
+            : open ? ' <span class="badge bad">disputed</span>'
+            : d.status === 'covered' ? ' <span class="badge info">dispute covered</span>'
+            : ' <span class="badge empty">dispute rejected</span>';
+          const act = open ? '' : `<button class="sm quiet dispute-open-btn" data-order="${esc(o.orderId)}">Dispute</button>`;
+          return `<div class="item" style="cursor:default">
+            <div class="lead"><strong>${esc(o.buyer)}</strong><span class="sub">${esc(o.orderId)} · ${o.units} tCO₂e · ${esc(when(o.soldAt))}</span></div>
+            <div class="row" style="gap:var(--s2);align-items:center">${base}${dBadge}${act}</div>
+          </div>`;
+        }).join('')
+      : '<div class="muted small">No orders yet.</div>';
+    orders.querySelectorAll('.dispute-open-btn').forEach(b =>
+      b.addEventListener('click', () => openDisputeDialog(b.dataset.order)));
+  }
+
+  renderDisputes(disputes);
 }
+
+/* ══════════════════════════════════════════════
+   BUYER DISPUTES  (operator: open · cover from buffer · reject)
+══════════════════════════════════════════════ */
+function renderDisputes(disputes) {
+  const box = $('#disputes');
+  if (!box) return;
+  const list = disputes.slice().sort((a, b) => (b.openedAt || '').localeCompare(a.openedAt || ''));
+  box.innerHTML = list.length ? list.map(d=>{
+    const badge = d.status === 'open' ? '<span class="badge bad">open</span>'
+      : d.status === 'covered' ? '<span class="badge info">covered</span>'
+      : '<span class="badge empty">rejected</span>';
+    const cover = (d.cover||[]).length
+      ? `<div class="muted small">Covered from buffer: ${d.cover.map(c=>`${esc(c.serialFrom)}–${esc(c.serialTo)}`).join(', ')}</div>` : '';
+    const note = d.note ? `<div class="muted small">Note: ${esc(d.note)}</div>` : '';
+    const actions = d.status === 'open'
+      ? `<div class="row" style="margin-top:var(--s2);gap:var(--s2)">
+           <button class="sm secondary dispute-cover-btn" data-id="${esc(d.disputeId)}">Cover from buffer</button>
+           <button class="sm danger dispute-reject-btn" data-id="${esc(d.disputeId)}">Reject</button>
+         </div>` : '';
+    return `<div class="item" style="cursor:default;display:block">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <strong>${esc(d.disputeId)}</strong>${badge}
+      </div>
+      <div class="muted small">${esc(d.orderId)} · ${d.units} tCO₂e · ${esc(when(d.openedAt))}</div>
+      <div class="small" style="margin-top:var(--s1)">${esc(d.reason)}</div>
+      ${cover}${note}${actions}
+    </div>`;
+  }).join('') : '<div class="muted small">No disputes.</div>';
+
+  box.querySelectorAll('.dispute-cover-btn').forEach(b =>
+    b.addEventListener('click', () => openResolveDialog(b.dataset.id, 'covered')));
+  box.querySelectorAll('.dispute-reject-btn').forEach(b =>
+    b.addEventListener('click', () => openResolveDialog(b.dataset.id, 'rejected')));
+}
+
+// The one dialog serves three jobs; `disputeMode` says which, and the Go button
+// routes to the matching endpoint.
+let disputeMode = null;   // 'open' | 'covered' | 'rejected'
+let disputeTarget = null; // orderId (open) or disputeId (resolve)
+
+function showDisputeErr(msg) {
+  const el = $('#dispute-err');
+  if (!el) return;
+  el.textContent = msg; el.hidden = !msg;
+}
+
+function openDisputeDialog(orderId) {
+  const o = marketOrders.find(x => x.orderId === orderId);
+  if (!o) return;
+  disputeMode = 'open'; disputeTarget = orderId;
+  $('#dispute-title').textContent = 'Open a buyer dispute';
+  $('#dispute-context').textContent = `${o.orderId} · ${o.buyer} · ${o.units} tCO₂e`;
+  $('#dispute-units-l').hidden = false;
+  $('#dispute-evidence-l').hidden = false;
+  $('#dispute-text-label').textContent = 'Reason the buyer is raising this (5–300 characters)';
+  const units = $('#dispute-units'); units.max = o.units; units.value = o.units;
+  $('#dispute-text').value = ''; $('#dispute-evidence').value = '';
+  const go = $('#dispute-go'); go.textContent = 'Open dispute'; go.className = 'primary';
+  showDisputeErr('');
+  $('#dispute-dialog').showModal();
+}
+
+function openResolveDialog(disputeId, resolution) {
+  disputeMode = resolution; disputeTarget = disputeId;
+  const covered = resolution === 'covered';
+  $('#dispute-title').textContent = covered ? 'Cover dispute from buffer' : 'Reject dispute';
+  $('#dispute-context').textContent = covered
+    ? `${disputeId} — retire buffer serials so the buyer's claim stays whole.`
+    : `${disputeId} — deny the claim. Nothing moves on the ledger.`;
+  $('#dispute-units-l').hidden = true;
+  $('#dispute-evidence-l').hidden = true;
+  $('#dispute-text-label').textContent = covered ? 'Note (optional)' : 'Reason for rejecting (5–300 characters, required)';
+  $('#dispute-text').value = '';
+  const go = $('#dispute-go'); go.textContent = covered ? 'Cover from buffer' : 'Reject dispute';
+  go.className = covered ? 'primary' : 'danger';
+  showDisputeErr('');
+  $('#dispute-dialog').showModal();
+}
+
+$('#dispute-cancel')?.addEventListener('click', () => $('#dispute-dialog')?.close());
+$('#disputes-refresh')?.addEventListener('click', () => loadMarket());
+
+$('#dispute-go')?.addEventListener('click', async () => {
+  const text = $('#dispute-text').value.trim();
+  let r;
+  if (disputeMode === 'open') {
+    if (text.length < 5) { showDisputeErr('Give a reason of at least 5 characters.'); return; }
+    const units = +$('#dispute-units').value;
+    const evidence = $('#dispute-evidence').value.trim();
+    r = await api('dispute', { method: 'POST', body: { orderId: disputeTarget, units, reason: text, evidence: evidence || undefined } });
+  } else {
+    if (disputeMode === 'rejected' && text.length < 5) { showDisputeErr('Rejecting needs a note of at least 5 characters.'); return; }
+    r = await api('dispute/resolve', { method: 'POST', body: { disputeId: disputeTarget, resolution: disputeMode, note: text || undefined } });
+  }
+  if (r.ok) {
+    $('#dispute-dialog').close();
+    toast(disputeMode === 'open' ? 'Dispute opened.' : disputeMode === 'covered' ? 'Dispute covered from buffer.' : 'Dispute rejected.');
+    loadMarket();
+  } else {
+    showDisputeErr(r.json?.error || r.json?.message || `Request failed (${r.status})`);
+  }
+});
 
 $('#buy')?.addEventListener('click', async () => {
   const r = await api('buy', { method:'POST', body:{ buyer:$('#buyer').value.trim(), units:+$('#units').value } });
